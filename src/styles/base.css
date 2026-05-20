@@ -1,0 +1,28 @@
+:root {
+  --color-cream: #f5f1e8;
+  --color-coral: #ff7e6b;
+  --color-mustard: #e8b04b;
+  --color-charcoal: #2a2a2e;
+  --color-mint: #9ad9c0;
+  --color-plum: #7d5a8a;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-cream);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+#synth-canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
