@@ -52,6 +52,13 @@ export function initTagline(el: HTMLElement): TaglineHandle {
     });
   };
 
+  const stopTweens = (): void => {
+    floatTween?.kill();
+    waveTween?.kill();
+    floatTween = null;
+    waveTween = null;
+  };
+
   return {
     dissolveIn(): Promise<void> {
       startWave();
@@ -91,14 +98,11 @@ export function initTagline(el: HTMLElement): TaglineHandle {
     },
 
     stop(): void {
-      floatTween?.kill();
-      waveTween?.kill();
-      floatTween = null;
-      waveTween = null;
+      stopTweens();
     },
 
     hideInstant(): void {
-      this.stop();
+      stopTweens();
       gsap.set(el, { opacity: 0 });
     },
   };
