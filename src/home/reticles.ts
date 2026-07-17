@@ -66,6 +66,8 @@ export function initReticles(field: HTMLElement): ReticleField {
     iy: gsap.quickTo(el.querySelector('.icon'), 'y', { duration: 0.35, ease: 'power3.out' }),
   }));
 
+  let buildTl: gsap.core.Timeline | null = null;
+
   const refreshCenters = (): void => {
     for (const m of movers) {
       const r = m.el.getBoundingClientRect();
@@ -95,6 +97,7 @@ export function initReticles(field: HTMLElement): ReticleField {
       refreshCenters();
       return new Promise((resolve) => {
         const tl = gsap.timeline({ onComplete: resolve });
+        buildTl = tl;
         reticles.forEach((btn, i) => {
           const brackets = btn.querySelector('.brackets');
           tl.to(btn, { autoAlpha: 1, duration: 0.4, ease: 'power2.out' }, i * STAGGER_S);
@@ -116,6 +119,12 @@ export function initReticles(field: HTMLElement): ReticleField {
     destroy(): void {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('resize', refreshCenters);
+      buildTl?.kill();
+      buildTl = null;
+      for (const btn of reticles) {
+        gsap.killTweensOf([btn, btn.querySelector('.brackets'), btn.querySelector('.icon')]);
+        btn.remove();
+      }
     },
   };
 }
