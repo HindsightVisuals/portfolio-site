@@ -3,6 +3,7 @@ import '@fontsource/space-mono/400.css';
 import './styles/base.css';
 
 import { initBackground } from './three/background';
+import { initTagline } from './home/tagline';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#bg-canvas');
 if (!canvas) throw new Error('#bg-canvas not found');
@@ -12,4 +13,6 @@ const debug = new URLSearchParams(location.search).has('debug-rd');
 
 initBackground(canvas, { reducedMotion, debug });
 
-// Task 4: initTagline · Task 5: initReticles · Task 6: runHomeSequence
+const tagline = initTagline(document.querySelector<HTMLElement>('.tagline')!);
+// TEMP demo (replaced by sequence in Task 6):
+tagline.dissolveIn().then(() => tagline.startFloat());
