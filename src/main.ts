@@ -1,9 +1,6 @@
-import { initScene } from './three/scene';
+import '@fontsource/space-grotesk/700.css';
+import '@fontsource/space-mono/400.css';
+import './styles/base.css';
 
-const canvas = document.querySelector<HTMLCanvasElement>('#synth-canvas');
-
-if (!canvas) {
-  throw new Error('#synth-canvas not found');
-}
-
-initScene(canvas);
+// Modules are wired in as they land:
+// Task 3: initBackground · Task 4: initTagline · Task 5: initReticles · Task 6: runHomeSequence

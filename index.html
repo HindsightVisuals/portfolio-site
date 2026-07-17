@@ -3,11 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Portfolio — Phase 0 Prototype</title>
-    <link rel="stylesheet" href="/src/styles/base.css" />
+    <title>commms — interaction and story telling</title>
   </head>
   <body>
-    <canvas id="synth-canvas"></canvas>
+    <canvas id="bg-canvas"></canvas>
+
+    <svg class="svg-defs" aria-hidden="true" focusable="false">
+      <filter id="dissolve" x="-30%" y="-30%" width="160%" height="160%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02 0.028" numOctaves="2" seed="7" result="noise" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G" result="disp" />
+        <feGaussianBlur in="disp" stdDeviation="0" />
+      </filter>
+    </svg>
+
+    <header class="chrome">
+      <span class="wordmark">commms</span>
+      <nav class="site-nav" aria-label="Site">
+        <a href="#" data-nav="work">Work</a>
+        <a href="#" data-nav="about">About</a>
+      </nav>
+    </header>
+
+    <p class="tagline">Interaction and story telling through three dimensional web experiences</p>
+
+    <div class="reticle-field" role="navigation" aria-label="Home navigation">
+      <div class="reticle-row" data-row="0"></div>
+      <div class="reticle-row" data-row="1"></div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
