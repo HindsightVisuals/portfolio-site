@@ -88,6 +88,8 @@ body {
   max-width: 60ch;
   white-space: nowrap;
   will-change: transform, opacity, filter;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* --- reticle field (rows straddle the centerline) --- */

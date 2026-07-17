@@ -17,6 +17,6 @@ const debug = new URLSearchParams(location.search).has('debug-rd');
 
 initBackground(canvas, { reducedMotion, debug });
 const tagline = initTagline(taglineEl);
-const reticles = initReticles(fieldEl);
+const reticles = initReticles(fieldEl, { reducedMotion });
 
 void runHomeSequence({ tagline, reticles, reducedMotion });

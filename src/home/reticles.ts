@@ -30,7 +30,10 @@ interface Mover {
   iy: (v: number) => void;
 }
 
-export function initReticles(field: HTMLElement): ReticleField {
+export function initReticles(
+  field: HTMLElement,
+  opts: { reducedMotion: boolean } = { reducedMotion: false },
+): ReticleField {
   const rows = field.querySelectorAll<HTMLElement>('.reticle-row');
   if (rows.length < 2) throw new Error('.reticle-row elements not found');
 
@@ -57,14 +60,16 @@ export function initReticles(field: HTMLElement): ReticleField {
 
   gsap.set(reticles, { autoAlpha: 0 });
 
-  const movers: Mover[] = reticles.map((el) => ({
-    el,
-    center: { x: 0, y: 0 },
-    bx: gsap.quickTo(el.querySelector('.brackets'), 'x', { duration: 0.35, ease: 'power3.out' }),
-    by: gsap.quickTo(el.querySelector('.brackets'), 'y', { duration: 0.35, ease: 'power3.out' }),
-    ix: gsap.quickTo(el.querySelector('.icon'), 'x', { duration: 0.35, ease: 'power3.out' }),
-    iy: gsap.quickTo(el.querySelector('.icon'), 'y', { duration: 0.35, ease: 'power3.out' }),
-  }));
+  const movers: Mover[] = opts.reducedMotion
+    ? []
+    : reticles.map((el) => ({
+        el,
+        center: { x: 0, y: 0 },
+        bx: gsap.quickTo(el.querySelector('.brackets'), 'x', { duration: 0.35, ease: 'power3.out' }),
+        by: gsap.quickTo(el.querySelector('.brackets'), 'y', { duration: 0.35, ease: 'power3.out' }),
+        ix: gsap.quickTo(el.querySelector('.icon'), 'x', { duration: 0.35, ease: 'power3.out' }),
+        iy: gsap.quickTo(el.querySelector('.icon'), 'y', { duration: 0.35, ease: 'power3.out' }),
+      }));
 
   let buildTl: gsap.core.Timeline | null = null;
 
@@ -90,7 +95,9 @@ export function initReticles(field: HTMLElement): ReticleField {
       m.iy(s.icon.y);
     }
   };
-  window.addEventListener('mousemove', onMove);
+  if (!opts.reducedMotion) {
+    window.addEventListener('mousemove', onMove);
+  }
 
   return {
     buildOn(): Promise<void> {
@@ -117,7 +124,9 @@ export function initReticles(field: HTMLElement): ReticleField {
     },
 
     destroy(): void {
-      window.removeEventListener('mousemove', onMove);
+      if (!opts.reducedMotion) {
+        window.removeEventListener('mousemove', onMove);
+      }
       window.removeEventListener('resize', refreshCenters);
       buildTl?.kill();
       buildTl = null;
