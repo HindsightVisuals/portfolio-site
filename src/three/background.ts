@@ -107,14 +107,18 @@ function makeSeedTexture(w: number, h: number): THREE.DataTexture {
   return tex;
 }
 
+/** Sim grid dims for a given viewport, capped to SIM_MAX on the longest edge. */
+function computeSimDims(width: number, height: number): { w: number; h: number } {
+  const aspect = width / height;
+  const w = aspect >= 1 ? SIM_MAX : Math.round(SIM_MAX * aspect);
+  const h = aspect >= 1 ? Math.round(SIM_MAX / aspect) : SIM_MAX;
+  return { w, h };
+}
+
 export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts): BackgroundHandle {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
-
-  const aspect = window.innerWidth / window.innerHeight;
-  const simW = aspect >= 1 ? SIM_MAX : Math.round(SIM_MAX * aspect);
-  const simH = aspect >= 1 ? Math.round(SIM_MAX / aspect) : SIM_MAX;
 
   const targetOpts: THREE.RenderTargetOptions = {
     type: THREE.HalfFloatType,
@@ -125,13 +129,22 @@ export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts):
     depthBuffer: false,
     stencilBuffer: false,
   };
-  let read = new THREE.WebGLRenderTarget(simW, simH, targetOpts);
-  let write = new THREE.WebGLRenderTarget(simW, simH, targetOpts);
+
+  /** Builds a fresh ping-pong pair + seed texture for the given sim grid. */
+  const buildSimTargets = (
+    w: number,
+    h: number,
+  ): { read: THREE.WebGLRenderTarget; write: THREE.WebGLRenderTarget; seed: THREE.DataTexture } => ({
+    read: new THREE.WebGLRenderTarget(w, h, targetOpts),
+    write: new THREE.WebGLRenderTarget(w, h, targetOpts),
+    seed: makeSeedTexture(w, h),
+  });
+
+  let { w: simW, h: simH } = computeSimDims(window.innerWidth, window.innerHeight);
+  let { read, write, seed } = buildSimTargets(simW, simH);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const quad = new THREE.PlaneGeometry(2, 2);
-
-  const seed = makeSeedTexture(simW, simH);
 
   const simMaterial = new THREE.ShaderMaterial({
     vertexShader: VERT,
@@ -172,8 +185,40 @@ export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts):
   // burn-in so the field is developed at first paint
   for (let i = 0; i < BURN_IN_STEPS; i++) step();
 
-  const onResize = (): void => {
+  const renderOnce = (): void => {
+    viewMaterial.uniforms.uState.value = read.texture;
+    renderer.setRenderTarget(null);
+    renderer.render(viewScene, camera);
+  };
+
+  const doResize = (): void => {
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const dims = computeSimDims(window.innerWidth, window.innerHeight);
+    if (dims.w !== simW || dims.h !== simH) {
+      simW = dims.w;
+      simH = dims.h;
+
+      read.dispose();
+      write.dispose();
+      seed.dispose();
+
+      ({ read, write, seed } = buildSimTargets(simW, simH));
+      simMaterial.uniforms.uState.value = seed;
+      simMaterial.uniforms.uTexel.value.set(1 / simW, 1 / simH);
+
+      for (let i = 0; i < BURN_IN_STEPS; i++) step();
+    }
+
+    // No RAF loop in reduced-motion mode, so nothing else will repaint.
+    if (opts.reducedMotion) renderOnce();
+  };
+
+  let resizeTimeout: number | undefined;
+  const onResize = (): void => {
+    if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);
+    resizeTimeout = window.setTimeout(doResize, 150);
   };
   window.addEventListener('resize', onResize);
 
@@ -182,15 +227,14 @@ export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts):
     if (!opts.reducedMotion) {
       for (let i = 0; i < STEPS_PER_FRAME; i++) step();
     }
-    viewMaterial.uniforms.uState.value = read.texture;
-    renderer.setRenderTarget(null);
-    renderer.render(viewScene, camera);
+    renderOnce();
     if (!opts.reducedMotion) raf = requestAnimationFrame(tick);
   };
   tick(); // reduced motion: renders exactly one static, burned-in frame
 
   return {
     destroy(): void {
+      if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
       read.dispose();
