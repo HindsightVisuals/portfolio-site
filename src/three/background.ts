@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { StageLayer } from './stage';
 
 /** Longest edge of the simulation grid — RD runs low-res and upscales soft. */
 const SIM_MAX = 512;
@@ -97,7 +98,7 @@ export interface BackgroundOpts {
   debug: boolean;
 }
 
-export interface BackgroundHandle {
+export interface BackgroundLayer extends StageLayer {
   destroy(): void;
 }
 
@@ -132,11 +133,10 @@ function computeSimDims(width: number, height: number): { w: number; h: number }
   return { w, h };
 }
 
-export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts): BackgroundHandle {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-
+export function initBackgroundLayer(
+  renderer: THREE.WebGLRenderer,
+  opts: BackgroundOpts,
+): BackgroundLayer {
   const targetOpts: THREE.RenderTargetOptions = {
     type: THREE.HalfFloatType,
     minFilter: THREE.LinearFilter,
@@ -206,16 +206,7 @@ export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts):
   // burn-in so the field is developed at first paint
   for (let i = 0; i < BURN_IN_STEPS; i++) step();
 
-  const renderOnce = (): void => {
-    viewMaterial.uniforms.uState.value = read.texture;
-    renderer.setRenderTarget(null);
-    renderer.render(viewScene, camera);
-  };
-
-  const doResize = (): void => {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-
+  const rebuildSimIfNeeded = (): void => {
     const dims = computeSimDims(window.innerWidth, window.innerHeight);
     if (dims.w !== simW || dims.h !== simH) {
       simW = dims.w;
@@ -232,17 +223,9 @@ export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts):
 
       for (let i = 0; i < BURN_IN_STEPS; i++) step();
     }
-
-    // No RAF loop in reduced-motion mode, so nothing else will repaint.
-    if (opts.reducedMotion) renderOnce();
   };
 
   let resizeTimeout: number | undefined;
-  const onResize = (): void => {
-    if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);
-    resizeTimeout = window.setTimeout(doResize, 150);
-  };
-  window.addEventListener('resize', onResize);
 
   // Mouse → sim UV for the erase brush. Sim UV maps 1:1 to the viewport
   // (the view quad samples the full sim texture across the full canvas).
@@ -260,21 +243,25 @@ export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts):
     document.documentElement.addEventListener('mouseleave', onMouseLeave);
   }
 
-  let raf = 0;
-  const tick = (): void => {
-    if (!opts.reducedMotion) {
-      for (let i = 0; i < STEPS_PER_FRAME; i++) step();
-    }
-    renderOnce();
-    if (!opts.reducedMotion) raf = requestAnimationFrame(tick);
-  };
-  tick(); // reduced motion: renders exactly one static, burned-in frame
-
   return {
+    update(): void {
+      if (!opts.reducedMotion) {
+        for (let i = 0; i < STEPS_PER_FRAME; i++) step();
+      }
+    },
+    render(r: THREE.WebGLRenderer): void {
+      viewMaterial.uniforms.uState.value = read.texture;
+      r.setRenderTarget(null);
+      r.render(viewScene, camera);
+    },
+    resize(): void {
+      // debounce internally exactly as before, but only rebuild the sim grid —
+      // renderer sizing is the stage's job now
+      if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);
+      resizeTimeout = window.setTimeout(rebuildSimIfNeeded, 150);
+    },
     destroy(): void {
       if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', onResize);
       window.removeEventListener('mousemove', onMouseMove);
       document.documentElement.removeEventListener('mouseleave', onMouseLeave);
       read.dispose();
@@ -283,7 +270,6 @@ export function initBackground(canvas: HTMLCanvasElement, opts: BackgroundOpts):
       quad.dispose();
       simMaterial.dispose();
       viewMaterial.dispose();
-      renderer.dispose();
     },
   };
 }

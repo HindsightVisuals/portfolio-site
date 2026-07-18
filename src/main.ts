@@ -2,7 +2,8 @@ import '@fontsource/space-grotesk/700.css';
 import '@fontsource/space-mono/400.css';
 import './styles/base.css';
 
-import { initBackground } from './three/background';
+import { initStage } from './three/stage';
+import { initBackgroundLayer } from './three/background';
 import { initTagline } from './home/tagline';
 import { initReticles } from './home/reticles';
 import { runHomeSequence } from './home/sequence';
@@ -15,7 +16,9 @@ if (!canvas || !taglineEl || !fieldEl) throw new Error('homepage DOM incomplete'
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const debug = new URLSearchParams(location.search).has('debug-rd');
 
-initBackground(canvas, { reducedMotion, debug });
+const stage = initStage(canvas, { reducedMotion });
+stage.addLayer(initBackgroundLayer(stage.renderer, { reducedMotion, debug }));
+stage.start();
 const tagline = initTagline(taglineEl);
 const reticles = initReticles(fieldEl, { reducedMotion });
 
