@@ -134,7 +134,7 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
         if (s.mesh === homeMock && s.mesh.visible) continue;
         s.mesh.position.z = nearestWrapped(s.anchorZ, camera.position.z);
       }
-      atmosphere.update(dt, velocitySource());
+      atmosphere.update(dt, velocitySource(), camera.position.z);
     },
     render(renderer: THREE.WebGLRenderer): void {
       renderer.render(scene, camera);

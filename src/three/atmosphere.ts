@@ -1,58 +1,73 @@
 import * as THREE from 'three';
 
-/** Dot field bounds (world units). Z spans past both ends of the page spine. */
 const COUNT = 220;
-const SPREAD_X = 90;
-const SPREAD_Y = 55;
-const Z_FROM = 60;
-const Z_TO = -240;
+const RANGE_X = 180;   // wrap ranges (centered on 0 for x/y, on camera for z)
+const RANGE_Y = 110;
+const RANGE_Z = 300;
 const SIZE_MIN = 2;
 const SIZE_MAX = 7;
-/** Velocity (units/s) at which streaking reaches full strength. */
-const WARP_FULL_VELOCITY = 80;
-const INK = 0.07; // near-black dot luminance
+const DRIFT_MAX = 1.6;          // units/s — slow wander
+const STREAK_GAIN = 0.12;       // apparent-motion -> capsule half-length
+const STREAK_MAX = 2.5;         // cap (sprite-local units); full lightspeed would be ~6
+const VELOCITY_EASE = 8;        // how fast streaks respond to speed changes
+const INK = 0.07;
 
 const VERT = /* glsl */ `
 uniform float uPixelRatio;
 uniform float uTime;
-uniform float uWarp;
+uniform float uVelocity;
+uniform float uCameraZ;
 attribute float aSize;
-attribute float aSeed;
+attribute vec3 aDrift;
 varying float vDepthFade;
 varying vec2 vRadial;
+varying float vStretch;
+
+float wrap1(float v, float range) {
+  return mod(v + range * 0.5, range) - range * 0.5;
+}
 
 void main() {
-  vec3 p = position;
-  // slow idle drift, unique per dot
-  p.x += sin(uTime * 0.05 + aSeed * 6.2831) * 2.0;
-  p.y += cos(uTime * 0.04 + aSeed * 12.566) * 1.5;
+  vec3 p = position + aDrift * uTime;
+  p.x = wrap1(p.x, ${RANGE_X.toFixed(1)});
+  p.y = wrap1(p.y, ${RANGE_Y.toFixed(1)});
+  p.z = uCameraZ + wrap1(p.z - uCameraZ, ${RANGE_Z.toFixed(1)});
 
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float dist = -mv.z;
-  gl_PointSize = aSize * uPixelRatio * (140.0 / max(dist, 1.0)) * (1.0 + uWarp * 2.0);
-
-  // fake depth-of-field: fade far dots out, kill dots about to hit the camera
-  vDepthFade = smoothstep(200.0, 40.0, dist) * smoothstep(2.0, 12.0, dist);
-
   vec4 ndc = projectionMatrix * mv;
-  vRadial = normalize(ndc.xy / max(ndc.w, 0.0001) + vec2(1e-5));
+  vec2 ndcXY = ndc.xy / max(ndc.w, 0.0001);
+  float ndcR = clamp(length(ndcXY), 0.0, 1.5);
+  vRadial = normalize(ndcXY + vec2(1e-5));
+
+  // apparent screen motion under camera dolly: faster when near and off-center
+  float apparent = abs(uVelocity) * ndcR * (60.0 / max(dist, 2.0));
+  float stretch = clamp(apparent * ${STREAK_GAIN.toFixed(2)}, 0.0, ${STREAK_MAX.toFixed(1)});
+  vStretch = stretch * sign(uVelocity);
+
+  vDepthFade = smoothstep(200.0, 40.0, dist) * smoothstep(2.0, 12.0, dist);
+  gl_PointSize = aSize * uPixelRatio * (140.0 / max(dist, 1.0)) * (1.0 + stretch);
   gl_Position = ndc;
 }
 `;
 
 const FRAG = /* glsl */ `
 precision highp float;
-uniform float uWarp;
 varying float vDepthFade;
 varying vec2 vRadial;
+varying float vStretch;
 
 void main() {
-  vec2 p = gl_PointCoord * 2.0 - 1.0;
-  // streak: elongate the soft disc along the screen-radial direction
-  float along = dot(p, vRadial);
-  float perp = length(p - vRadial * along);
-  float d = length(vec2(along / (1.0 + uWarp * 6.0), perp));
-  float alpha = (1.0 - smoothstep(0.35, 1.0, d)) * vDepthFade * 0.85;
+  float stretch = abs(vStretch);
+  vec2 p = (gl_PointCoord * 2.0 - 1.0) * (1.0 + stretch);
+  // tail trails the apparent motion: toward screen center when flying forward
+  vec2 tailDir = vRadial * sign(vStretch - 1e-6);
+  float along = dot(p, tailDir);
+  float onTail = clamp(along, 0.0, stretch);
+  float d = length(p - tailDir * onTail);
+  float core = 1.0 - smoothstep(0.35, 0.9, d);
+  float taper = mix(1.0, 0.2, stretch > 0.0 ? onTail / max(stretch, 1e-4) : 0.0);
+  float alpha = core * taper * vDepthFade * 0.85;
   if (alpha < 0.01) discard;
   gl_FragColor = vec4(vec3(${INK.toFixed(2)}), alpha);
 }
@@ -60,26 +75,28 @@ void main() {
 
 export interface Atmosphere {
   object: THREE.Points;
-  update(dt: number, velocity: number): void;
+  update(dt: number, velocity: number, cameraZ: number): void;
   destroy(): void;
 }
 
 export function initAtmosphere(): Atmosphere {
   const positions = new Float32Array(COUNT * 3);
   const sizes = new Float32Array(COUNT);
-  const seeds = new Float32Array(COUNT);
+  const drifts = new Float32Array(COUNT * 3);
   for (let i = 0; i < COUNT; i++) {
-    positions[i * 3] = (Math.random() * 2 - 1) * SPREAD_X;
-    positions[i * 3 + 1] = (Math.random() * 2 - 1) * SPREAD_Y;
-    positions[i * 3 + 2] = Z_FROM + Math.random() * (Z_TO - Z_FROM);
+    positions[i * 3] = (Math.random() - 0.5) * RANGE_X;
+    positions[i * 3 + 1] = (Math.random() - 0.5) * RANGE_Y;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * RANGE_Z;
     sizes[i] = SIZE_MIN + Math.random() * (SIZE_MAX - SIZE_MIN);
-    seeds[i] = Math.random();
+    drifts[i * 3] = (Math.random() - 0.5) * DRIFT_MAX;
+    drifts[i * 3 + 1] = (Math.random() - 0.5) * DRIFT_MAX;
+    drifts[i * 3 + 2] = (Math.random() - 0.5) * DRIFT_MAX * 0.5;
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-  geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+  geometry.setAttribute('aDrift', new THREE.BufferAttribute(drifts, 3));
 
   const material = new THREE.ShaderMaterial({
     vertexShader: VERT,
@@ -87,7 +104,8 @@ export function initAtmosphere(): Atmosphere {
     uniforms: {
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uTime: { value: 0 },
-      uWarp: { value: 0 },
+      uVelocity: { value: 0 },
+      uCameraZ: { value: 0 },
     },
     transparent: true,
     depthWrite: false,
@@ -98,11 +116,11 @@ export function initAtmosphere(): Atmosphere {
 
   return {
     object,
-    update(dt: number, velocity: number): void {
+    update(dt: number, velocity: number, cameraZ: number): void {
       material.uniforms.uTime.value += dt;
-      const warp = Math.min(Math.abs(velocity) / WARP_FULL_VELOCITY, 1);
-      // ease toward target so streaks don't pop
-      material.uniforms.uWarp.value += (warp - material.uniforms.uWarp.value) * Math.min(dt * 8, 1);
+      material.uniforms.uCameraZ.value = cameraZ;
+      const current = material.uniforms.uVelocity.value as number;
+      material.uniforms.uVelocity.value = current + (velocity - current) * Math.min(dt * VELOCITY_EASE, 1);
     },
     destroy(): void {
       geometry.dispose();
