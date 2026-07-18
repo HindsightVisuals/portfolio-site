@@ -38,7 +38,7 @@ export function initTagline(el: HTMLElement): TaglineHandle {
   apply();
   gsap.set(el, { opacity: 0 });
 
-  let floatTween: gsap.core.Tween | null = null;
+  let floatTween: gsap.core.Tween | gsap.core.Timeline | null = null;
   let waveTween: gsap.core.Tween | null = null;
 
   const startWave = (): void => {
@@ -90,11 +90,12 @@ export function initTagline(el: HTMLElement): TaglineHandle {
     },
 
     startFloat(): void {
-      floatTween ??= gsap.fromTo(
-        el,
-        { x: -FLOAT_PX, y: -FLOAT_PX },
-        { x: FLOAT_PX, y: FLOAT_PX, duration: FLOAT_CYCLE_S, ease: 'sine.inOut', yoyo: true, repeat: -1 },
-      );
+      // Ease out from the current resting position (no jump when the reveal
+      // finishes), then drift between the two float corners forever.
+      floatTween ??= gsap
+        .timeline({ repeat: -1, yoyo: true })
+        .to(el, { x: FLOAT_PX, y: FLOAT_PX, duration: FLOAT_CYCLE_S / 2, ease: 'sine.inOut' })
+        .to(el, { x: -FLOAT_PX, y: -FLOAT_PX, duration: FLOAT_CYCLE_S, ease: 'sine.inOut' });
     },
 
     stop(): void {
