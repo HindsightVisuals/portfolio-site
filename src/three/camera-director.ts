@@ -2,7 +2,7 @@ import gsap from 'gsap';
 import type * as THREE from 'three';
 import type { DestId } from '../routes';
 import type { Destination } from './world';
-import { resolveSnapTarget } from './snap';
+import { nearestWrapped, resolveSnapTargetLooped, sameSpot } from './loop';
 
 /* Motion constants — lab-tuned values land in Task 7. */
 const FLY_S = 2.0;
@@ -13,7 +13,6 @@ const SETTLE_EASE = 'power3.out';
 const SCROLL_GAIN = 0.06;        // wheel px -> velocity (units/s)
 const DAMPING_RATE = 2.2;        // exponential velocity decay per second
 const SNAP_BELOW = 2.0;          // |v| threshold to begin settling
-const Z_MARGIN = 10;             // camera clamp beyond the spine ends
 
 type Mode = 'free' | 'settling' | 'flying';
 
@@ -33,9 +32,6 @@ export function initCameraDirector(
   destinations: Destination[],
 ): CameraDirector {
   const rests = destinations.map((d) => d.cameraZ);
-  const zMax = Math.max(...rests) + Z_MARGIN;
-  const zMin = Math.min(...rests) - Z_MARGIN;
-  const byRest = new Map(destinations.map((d) => [d.cameraZ, d.id]));
 
   const state = { z: destinations[0].cameraZ };
   let velocity = 0;
@@ -47,8 +43,8 @@ export function initCameraDirector(
   const departCbs = new Set<(dest: DestId) => void>();
 
   const emitArrive = (z: number): void => {
-    const id = byRest.get(z);
-    if (id) for (const cb of arriveCbs) cb(id);
+    const dest = destinations.find((d) => sameSpot(d.cameraZ, z));
+    if (dest) for (const cb of arriveCbs) cb(dest.id);
   };
 
   const killSettle = (): void => {
@@ -82,10 +78,11 @@ export function initCameraDirector(
       for (const cb of departCbs) cb(id);
       mode = 'flying';
       velocity = 0;
+      const targetZ = nearestWrapped(dest.cameraZ, state.z);
       return new Promise((resolve) => {
         pendingFlyResolve = resolve;
         settleTween = gsap.to(state, {
-          z: dest.cameraZ,
+          z: targetZ,
           duration: opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S,
           ease: FLY_EASE,
           onComplete: () => {
@@ -93,7 +90,7 @@ export function initCameraDirector(
             settleTween = null;
             const r = pendingFlyResolve;
             pendingFlyResolve = null;
-            emitArrive(dest.cameraZ);
+            emitArrive(targetZ);
             r?.();
           },
         });
@@ -107,9 +104,10 @@ export function initCameraDirector(
       for (const cb of departCbs) cb(id);
       mode = 'free';
       velocity = 0;
-      state.z = dest.cameraZ;
+      const targetZ = nearestWrapped(dest.cameraZ, state.z);
+      state.z = targetZ;
       camera.position.z = state.z;
-      emitArrive(dest.cameraZ);
+      emitArrive(targetZ);
     },
 
     feedScroll(pixels: number): void {
@@ -126,10 +124,10 @@ export function initCameraDirector(
     update(dt: number): void {
       const before = state.z;
       if (mode === 'free') {
-        state.z = Math.min(zMax, Math.max(zMin, state.z + velocity * dt));
+        state.z = state.z + velocity * dt;
         velocity *= Math.exp(-DAMPING_RATE * dt);
         if (Math.abs(velocity) < SNAP_BELOW && velocity !== 0) {
-          const target = resolveSnapTarget(state.z, velocity, rests);
+          const target = resolveSnapTargetLooped(state.z, velocity, rests);
           if (Math.abs(target - state.z) < 0.01) {
             velocity = 0;
           } else {

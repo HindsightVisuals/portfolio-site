@@ -13,6 +13,7 @@ import { runHomeSequence } from './home/sequence';
 import { initScrollNav } from './home/scroll-nav';
 import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
+import { wrapDelta } from './three/loop';
 import { DEST_ORDER, destForPath, type DestId } from './routes';
 
 // Lab mode check at the top
@@ -29,7 +30,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const debug = new URLSearchParams(location.search).has('debug-rd');
     const debugWorld = new URLSearchParams(location.search).has('debug-world');
-    const HOME_LEAVE_Z = HOME_REST_Z - 10; // leaving-home threshold for intro interrupt + treatment B
+    const HOME_LEAVE_DIST = 10; // leaving-home threshold for intro interrupt + treatment B
 
     const stage = initStage(canvas, { reducedMotion });
     stage.addLayer(
@@ -40,6 +41,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const world = initWorld({ reducedMotion });
     if (debugWorld) world.camera.position.z = -26;
     stage.addLayer(world);
+    const distFromHome = (): number => Math.abs(wrapDelta(HOME_REST_Z, world.camera.position.z));
 
     const director = initCameraDirector(world.camera, DESTINATIONS);
     world.setVelocitySource(() => director.getVelocity());
@@ -63,10 +65,13 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const current = DESTINATIONS.reduce((best, d) =>
-        Math.abs(d.cameraZ - world.camera.position.z) < Math.abs(best.cameraZ - world.camera.position.z) ? d : best,
+        Math.abs(wrapDelta(d.cameraZ, world.camera.position.z)) <
+        Math.abs(wrapDelta(best.cameraZ, world.camera.position.z))
+          ? d
+          : best,
       );
       const idx = DEST_ORDER.indexOf(current.id) + (e.key === 'ArrowDown' ? 1 : -1);
-      const next = DEST_ORDER[Math.min(Math.max(idx, 0), DEST_ORDER.length - 1)];
+      const next = DEST_ORDER[(idx + DEST_ORDER.length) % DEST_ORDER.length];
       if (next !== current.id) router.navigate(next);
     });
 
@@ -104,7 +109,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
 
     stage.onFrame(() => {
       if (introInterrupted) return;
-      if (world.camera.position.z < HOME_LEAVE_Z) { // >10 units from home rest — user is leaving
+      if (distFromHome() > HOME_LEAVE_DIST) { // >10 units from home rest — user is leaving
         introInterrupted = true;
         tagline.hideInstant(); // kills tagline tweens — single writer (home-visibility) remains
         reticles.showInstant(); // reticles present when the user scrolls back home
@@ -119,7 +124,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     if (!reducedMotion) {
       const chromeEl = document.querySelector<HTMLElement>('.chrome');
       director.onDepart(() => {
-        if (world.camera.position.z > HOME_LEAVE_Z) { // launching from the home zone
+        if (distFromHome() < HOME_LEAVE_DIST) { // launching from the home zone
           introInterrupted = true; // stop any in-flight intro for good
           tagline.hideInstant();
           homeVisibility.setSuppressed(true);

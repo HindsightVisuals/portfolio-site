@@ -1,3 +1,4 @@
+import { wrapDelta } from '../three/loop';
 import { HOME_REST_Z } from '../three/world';
 
 /** Distance (world units) over which the home DOM fades as the camera leaves. */
@@ -36,7 +37,7 @@ export function bindHomeVisibility(
         }
         return;
       }
-      const away = Math.min(Math.max((HOME_REST_Z - getCameraZ()) / FADE_DIST, 0), 1);
+      const away = Math.min(Math.abs(wrapDelta(HOME_REST_Z, getCameraZ())) / FADE_DIST, 1);
       const opacity = 1 - away;
       if (Math.abs(opacity - lastOpacity) < 0.001) return;
       lastOpacity = opacity;

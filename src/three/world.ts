@@ -3,6 +3,7 @@ import type { DestId } from '../routes';
 import type { StageLayer } from './stage';
 import { initAtmosphere, type Atmosphere } from './atmosphere';
 import { makeHomeMock } from './home-mock';
+import { nearestWrapped } from './loop';
 
 export const CAMERA_OFFSET = 34;
 const SPACING = 60;
@@ -91,6 +92,7 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
   scene.add(atmosphere.object);
 
   const disposables: Array<{ dispose(): void }> = [];
+  const anchored: Array<{ mesh: THREE.Object3D; anchorZ: number }> = [];
   for (const dest of DESTINATIONS) {
     if (dest.id === 'home') continue; // the DOM homepage IS home — no plane
     const tex = makeLabelTexture(dest.id);
@@ -100,6 +102,7 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
     mesh.position.set(0, 0, dest.anchorZ);
     scene.add(mesh);
     disposables.push(tex, mat, geo);
+    anchored.push({ mesh, anchorZ: dest.anchorZ });
   }
 
   // treatment-B home mock: hidden 3D stand-in for the DOM homepage, shown
@@ -109,6 +112,7 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
   homeMock.position.z = homeAnchorZ;
   homeMock.visible = false;
   scene.add(homeMock);
+  anchored.push({ mesh: homeMock, anchorZ: homeAnchorZ });
 
   let velocitySource: () => number = () => 0;
 
@@ -121,6 +125,9 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
       homeMock.visible = v;
     },
     update(dt: number): void {
+      for (const s of anchored) {
+        s.mesh.position.z = nearestWrapped(s.anchorZ, camera.position.z);
+      }
       atmosphere.update(dt, velocitySource());
     },
     render(renderer: THREE.WebGLRenderer): void {
