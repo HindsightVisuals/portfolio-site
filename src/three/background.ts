@@ -82,8 +82,10 @@ uniform float uDebug;
 void main() {
   // grey -> white -> grey across x
   float grad = mix(uEdge, uCenter, sin(vUv.x * 3.14159265));
+  // Tight threshold band on the upscaled field = crisp organic edges
+  // (wide band reads soft/blurry; keep ~0.04 width for antialiasing).
   float B = texture2D(uState, vUv).g;
-  float mask = smoothstep(0.12, 0.32, B);
+  float mask = smoothstep(0.18, 0.22, B);
   float lum = mix(grad, uShade, mask * uOpacity);
   if (uDebug > 0.5) lum = 1.0 - B * 3.0; // amplified view for verification
   gl_FragColor = vec4(vec3(lum), 1.0);
