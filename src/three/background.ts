@@ -104,12 +104,12 @@ void main() {
   float grad = mix(uEdge, uCenter, sin(vUv.x * 3.14159265));
   // Tight threshold band on the upscaled field = crisp organic edges
   // (wide band reads soft/blurry; keep ~0.04 width for antialiasing).
-  // Pattern sample zooms; gradient keeps raw vUv.x; debug keeps raw vUv.
+  // Pattern sample zooms; gradient keeps raw vUv.x; debug keeps raw vUv (unaffected by zoom).
   vec2 uvZ = (vUv - 0.5) / uZoom + 0.5;
   float B = texture2D(uState, uvZ).g;
   float mask = smoothstep(0.18, 0.22, B);
   float lum = mix(grad, uShade, mask * uOpacity);
-  if (uDebug > 0.5) lum = 1.0 - B * 3.0; // amplified view for verification
+  if (uDebug > 0.5) lum = 1.0 - texture2D(uState, vUv).g * 3.0; // raw sim, no zoom
   gl_FragColor = vec4(vec3(lum), 1.0);
 }
 `;
