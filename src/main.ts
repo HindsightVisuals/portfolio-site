@@ -12,7 +12,7 @@ import { runHomeSequence } from './home/sequence';
 import { initScrollNav } from './home/scroll-nav';
 import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
-import { DEST_ORDER, type DestId } from './routes';
+import { DEST_ORDER, destForPath, type DestId } from './routes';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#bg-canvas');
 const taglineEl = document.querySelector<HTMLElement>('.tagline');
@@ -78,4 +78,23 @@ stage.start();
 const tagline = initTagline(taglineEl);
 const reticles = initReticles(fieldEl, { reducedMotion });
 
-void runHomeSequence({ tagline, reticles, reducedMotion });
+const bootDest = destForPath(location.pathname) ?? 'home';
+if (bootDest === 'home') {
+  void runHomeSequence({ tagline, reticles, reducedMotion });
+} else {
+  // arriving elsewhere: home content goes straight to its end-state, faded by home-visibility
+  tagline.hideInstant();
+  reticles.showInstant();
+}
+
+// intro is a single-shot writer racing bindHomeVisibility; kill it the moment
+// the camera leaves home so only one writer touches tagline/reticle opacity
+let introInterrupted = false;
+stage.onFrame(() => {
+  if (introInterrupted) return;
+  if (world.camera.position.z < 24) { // >10 units from home rest (34) — user is leaving
+    introInterrupted = true;
+    tagline.hideInstant(); // kills tagline tweens — single writer (home-visibility) remains
+    reticles.showInstant(); // reticles present when the user scrolls back home
+  }
+});
