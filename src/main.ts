@@ -4,6 +4,7 @@ import './styles/base.css';
 
 import { initStage } from './three/stage';
 import { initBackgroundLayer } from './three/background';
+import { initWorld } from './three/world';
 import { initTagline } from './home/tagline';
 import { initReticles } from './home/reticles';
 import { runHomeSequence } from './home/sequence';
@@ -15,6 +16,7 @@ if (!canvas || !taglineEl || !fieldEl) throw new Error('homepage DOM incomplete'
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const debug = new URLSearchParams(location.search).has('debug-rd');
+const debugWorld = new URLSearchParams(location.search).has('debug-world');
 
 const stage = initStage(canvas, { reducedMotion });
 stage.addLayer(
@@ -22,6 +24,9 @@ stage.addLayer(
     if (reducedMotion) stage.requestFrame();
   }),
 );
+const world = initWorld({ reducedMotion });
+if (debugWorld) world.camera.position.z = -26;
+stage.addLayer(world);
 stage.start();
 const tagline = initTagline(taglineEl);
 const reticles = initReticles(fieldEl, { reducedMotion });
