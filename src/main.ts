@@ -4,7 +4,8 @@ import './styles/base.css';
 
 import { initStage } from './three/stage';
 import { initBackgroundLayer } from './three/background';
-import { initWorld } from './three/world';
+import { initWorld, DESTINATIONS } from './three/world';
+import { initCameraDirector } from './three/camera-director';
 import { initTagline } from './home/tagline';
 import { initReticles } from './home/reticles';
 import { runHomeSequence } from './home/sequence';
@@ -27,6 +28,14 @@ stage.addLayer(
 const world = initWorld({ reducedMotion });
 if (debugWorld) world.camera.position.z = -26;
 stage.addLayer(world);
+
+const director = initCameraDirector(world.camera, DESTINATIONS);
+world.setVelocitySource(() => director.getVelocity());
+stage.onFrame((dt) => director.update(dt));
+
+// TEMP scroll hookup for verification (Task 5 replaces with scroll-nav):
+window.addEventListener('wheel', (e) => director.feedScroll(e.deltaY));
+
 stage.start();
 const tagline = initTagline(taglineEl);
 const reticles = initReticles(fieldEl, { reducedMotion });
