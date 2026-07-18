@@ -120,6 +120,7 @@ export function initCameraDirector(
       }
       // scroll down (positive deltaY) travels deeper (negative z)
       velocity -= pixels * SCROLL_GAIN;
+      if (velocity === 0) velocity = -1e-6; // exact cancellation must not disable settling
     },
 
     update(dt: number): void {
@@ -127,7 +128,7 @@ export function initCameraDirector(
       if (mode === 'free') {
         state.z = Math.min(zMax, Math.max(zMin, state.z + velocity * dt));
         velocity *= Math.exp(-DAMPING_RATE * dt);
-        if (Math.abs(velocity) < SNAP_BELOW) {
+        if (Math.abs(velocity) < SNAP_BELOW && velocity !== 0) {
           const target = resolveSnapTarget(state.z, velocity, rests);
           if (Math.abs(target - state.z) < 0.01) {
             velocity = 0;

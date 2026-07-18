@@ -1,6 +1,7 @@
+import { HOME_REST_Z } from '../three/world';
+
 /** Distance (world units) over which the home DOM fades as the camera leaves. */
 const FADE_DIST = 30;
-const HOME_REST_Z = 34;
 
 export interface HomeVisibility {
   update(dt: number): void;

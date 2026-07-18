@@ -5,7 +5,7 @@ import './styles/base.css';
 import gsap from 'gsap';
 import { initStage } from './three/stage';
 import { initBackgroundLayer } from './three/background';
-import { initWorld, DESTINATIONS } from './three/world';
+import { initWorld, DESTINATIONS, HOME_REST_Z } from './three/world';
 import { initCameraDirector } from './three/camera-director';
 import { initTagline } from './home/tagline';
 import { initReticles } from './home/reticles';
@@ -29,6 +29,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const debug = new URLSearchParams(location.search).has('debug-rd');
     const debugWorld = new URLSearchParams(location.search).has('debug-world');
+    const HOME_LEAVE_Z = HOME_REST_Z - 10; // leaving-home threshold for intro interrupt + treatment B
 
     const stage = initStage(canvas, { reducedMotion });
     stage.addLayer(
@@ -44,6 +45,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));
 
+    // TODO(phase3): retain handle — setMode('takeover') needed for 2D case-study mode
     if (!reducedMotion) initScrollNav((px) => director.feedScroll(px));
     const router = initRouter(director, { reducedMotion });
 
@@ -71,6 +73,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // home DOM fades as the camera leaves (reticles; chrome stays). Tagline
     // opacity is owned solely by tagline.ts (via the intro sequence or the
     // scroll-away interrupt below) — it must not also be written here.
+    // TODO(phase3): toggle aria-hidden/inert alongside the fade for screen-reader correctness
     const homeEls: HTMLElement[] = [fieldEl];
     const homeVisibility = bindHomeVisibility(homeEls, () => world.camera.position.z);
     stage.onFrame((dt) => homeVisibility.update(dt));
@@ -101,7 +104,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
 
     stage.onFrame(() => {
       if (introInterrupted) return;
-      if (world.camera.position.z < 24) { // >10 units from home rest (34) — user is leaving
+      if (world.camera.position.z < HOME_LEAVE_Z) { // >10 units from home rest — user is leaving
         introInterrupted = true;
         tagline.hideInstant(); // kills tagline tweens — single writer (home-visibility) remains
         reticles.showInstant(); // reticles present when the user scrolls back home
@@ -116,7 +119,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     if (!reducedMotion) {
       const chromeEl = document.querySelector<HTMLElement>('.chrome');
       director.onDepart(() => {
-        if (world.camera.position.z > 24) { // launching from the home zone
+        if (world.camera.position.z > HOME_LEAVE_Z) { // launching from the home zone
           introInterrupted = true; // stop any in-flight intro for good
           tagline.hideInstant();
           homeVisibility.setSuppressed(true);

@@ -21,6 +21,8 @@ export const DESTINATIONS: Destination[] = (['home', 'work', 'about', 'contact']
   (id, i) => ({ id, anchorZ: -SPACING * i, cameraZ: -SPACING * i + CAMERA_OFFSET }),
 );
 
+export const HOME_REST_Z = DESTINATIONS[0].cameraZ; // home camera rest — single source of truth
+
 export interface WorldLayer extends StageLayer {
   camera: THREE.PerspectiveCamera;
   setVelocitySource(fn: () => number): void;
@@ -134,7 +136,8 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
       homeMock.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) m.dispose();
         }
       });
     },
