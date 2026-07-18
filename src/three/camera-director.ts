@@ -41,6 +41,7 @@ export function initCameraDirector(
   let measuredVelocity = 0;
   let mode: Mode = 'free';
   let settleTween: gsap.core.Tween | null = null;
+  let pendingFlyResolve: (() => void) | null = null;
   const arriveCbs = new Set<(id: DestId) => void>();
 
   const emitArrive = (z: number): void => {
@@ -51,6 +52,9 @@ export function initCameraDirector(
   const killSettle = (): void => {
     settleTween?.kill();
     settleTween = null;
+    const r = pendingFlyResolve;
+    pendingFlyResolve = null;
+    r?.();
   };
 
   const settleTo = (targetZ: number, duration: number, ease: string): void => {
@@ -76,6 +80,7 @@ export function initCameraDirector(
       mode = 'flying';
       velocity = 0;
       return new Promise((resolve) => {
+        pendingFlyResolve = resolve;
         settleTween = gsap.to(state, {
           z: dest.cameraZ,
           duration: opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S,
@@ -83,8 +88,10 @@ export function initCameraDirector(
           onComplete: () => {
             mode = 'free';
             settleTween = null;
+            const r = pendingFlyResolve;
+            pendingFlyResolve = null;
             emitArrive(dest.cameraZ);
-            resolve();
+            r?.();
           },
         });
       });
@@ -116,7 +123,7 @@ export function initCameraDirector(
       if (mode === 'free') {
         state.z = Math.min(zMax, Math.max(zMin, state.z + velocity * dt));
         velocity *= Math.exp(-DAMPING_RATE * dt);
-        if (Math.abs(velocity) < SNAP_BELOW && velocity !== 0) {
+        if (Math.abs(velocity) < SNAP_BELOW) {
           const target = resolveSnapTarget(state.z, velocity, rests);
           if (Math.abs(target - state.z) < 0.01) {
             velocity = 0;
