@@ -45,8 +45,8 @@ export function initReticles(
     btn.dataset.slot = String(i);
     btn.setAttribute('aria-label', `Navigation slot ${i + 1} (coming soon)`);
     btn.innerHTML = `
-      <span class="overlay" aria-hidden="true"></span>
       <span class="brackets" aria-hidden="true">
+        <span class="overlay"></span>
         <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       </span>
       <span class="icon">${PLACEHOLDER_ICON}</span>`;
