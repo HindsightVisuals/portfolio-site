@@ -22,6 +22,9 @@ const SETTLE_EASE = 'power3.out';
 const SCROLL_GAIN = 0.06;        // wheel px -> velocity (units/s)
 const DAMPING_RATE = 2.2;        // exponential velocity decay per second
 const SNAP_BELOW = 2.0;          // |v| threshold to begin settling
+const MAGNET_X = 1.2;            // pointer x range (normalized −1..1)
+const MAGNET_Y = 0.8;            // pointer y range (normalized −1..1)
+const MAGNET_EASE = 2.0;         // per-second approach rate
 
 type Mode = 'free' | 'settling' | 'flying';
 
@@ -29,6 +32,7 @@ export interface CameraDirector {
   flyTo(id: DestId, opts?: { abbreviated?: boolean }): Promise<void>;
   jumpTo(id: DestId): void;
   feedScroll(pixels: number): void;
+  setPointer(nx: number, ny: number): void;
   update(dt: number): void;
   onArrive(cb: (id: DestId) => void): () => void;
   onDepart(cb: (dest: DestId) => void): () => void;
@@ -48,6 +52,8 @@ export function initCameraDirector(
   let mode: Mode = 'free';
   let settleTween: gsap.core.Tween | null = null;
   let pendingFlyResolve: (() => void) | null = null;
+  let pointerX = 0;
+  let pointerY = 0;
   const arriveCbs = new Set<(id: DestId) => void>();
   const departCbs = new Set<(dest: DestId) => void>();
 
@@ -130,6 +136,11 @@ export function initCameraDirector(
       if (velocity === 0) velocity = -1e-6; // exact cancellation must not disable settling
     },
 
+    setPointer(nx: number, ny: number): void {
+      pointerX = nx;
+      pointerY = ny;
+    },
+
     update(dt: number): void {
       const before = state.z;
       if (mode === 'free') {
@@ -145,6 +156,12 @@ export function initCameraDirector(
         }
       }
       camera.position.z = state.z;
+      const targetX = pointerX * MAGNET_X;
+      const targetY = -pointerY * MAGNET_Y;
+      const suspend = mode === 'flying' ? 0 : 1;
+      const k = Math.min(dt * MAGNET_EASE, 1);
+      camera.position.x += (targetX * suspend - camera.position.x) * k;
+      camera.position.y += (targetY * suspend - camera.position.y) * k;
       if (dt > 0) measuredVelocity = (state.z - before) / dt;
     },
 

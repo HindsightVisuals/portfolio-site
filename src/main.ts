@@ -39,16 +39,21 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     stage.addLayer(bg);
     const world = initWorld({ reducedMotion });
     bg.setSpineProvider(() => world.camera.position.z);
-    if (debugWorld) world.camera.position.z = -26;
     stage.addLayer(world);
     const distFromHome = (): number => Math.abs(wrapDelta(HOME_REST_Z, world.camera.position.z));
 
     const director = initCameraDirector(world.camera, DESTINATIONS);
+    if (debugWorld) director.jumpTo('work');
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));
 
     // TODO(phase3): retain handle — setMode('takeover') needed for 2D case-study mode
-    if (!reducedMotion) initScrollNav((px) => director.feedScroll(px));
+    if (!reducedMotion) {
+      initScrollNav((px) => director.feedScroll(px));
+      window.addEventListener('mousemove', (e) => {
+        director.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
+      });
+    }
     const router = initRouter(director, { reducedMotion });
 
     // nav links fly (full-length flythrough)
