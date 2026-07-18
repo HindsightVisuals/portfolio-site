@@ -5,8 +5,8 @@ const RETICLE_COUNT = 8;
 const PER_ROW = 4;
 const STAGGER_S = 0.12;
 const MAGNET_RADIUS = 120;
-const BRACKET_MAX = 6;
-const ICON_MAX = 3;
+const BRACKET_MAX = 12;
+const ICON_MAX = 6;
 
 /* Placeholder ⊕ — archival/sci-fi circled plus. Final icons supplied by Adam. */
 const PLACEHOLDER_ICON = `

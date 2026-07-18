@@ -48,6 +48,43 @@ body {
   z-index: 10;
 }
 
+/* Viewport corner registration marks — 16px plus signs, 3px stroke, 48px inset */
+.corner-mark {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+}
+
+.corner-mark::before,
+.corner-mark::after {
+  content: '';
+  position: absolute;
+  background: var(--ink);
+}
+
+.corner-mark::before {
+  /* horizontal bar */
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  margin-top: -1.5px;
+}
+
+.corner-mark::after {
+  /* vertical bar */
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 3px;
+  margin-left: -1.5px;
+}
+
+.corner-mark.tl { top: 48px; left: 48px; }
+.corner-mark.tr { top: 48px; right: 48px; }
+.corner-mark.bl { bottom: 48px; left: 48px; }
+.corner-mark.br { bottom: 48px; right: 48px; }
+
 .wordmark {
   position: absolute;
   left: 48px;
