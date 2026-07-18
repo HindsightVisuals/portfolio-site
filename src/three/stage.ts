@@ -41,6 +41,10 @@ export function initStage(canvas: HTMLCanvasElement, opts: StageOpts): StageHand
     }
   };
 
+  const requestFrame = (): void => {
+    renderFrame(0);
+  };
+
   let raf = 0;
   const loop = (): void => {
     renderFrame(Math.min(clock.getDelta(), MAX_DT));
@@ -51,7 +55,7 @@ export function initStage(canvas: HTMLCanvasElement, opts: StageOpts): StageHand
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     for (const layer of layers) layer.resize?.(window.innerWidth, window.innerHeight);
-    if (opts.reducedMotion) renderFrame(0);
+    if (opts.reducedMotion) requestFrame();
   };
   window.addEventListener('resize', onResize);
 
@@ -63,9 +67,7 @@ export function initStage(canvas: HTMLCanvasElement, opts: StageOpts): StageHand
     onFrame(cb: (dt: number) => void): void {
       frameCbs.push(cb);
     },
-    requestFrame(): void {
-      renderFrame(0);
-    },
+    requestFrame,
     start(): void {
       if (opts.reducedMotion) renderFrame(0);
       else loop();

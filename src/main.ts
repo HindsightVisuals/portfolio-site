@@ -17,7 +17,11 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 const debug = new URLSearchParams(location.search).has('debug-rd');
 
 const stage = initStage(canvas, { reducedMotion });
-stage.addLayer(initBackgroundLayer(stage.renderer, { reducedMotion, debug }));
+stage.addLayer(
+  initBackgroundLayer(stage.renderer, { reducedMotion, debug }, () => {
+    if (reducedMotion) stage.requestFrame();
+  }),
+);
 stage.start();
 const tagline = initTagline(taglineEl);
 const reticles = initReticles(fieldEl, { reducedMotion });

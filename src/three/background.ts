@@ -136,6 +136,7 @@ function computeSimDims(width: number, height: number): { w: number; h: number }
 export function initBackgroundLayer(
   renderer: THREE.WebGLRenderer,
   opts: BackgroundOpts,
+  onNeedsFrame?: () => void,
 ): BackgroundLayer {
   const targetOpts: THREE.RenderTargetOptions = {
     type: THREE.HalfFloatType,
@@ -223,6 +224,7 @@ export function initBackgroundLayer(
 
       for (let i = 0; i < BURN_IN_STEPS; i++) step();
     }
+    onNeedsFrame?.();
   };
 
   let resizeTimeout: number | undefined;
