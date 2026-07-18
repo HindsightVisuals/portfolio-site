@@ -30,4 +30,13 @@ describe('runHomeSequence', () => {
     await runHomeSequence({ tagline, reticles, reducedMotion: true });
     expect(calls).toEqual(['hideInstant', 'showInstant']);
   });
+
+  it('aborts the chain when shouldAbort flips true mid-sequence', async () => {
+    const { calls, tagline, reticles } = fakes();
+    let abort = false;
+    const p = runHomeSequence({ tagline, reticles, reducedMotion: false, holdSeconds: 0.01, shouldAbort: () => abort });
+    abort = true; // flips before the first post-await checkpoint
+    await p;
+    expect(calls).toEqual(['dissolveIn']); // aborted right after the first step
+  });
 });

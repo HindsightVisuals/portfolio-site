@@ -61,8 +61,10 @@ window.addEventListener('keydown', (e) => {
   if (next !== current.id) router.navigate(next);
 });
 
-// home DOM fades as the camera leaves (tagline/reticles; chrome stays)
-const homeEls: HTMLElement[] = [taglineEl, fieldEl];
+// home DOM fades as the camera leaves (reticles; chrome stays). Tagline
+// opacity is owned solely by tagline.ts (via the intro sequence or the
+// scroll-away interrupt below) — it must not also be written here.
+const homeEls: HTMLElement[] = [fieldEl];
 const updateHomeVisibility = bindHomeVisibility(homeEls, () => world.camera.position.z);
 stage.onFrame(updateHomeVisibility);
 
@@ -80,7 +82,7 @@ const reticles = initReticles(fieldEl, { reducedMotion });
 
 const bootDest = destForPath(location.pathname) ?? 'home';
 if (bootDest === 'home') {
-  void runHomeSequence({ tagline, reticles, reducedMotion });
+  void runHomeSequence({ tagline, reticles, reducedMotion, shouldAbort: () => introInterrupted });
 } else {
   // arriving elsewhere: home content goes straight to its end-state, faded by home-visibility
   tagline.hideInstant();

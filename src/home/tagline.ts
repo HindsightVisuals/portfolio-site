@@ -57,6 +57,8 @@ export function initTagline(el: HTMLElement): TaglineHandle {
     waveTween?.kill();
     floatTween = null;
     waveTween = null;
+    gsap.killTweensOf(el);
+    gsap.killTweensOf(state);
   };
 
   return {
@@ -71,6 +73,7 @@ export function initTagline(el: HTMLElement): TaglineHandle {
           ease: 'power2.out',
           onUpdate: apply,
           onComplete: resolve,
+          onInterrupt: resolve,
         });
       });
     },
@@ -85,6 +88,7 @@ export function initTagline(el: HTMLElement): TaglineHandle {
           ease: 'power2.in',
           onUpdate: apply,
           onComplete: resolve,
+          onInterrupt: resolve,
         });
       });
     },
@@ -105,6 +109,9 @@ export function initTagline(el: HTMLElement): TaglineHandle {
     hideInstant(): void {
       stopTweens();
       gsap.set(el, { opacity: 0 });
+      state.scale = SCALE_DISSOLVED;
+      state.blur = BLUR_DISSOLVED;
+      apply();
     },
   };
 }
