@@ -4,6 +4,7 @@ import { initStage } from '../three/stage';
 import { initBackgroundLayer } from '../three/background';
 import { initWorld, DESTINATIONS } from '../three/world';
 import { initCameraDirector } from '../three/camera-director';
+import { initReticles } from '../home/reticles';
 
 type Treatment = 'A' | 'B';
 
@@ -33,6 +34,10 @@ export function initFlyLab(): void {
 
   // hide the normal homepage DOM except chrome; lab drives everything
   document.querySelector<HTMLElement>('.tagline')?.style.setProperty('display', 'none');
+
+  // Populate the reticle field so treatment A has real reticles to animate
+  const fieldEl = document.querySelector<HTMLElement>('.reticle-field');
+  if (fieldEl) initReticles(fieldEl, { reducedMotion: false }).showInstant();
 
   const stage = initStage(canvas, { reducedMotion: false });
   stage.addLayer(initBackgroundLayer(stage.renderer, { reducedMotion: false, debug: false }));
