@@ -126,6 +126,12 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
     },
     update(dt: number): void {
       for (const s of anchored) {
+        // The home mock's position is only correct at the moment it's shown;
+        // re-anchoring it mid-flight while it's on screen pops it visibly
+        // across the wrap (see antipodal Home<->About flight). Freeze it
+        // while visible — it re-anchors only once hidden again. Screens
+        // (never toggled invisible) always re-anchor as before.
+        if (s.mesh === homeMock && s.mesh.visible) continue;
         s.mesh.position.z = nearestWrapped(s.anchorZ, camera.position.z);
       }
       atmosphere.update(dt, velocitySource());

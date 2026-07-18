@@ -2,7 +2,16 @@ import gsap from 'gsap';
 import type * as THREE from 'three';
 import type { DestId } from '../routes';
 import type { Destination } from './world';
-import { nearestWrapped, resolveSnapTargetLooped, sameSpot } from './loop';
+import { nearestWrapped, resolveSnapTargetLooped, sameSpot, SPINE_PERIOD } from './loop';
+
+/** Nearest wrapped instance; exact half-period ties resolve FORWARD (deeper, -z) —
+ * the loop's canonical travel direction (Home -> Work -> About -> Contact -> ...). */
+const wrappedTarget = (anchorZ: number, fromZ: number): number => {
+  const n = nearestWrapped(anchorZ, fromZ);
+  const d = n - fromZ;
+  if (Math.abs(Math.abs(d) - SPINE_PERIOD / 2) < 1e-6 && d > 0) return n - SPINE_PERIOD;
+  return n;
+};
 
 /* Motion constants — lab-tuned values land in Task 7. */
 const FLY_S = 2.0;
@@ -78,7 +87,7 @@ export function initCameraDirector(
       for (const cb of departCbs) cb(id);
       mode = 'flying';
       velocity = 0;
-      const targetZ = nearestWrapped(dest.cameraZ, state.z);
+      const targetZ = wrappedTarget(dest.cameraZ, state.z);
       return new Promise((resolve) => {
         pendingFlyResolve = resolve;
         settleTween = gsap.to(state, {
@@ -104,7 +113,7 @@ export function initCameraDirector(
       for (const cb of departCbs) cb(id);
       mode = 'free';
       velocity = 0;
-      const targetZ = nearestWrapped(dest.cameraZ, state.z);
+      const targetZ = wrappedTarget(dest.cameraZ, state.z);
       state.z = targetZ;
       camera.position.z = state.z;
       emitArrive(targetZ);
