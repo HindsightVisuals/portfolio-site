@@ -23,6 +23,7 @@ export interface CameraDirector {
   feedScroll(pixels: number): void;
   update(dt: number): void;
   onArrive(cb: (id: DestId) => void): () => void;
+  onDepart(cb: (dest: DestId) => void): () => void;
   getVelocity(): number;
   destroy(): void;
 }
@@ -43,6 +44,7 @@ export function initCameraDirector(
   let settleTween: gsap.core.Tween | null = null;
   let pendingFlyResolve: (() => void) | null = null;
   const arriveCbs = new Set<(id: DestId) => void>();
+  const departCbs = new Set<(dest: DestId) => void>();
 
   const emitArrive = (z: number): void => {
     const id = byRest.get(z);
@@ -77,6 +79,7 @@ export function initCameraDirector(
       const dest = destinations.find((d) => d.id === id);
       if (!dest) return Promise.reject(new Error(`unknown destination ${id}`));
       killSettle();
+      for (const cb of departCbs) cb(id);
       mode = 'flying';
       velocity = 0;
       return new Promise((resolve) => {
@@ -101,6 +104,7 @@ export function initCameraDirector(
       const dest = destinations.find((d) => d.id === id);
       if (!dest) return;
       killSettle();
+      for (const cb of departCbs) cb(id);
       mode = 'free';
       velocity = 0;
       state.z = dest.cameraZ;
@@ -141,6 +145,11 @@ export function initCameraDirector(
       return () => arriveCbs.delete(cb);
     },
 
+    onDepart(cb: (dest: DestId) => void): () => void {
+      departCbs.add(cb);
+      return () => departCbs.delete(cb);
+    },
+
     getVelocity(): number {
       return measuredVelocity;
     },
@@ -148,6 +157,7 @@ export function initCameraDirector(
     destroy(): void {
       killSettle();
       arriveCbs.clear();
+      departCbs.clear();
     },
   };
 }

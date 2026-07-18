@@ -1,32 +1,9 @@
 import gsap from 'gsap';
-import * as THREE from 'three';
 import { initStage } from '../three/stage';
 import { initBackgroundLayer } from '../three/background';
 import { initWorld, DESTINATIONS } from '../three/world';
 import { initCameraDirector } from '../three/camera-director';
 import { initReticles } from '../home/reticles';
-
-type Treatment = 'A' | 'B';
-
-/** Rough 3D stand-ins for the home DOM used by treatment B. */
-function makeHomeMock(): THREE.Group {
-  const group = new THREE.Group();
-  const ink = new THREE.MeshBasicMaterial({ color: 0x141414 });
-  // 8 reticle stand-ins, two rows of four, roughly matching home layout scale
-  const tile = new THREE.PlaneGeometry(1.6, 1.6);
-  for (let i = 0; i < 8; i++) {
-    const m = new THREE.Mesh(tile, ink);
-    const row = Math.floor(i / 4);
-    m.position.set((i % 4) * 2.6 - 3.9, row === 0 ? 3.4 : -3.4, 0);
-    group.add(m);
-  }
-  // wordmark bar stand-in
-  const bar = new THREE.Mesh(new THREE.PlaneGeometry(6, 0.9), ink);
-  bar.position.set(-12, 0, 0);
-  group.add(bar);
-  group.position.set(0, 0, 0); // home anchor
-  return group;
-}
 
 export function initFlyLab(): void {
   const canvas = document.querySelector<HTMLCanvasElement>('#bg-canvas');
@@ -35,7 +12,7 @@ export function initFlyLab(): void {
   // hide the normal homepage DOM except chrome; lab drives everything
   document.querySelector<HTMLElement>('.tagline')?.style.setProperty('display', 'none');
 
-  // Populate the reticle field so treatment A has real reticles to animate
+  // Populate the reticle field so the home DOM has real content to hide/restore
   const fieldEl = document.querySelector<HTMLElement>('.reticle-field');
   if (fieldEl) initReticles(fieldEl, { reducedMotion: false }).showInstant();
 
@@ -47,46 +24,44 @@ export function initFlyLab(): void {
   world.setVelocitySource(() => director.getVelocity());
   stage.onFrame((dt) => director.update(dt));
 
-  const homeMock = makeHomeMock();
-  homeMock.visible = false;
-  // world's scene is private — mount the mock via a tiny extra layer instead
-  const mockScene = new THREE.Scene();
-  mockScene.add(homeMock);
-  stage.addLayer({
-    render: (r) => r.render(mockScene, world.camera),
-  });
+  const chromeEl = document.querySelector<HTMLElement>('.chrome');
 
-  let treatment: Treatment = 'A';
-  const domHome = [
-    document.querySelector<HTMLElement>('.reticle-field'),
-    document.querySelector<HTMLElement>('.chrome'),
-  ].filter((x): x is HTMLElement => x !== null);
+  const hideHomeDom = (): void => {
+    if (chromeEl) gsap.set(chromeEl, { autoAlpha: 0 });
+    if (fieldEl) {
+      fieldEl.style.opacity = '0';
+      fieldEl.style.pointerEvents = 'none';
+    }
+  };
 
-  const setTreatment = (t: Treatment): void => {
-    treatment = t;
-    homeMock.visible = t === 'B';
-    for (const el of domHome) el.style.opacity = t === 'B' ? '0' : '1';
-    help.textContent = helpText();
+  const showHomeDom = (): void => {
+    if (chromeEl) gsap.set(chromeEl, { autoAlpha: 1 });
+    if (fieldEl) {
+      fieldEl.style.opacity = '1';
+      fieldEl.style.pointerEvents = '';
+    }
   };
 
   const reset = (): void => {
     director.jumpTo('home');
-    gsap.set(domHome, { opacity: treatment === 'B' ? 0 : 1, scale: 1 });
-    homeMock.visible = treatment === 'B';
+    world.setHomeMockVisible(false);
+    showHomeDom();
+    help.textContent = helpText();
   };
 
   const fly = (): void => {
-    if (treatment === 'A') {
-      // DOM scales past the viewport edges + fades as the camera launches
-      gsap.to(domHome, { scale: 1.6, opacity: 0, duration: 0.3, ease: 'power2.in' });
-    }
+    // real treatment-B path: hide chrome/reticle field instantly, show the
+    // 3D mock, then restore + hide the mock on arrival.
+    hideHomeDom();
+    world.setHomeMockVisible(true);
     void director.flyTo('work').then(() => {
+      world.setHomeMockVisible(false);
+      showHomeDom();
       help.textContent = `${helpText()} — landed. R to reset.`;
     });
   };
 
-  const helpText = (): string =>
-    `FLY LAB · treatment ${treatment} (1=DOM scale+fade, 2=3D mock) · SPACE=fly · R=reset`;
+  const helpText = (): string => 'FLY LAB · SPACE=fly · R=reset';
 
   const help = document.createElement('div');
   help.style.cssText =
@@ -95,12 +70,9 @@ export function initFlyLab(): void {
   document.body.appendChild(help);
 
   window.addEventListener('keydown', (e) => {
-    if (e.key === '1') setTreatment('A');
-    if (e.key === '2') setTreatment('B');
     if (e.key === ' ') fly();
     if (e.key === 'r' || e.key === 'R') reset();
   });
 
-  setTreatment('A');
   stage.start();
 }

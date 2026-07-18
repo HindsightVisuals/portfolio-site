@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { DestId } from '../routes';
 import type { StageLayer } from './stage';
 import { initAtmosphere, type Atmosphere } from './atmosphere';
+import { makeHomeMock } from './home-mock';
 
 export const CAMERA_OFFSET = 34;
 const SPACING = 60;
@@ -23,6 +24,7 @@ export const DESTINATIONS: Destination[] = (['home', 'work', 'about', 'contact']
 export interface WorldLayer extends StageLayer {
   camera: THREE.PerspectiveCamera;
   setVelocitySource(fn: () => number): void;
+  setHomeMockVisible(v: boolean): void;
   destroy(): void;
 }
 
@@ -98,12 +100,23 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
     disposables.push(tex, mat, geo);
   }
 
+  // treatment-B home mock: hidden 3D stand-in for the DOM homepage, shown
+  // only while a flythrough is launching away from the home anchor.
+  const homeAnchorZ = DESTINATIONS.find((d) => d.id === 'home')?.anchorZ ?? 0;
+  const homeMock = makeHomeMock();
+  homeMock.position.z = homeAnchorZ;
+  homeMock.visible = false;
+  scene.add(homeMock);
+
   let velocitySource: () => number = () => 0;
 
   return {
     camera,
     setVelocitySource(fn: () => number): void {
       velocitySource = fn;
+    },
+    setHomeMockVisible(v: boolean): void {
+      homeMock.visible = v;
     },
     update(dt: number): void {
       atmosphere.update(dt, velocitySource());
@@ -118,6 +131,12 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
     destroy(): void {
       atmosphere.destroy();
       for (const d of disposables) d.dispose();
+      homeMock.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          (o.material as THREE.Material).dispose();
+        }
+      });
     },
   };
 }

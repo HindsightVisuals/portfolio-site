@@ -2,6 +2,7 @@ import '@fontsource/space-grotesk/700.css';
 import '@fontsource/space-mono/400.css';
 import './styles/base.css';
 
+import gsap from 'gsap';
 import { initStage } from './three/stage';
 import { initBackgroundLayer } from './three/background';
 import { initWorld, DESTINATIONS } from './three/world';
@@ -71,13 +72,13 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // opacity is owned solely by tagline.ts (via the intro sequence or the
     // scroll-away interrupt below) — it must not also be written here.
     const homeEls: HTMLElement[] = [fieldEl];
-    const updateHomeVisibility = bindHomeVisibility(homeEls, () => world.camera.position.z);
-    stage.onFrame(updateHomeVisibility);
+    const homeVisibility = bindHomeVisibility(homeEls, () => world.camera.position.z);
+    stage.onFrame((dt) => homeVisibility.update(dt));
 
     // reduced motion has no frame loop: force a repaint after every cut
     director.onArrive(() => {
       if (reducedMotion) {
-        updateHomeVisibility(0);
+        homeVisibility.update(0);
         stage.requestFrame();
       }
     });
@@ -87,6 +88,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const reticles = initReticles(fieldEl, { reducedMotion });
 
     const bootDest = destForPath(location.pathname) ?? 'home';
+    // intro is a single-shot writer racing bindHomeVisibility; kill it the moment
+    // the camera leaves home so only one writer touches tagline/reticle opacity
+    let introInterrupted = false;
     if (bootDest === 'home') {
       void runHomeSequence({ tagline, reticles, reducedMotion, shouldAbort: () => introInterrupted });
     } else {
@@ -95,9 +99,6 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       reticles.showInstant();
     }
 
-    // intro is a single-shot writer racing bindHomeVisibility; kill it the moment
-    // the camera leaves home so only one writer touches tagline/reticle opacity
-    let introInterrupted = false;
     stage.onFrame(() => {
       if (introInterrupted) return;
       if (world.camera.position.z < 24) { // >10 units from home rest (34) — user is leaving
@@ -106,6 +107,30 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         reticles.showInstant(); // reticles present when the user scrolls back home
       }
     });
+
+    // treatment B: on a flythrough departing the home zone, hide the DOM
+    // home instantly and show the 3D mock streaking past; on any arrival,
+    // hide the mock and restore chrome (reticle field returns to
+    // home-visibility's camera-driven fade). Cuts (reduced motion) don't fly,
+    // so this is normal-motion only.
+    if (!reducedMotion) {
+      const chromeEl = document.querySelector<HTMLElement>('.chrome');
+      director.onDepart(() => {
+        if (world.camera.position.z > 24) { // launching from the home zone
+          introInterrupted = true; // stop any in-flight intro for good
+          tagline.hideInstant();
+          homeVisibility.setSuppressed(true);
+          if (chromeEl) gsap.set(chromeEl, { autoAlpha: 0 });
+          world.setHomeMockVisible(true);
+        }
+      });
+      director.onArrive((id) => {
+        world.setHomeMockVisible(false);
+        if (chromeEl) gsap.set(chromeEl, { autoAlpha: 1 });
+        homeVisibility.setSuppressed(false);
+        if (id === 'home') reticles.showInstant();
+      });
+    }
   }
 
   initSite();
