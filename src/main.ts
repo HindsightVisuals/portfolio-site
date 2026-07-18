@@ -33,12 +33,12 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const HOME_LEAVE_DIST = 10; // leaving-home threshold for intro interrupt + treatment B
 
     const stage = initStage(canvas, { reducedMotion });
-    stage.addLayer(
-      initBackgroundLayer(stage.renderer, { reducedMotion, debug }, () => {
-        if (reducedMotion) stage.requestFrame();
-      }),
-    );
+    const bg = initBackgroundLayer(stage.renderer, { reducedMotion, debug }, () => {
+      if (reducedMotion) stage.requestFrame();
+    });
+    stage.addLayer(bg);
     const world = initWorld({ reducedMotion });
+    bg.setSpineProvider(() => world.camera.position.z);
     if (debugWorld) world.camera.position.z = -26;
     stage.addLayer(world);
     const distFromHome = (): number => Math.abs(wrapDelta(HOME_REST_Z, world.camera.position.z));

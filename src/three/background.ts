@@ -24,6 +24,17 @@ const PATTERN_OPACITY = 0.5;
  * cursor and heals behind it as the sim keeps running. */
 const BRUSH_RADIUS = 16;
 
+/** Spontaneous re-seeding: average seconds between blooms. */
+const RESEED_BASE_S = 4;
+/** Jitter on reseed interval (±s). */
+const RESEED_JITTER_S = 2;
+/** Spontaneous seed radius in sim pixels. */
+const RESEED_RADIUS = 5;
+/** Zoom parallax amplitude (proportional to spine distance from HOME_SPINE_REF). */
+const ZOOM_MAX = 0.06;
+/** Home spine Z position reference for zoom parallax (mirrors HOME_REST_Z). */
+const HOME_SPINE_REF = 34;
+
 const VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
@@ -42,6 +53,8 @@ uniform float uKill;
 uniform vec2 uMouse;      // cursor in sim UV space; (-10,-10) = inactive
 uniform vec2 uSimDims;    // sim grid size in px, for circular brush distance
 uniform float uBrushR;    // erase radius in sim px
+uniform vec2 uSeedPos;    // sim UV; (-10,-10) = inactive
+uniform float uSeedR;     // radius in sim px
 
 void main() {
   vec2 c = texture2D(uState, vUv).rg;
@@ -66,6 +79,11 @@ void main() {
   float erase = 1.0 - smoothstep(uBrushR * 0.4, uBrushR, d);
   nextB = mix(nextB, 0.0, erase);
 
+  // Spontaneous seed splat: inject B in a circular region (active for one step only).
+  float ds = length((vUv - uSeedPos) * uSimDims);
+  float splat = 1.0 - smoothstep(uSeedR * 0.3, uSeedR, ds);
+  nextB = max(nextB, splat * 0.9);
+
   gl_FragColor = vec4(clamp(nextA, 0.0, 1.0), clamp(nextB, 0.0, 1.0), 0.0, 1.0);
 }
 `;
@@ -79,13 +97,16 @@ uniform float uCenter;
 uniform float uShade;
 uniform float uOpacity;
 uniform float uDebug;
+uniform float uZoom;
 
 void main() {
   // grey -> white -> grey across x
   float grad = mix(uEdge, uCenter, sin(vUv.x * 3.14159265));
   // Tight threshold band on the upscaled field = crisp organic edges
   // (wide band reads soft/blurry; keep ~0.04 width for antialiasing).
-  float B = texture2D(uState, vUv).g;
+  // Pattern sample zooms; gradient keeps raw vUv.x; debug keeps raw vUv.
+  vec2 uvZ = (vUv - 0.5) / uZoom + 0.5;
+  float B = texture2D(uState, uvZ).g;
   float mask = smoothstep(0.18, 0.22, B);
   float lum = mix(grad, uShade, mask * uOpacity);
   if (uDebug > 0.5) lum = 1.0 - B * 3.0; // amplified view for verification
@@ -100,6 +121,7 @@ export interface BackgroundOpts {
 
 export interface BackgroundLayer extends StageLayer {
   destroy(): void;
+  setSpineProvider(fn: () => number): void;
 }
 
 function makeSeedTexture(w: number, h: number): THREE.DataTexture {
@@ -175,6 +197,8 @@ export function initBackgroundLayer(
       uMouse: { value: new THREE.Vector2(-10, -10) },
       uSimDims: { value: new THREE.Vector2(simW, simH) },
       uBrushR: { value: BRUSH_RADIUS },
+      uSeedPos: { value: new THREE.Vector2(-10, -10) },
+      uSeedR: { value: RESEED_RADIUS },
     },
   });
   const simScene = new THREE.Scene();
@@ -190,6 +214,7 @@ export function initBackgroundLayer(
       uShade: { value: PATTERN_SHADE },
       uOpacity: { value: PATTERN_OPACITY },
       uDebug: { value: opts.debug ? 1 : 0 },
+      uZoom: { value: 1 },
     },
   });
   const viewScene = new THREE.Scene();
@@ -229,6 +254,13 @@ export function initBackgroundLayer(
 
   let resizeTimeout: number | undefined;
 
+  // Spontaneous re-seeding: track time and schedule the next seed event
+  let simClock = 0;
+  let nextSeedAt = RESEED_BASE_S + Math.random() * RESEED_JITTER_S;
+
+  // Spine provider for zoom parallax (set by main.ts after world creation)
+  let spineProvider: (() => number) | null = null;
+
   // Mouse → sim UV for the erase brush. Sim UV maps 1:1 to the viewport
   // (the view quad samples the full sim texture across the full canvas).
   const onMouseMove = (e: MouseEvent): void => {
@@ -247,11 +279,22 @@ export function initBackgroundLayer(
 
   return {
     update(): void {
-      if (!opts.reducedMotion) {
-        for (let i = 0; i < STEPS_PER_FRAME; i++) step();
+      if (opts.reducedMotion) return;
+      simClock += 1 / 60;
+      if (simClock >= nextSeedAt) {
+        simMaterial.uniforms.uSeedPos.value.set(Math.random(), Math.random());
+        nextSeedAt = simClock + RESEED_BASE_S + Math.random() * RESEED_JITTER_S;
+      }
+      for (let i = 0; i < STEPS_PER_FRAME; i++) {
+        step();
+        simMaterial.uniforms.uSeedPos.value.set(-10, -10); // active for one step only
       }
     },
     render(r: THREE.WebGLRenderer): void {
+      if (spineProvider) {
+        const progress = (((HOME_SPINE_REF - spineProvider()) % 240) + 240) % 240 / 240;
+        viewMaterial.uniforms.uZoom.value = 1 + (ZOOM_MAX / 2) * (1 - Math.cos(progress * Math.PI * 2));
+      }
       viewMaterial.uniforms.uState.value = read.texture;
       r.setRenderTarget(null);
       r.render(viewScene, camera);
@@ -272,6 +315,9 @@ export function initBackgroundLayer(
       quad.dispose();
       simMaterial.dispose();
       viewMaterial.dispose();
+    },
+    setSpineProvider(fn: () => number): void {
+      spineProvider = fn;
     },
   };
 }
