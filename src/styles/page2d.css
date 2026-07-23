@@ -124,3 +124,147 @@
   outline: 2px solid var(--ink);
   outline-offset: 4px;
 }
+
+/* --- case-study page template (Task 8) ---
+ * Section order is spec D9: hero · meta · brief · process · final · next.
+ * All content below lives inside `.takeover-body` (see the block above) —
+ * `.case-study` itself paints nothing, only its `section` children do. */
+
+.case-study section {
+  padding: 96px 48px;
+}
+
+.cs-hero {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  background: #141414;
+  color: #fdfdfd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+}
+
+.cs-hero-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(32px, 6vw, 72px);
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.cs-meta {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  border-top: 1px solid #eaeaea;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.cs-meta-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cs-meta-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  font-variant: small-caps;
+  color: #7a7a7a;
+}
+
+.cs-meta-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.cs-brief {
+  max-width: 64ch;
+  margin: 0 auto;
+  font-size: 20px;
+  line-height: 1.6;
+}
+
+.cs-process {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.cs-process-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 64ch;
+}
+
+.cs-process-list li {
+  position: relative;
+  padding-left: 24px;
+}
+
+.cs-process-list li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+}
+
+.cs-process-media {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.media-ph {
+  aspect-ratio: 16 / 9;
+  background: #eaeaea;
+}
+
+.cs-final-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+.cs-next {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+}
+
+.cs-next-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(24px, 4vw, 40px);
+  text-align: center;
+}
+
+.cs-next-link:hover,
+.cs-next-link:focus-visible {
+  text-decoration: underline;
+}
+
+.cs-next-link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 8px;
+}
+
+@media (max-width: 720px) {
+  .cs-meta {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cs-process-media,
+  .cs-final-grid {
+    grid-template-columns: 1fr;
+  }
+}
