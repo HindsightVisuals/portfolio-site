@@ -106,6 +106,29 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         onContact: () => void takeover.close().then(() => router.navigate('contact')),
       });
 
+    // takeover.close() unwinds its own pushed history entry via an async
+    // history.back(); that popstate lands on the current project path (matching
+    // router.currentPath, so router.onPop no-ops). A push made before it lands
+    // (navigateToProject) moves currentPath first, so the unwind then looks like
+    // a real back-navigation and router.onPop re-flies to the OLD slug. Await
+    // the unwind before pushing the next project. The listener is registered in
+    // the microtask after close() resolves — ahead of the queued popstate
+    // macrotask — so it can't be missed; the timeout is a safety net for paths
+    // that pushed no history entry.
+    const afterTakeoverHistoryUnwind = (): Promise<void> =>
+      new Promise((resolve) => {
+        let settled = false;
+        const finish = (): void => {
+          if (settled) return;
+          settled = true;
+          window.removeEventListener('popstate', finish);
+          clearTimeout(timer);
+          resolve();
+        };
+        window.addEventListener('popstate', finish);
+        const timer = setTimeout(finish, 100);
+      });
+
     // open() appends the page synchronously (before its swipe tween — verified
     // in takeover.ts runOpen), so mountReveal can bind the reveal observer to
     // the now-live `.takeover` scroll root immediately, without awaiting the
@@ -117,6 +140,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         deferReveal: true,
         onNext: async (next) => {
           await takeover.close();
+          await afterTakeoverHistoryUnwind();
           await router.navigateToProject(next, { abbreviated: true });
         },
       });
