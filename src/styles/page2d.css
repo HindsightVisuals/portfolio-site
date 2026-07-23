@@ -268,3 +268,160 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* --- about page template (Task 9) ---
+ * Section order: hero · services · stack · resume · cta. All content below
+ * lives inside `.takeover-body` (see the block above) — `.about-page` itself
+ * paints nothing, only its `section` children do. Reuses `.case-study
+ * section`'s 96px/48px padding via the shared `.about-page section` rule
+ * below rather than duplicating it per-selector. */
+
+.about-page section {
+  padding: 96px 48px;
+}
+
+.about-hero {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 48px;
+  align-items: start;
+}
+
+.about-portrait {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  background: #eaeaea;
+}
+
+.about-bio {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 64ch;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.about-services {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  border-top: 1px solid #eaeaea;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.about-service {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-service-label {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+}
+
+.about-service-blurb {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #7a7a7a;
+}
+
+.about-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.about-tools-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.about-tools-list li {
+  position: relative;
+  padding-left: 20px;
+}
+
+.about-tools-list li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+}
+
+.about-clients {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: #7a7a7a;
+}
+
+.about-resume {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.about-resume-link {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  font-variant: small-caps;
+}
+
+.about-resume-link:hover,
+.about-resume-link:focus-visible {
+  text-decoration: underline;
+}
+
+.about-resume-link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 8px;
+}
+
+.about-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+}
+
+.about-cta-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: clamp(24px, 4vw, 40px);
+  text-align: center;
+}
+
+.about-cta-button:hover,
+.about-cta-button:focus-visible {
+  text-decoration: underline;
+}
+
+.about-cta-button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 8px;
+}
+
+@media (max-width: 720px) {
+  .about-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .about-portrait {
+    max-width: 240px;
+  }
+
+  .about-services {
+    grid-template-columns: 1fr;
+  }
+}
