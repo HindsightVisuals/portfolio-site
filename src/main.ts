@@ -17,9 +17,8 @@ import { wrapDelta } from './three/loop';
 import { DEST_ORDER, destForPath, type DestId } from './routes';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
-// both inputMode and scrollNav.setMode() — keep both names greppable for future refactors.
+// inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
 let inputMode: 'world' | 'takeover' = 'world';
-let scrollNav: ScrollNav | null = null;
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -52,12 +51,14 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));
 
+    let scrollNav: ScrollNav | null = null;
     if (!reducedMotion) {
       scrollNav = initScrollNav((px) => director.feedScroll(px));
       window.addEventListener('mousemove', (e) => {
         director.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
       });
     }
+    void scrollNav; // written here, read by Task 12's takeover wiring (silences TS6133 until then)
     const router = initRouter(director, { reducedMotion });
 
     // nav links fly (full-length flythrough)
