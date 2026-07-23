@@ -1,11 +1,14 @@
 import * as THREE from 'three';
+import gsap from 'gsap';
 import type { DestId } from '../routes';
 import type { StageLayer } from './stage';
 import { initAtmosphere, type Atmosphere } from './atmosphere';
 import { makeHomeMock } from './home-mock';
 import { nearestWrapped } from './loop';
+import { distanceForFraming, effectiveMarginPx } from './framing';
 
 export const CAMERA_OFFSET = 34;
+export const CAMERA_FOV = 45;
 const SPACING = 60;
 const SCREEN_W = 32;
 const SCREEN_H = 20;
@@ -22,10 +25,54 @@ function materializeAmount(dist: number): number {
   return 1 - clamped * clamped * (3 - 2 * clamped); // smoothstep, inverted
 }
 
+// PROJECTS and SLUGS must stay in lockstep: the WORK wall is row-major
+// (row = floor(i/4), col = i%4), and tile index i is PROJECTS[i]'s tile,
+// picked/focused via SLUGS[i]. Content Audit order.
 const PROJECTS = ['Know Good', 'Addax', 'Spy Hop', 'Juan Valdez', 'Naboso', 'Animal', 'Babaloo', 'Hindsight'];
-const TILE_W = 7;
-const TILE_H = 4.4;
-const TILE_GAP = 0.9;
+export const SLUGS = ['know-good', 'addax', 'spy-hop', 'juan-valdez', 'naboso', 'animal', 'babaloo', 'hindsight'] as const;
+export const TILE_W = 7;
+export const TILE_H = 4.4;
+export const TILE_GAP = 0.9;
+export const HOVER_SCALE = 1.02;
+const HOVER_DURATION = 0.25;
+const HOVER_EASE = 'power2.out';
+
+/** Row-major local (x, y) of tile i within the WORK wall group (z is the group's). */
+function tileLocalPosition(i: number): { x: number; y: number } {
+  const row = Math.floor(i / 4);
+  const col = i % 4;
+  return {
+    x: (col - 1.5) * (TILE_W + TILE_GAP),
+    y: row === 0 ? (TILE_H + TILE_GAP) / 2 : -(TILE_H + TILE_GAP) / 2,
+  };
+}
+
+/** Index of `slug` in SLUGS, or -1 if unknown. */
+export function tileIndexForSlug(slug: string): number {
+  return (SLUGS as readonly string[]).indexOf(slug);
+}
+
+/** The next tile's slug, wrapping from the 8th tile back to the 1st. */
+export function nextSlug(slug: string): string {
+  const i = tileIndexForSlug(slug);
+  if (i < 0) throw new Error(`unknown slug ${slug}`);
+  return SLUGS[(i + 1) % SLUGS.length];
+}
+
+/**
+ * World-space camera focus target for a tile: its center x/y (the WORK
+ * group has no x/y offset) and a z framed to fill the viewport, using the
+ * same framing math as other destinations (Task 1).
+ */
+export function tileFocusTarget(slug: string, vpW: number, vpH: number): { x: number; y: number; z: number } {
+  const i = tileIndexForSlug(slug);
+  if (i < 0) throw new Error(`unknown slug ${slug}`);
+  const { x, y } = tileLocalPosition(i);
+  const workAnchorZ = DESTINATIONS.find((d) => d.id === 'work')?.anchorZ ?? 0;
+  const margin = effectiveMarginPx(vpW, vpH);
+  const dist = distanceForFraming(TILE_W, TILE_H, vpW, vpH, CAMERA_FOV, margin);
+  return { x, y, z: workAnchorZ + dist };
+}
 
 export interface Destination {
   id: DestId;
@@ -39,10 +86,14 @@ export const DESTINATIONS: Destination[] = (['home', 'work', 'about', 'contact']
 
 export const HOME_REST_Z = DESTINATIONS[0].cameraZ; // home camera rest — single source of truth
 
+export type PickResult = { kind: 'tile'; slug: string } | { kind: 'screen'; dest: DestId };
+
 export interface WorldLayer extends StageLayer {
   camera: THREE.PerspectiveCamera;
   setVelocitySource(fn: () => number): void;
   setHomeMockVisible(v: boolean): void;
+  pick(ndcX: number, ndcY: number): PickResult | null;
+  setTileHover(slug: string | null): void;
   destroy(): void;
 }
 
@@ -140,10 +191,10 @@ function makeTileTexture(name: string): THREE.CanvasTexture {
   return tex;
 }
 
-export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
+export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
-    45,
+    CAMERA_FOV,
     window.innerWidth / window.innerHeight,
     0.1,
     500,
@@ -152,6 +203,14 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
 
   const atmosphere: Atmosphere = initAtmosphere();
   scene.add(atmosphere.object);
+
+  // pickable meshes for pick(): the 8 WORK tiles (userData.slug) plus the
+  // ABOUT destination screen (userData.dest). HOME/WORK-placeholder/CONTACT
+  // screens are not pickable this phase.
+  const pickables: THREE.Object3D[] = [];
+  const tileMeshes: THREE.Mesh[] = [];
+  const raycaster = new THREE.Raycaster();
+  let hoveredMesh: THREE.Mesh | null = null;
 
   const disposables: Array<{ dispose(): void }> = [];
   const anchored: Array<{
@@ -167,20 +226,18 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
       const group = new THREE.Group();
       const materials: THREE.MeshBasicMaterial[] = [];
       for (let i = 0; i < PROJECTS.length; i++) {
-        const row = Math.floor(i / 4);
-        const col = i % 4;
         const tex = makeTileTexture(PROJECTS[i]);
         const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
         const geo = new THREE.PlaneGeometry(TILE_W, TILE_H);
         const tile = new THREE.Mesh(geo, mat);
-        tile.position.set(
-          (col - 1.5) * (TILE_W + TILE_GAP),
-          row === 0 ? (TILE_H + TILE_GAP) / 2 : -(TILE_H + TILE_GAP) / 2,
-          0,
-        );
+        const { x, y } = tileLocalPosition(i);
+        tile.position.set(x, y, 0);
+        tile.userData.slug = SLUGS[i];
         group.add(tile);
         disposables.push(tex, mat, geo);
         materials.push(mat);
+        pickables.push(tile);
+        tileMeshes.push(tile);
       }
       group.position.set(0, 0, dest.anchorZ);
       scene.add(group);
@@ -196,6 +253,10 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
     scene.add(mesh);
     disposables.push(tex, mat, geo);
     anchored.push({ root: mesh, anchorZ: dest.anchorZ, materials: [mat] });
+    if (dest.id === 'about') {
+      mesh.userData.dest = dest.id;
+      pickables.push(mesh);
+    }
   }
 
   // treatment-B home mock: hidden 3D stand-in for the DOM homepage, shown
@@ -217,6 +278,38 @@ export function initWorld(_opts: { reducedMotion: boolean }): WorldLayer {
     },
     setHomeMockVisible(v: boolean): void {
       homeMock.visible = v;
+    },
+    pick(ndcX: number, ndcY: number): PickResult | null {
+      raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+      const hits = raycaster.intersectObjects(pickables, false);
+      if (hits.length === 0) return null;
+      const { userData } = hits[0].object;
+      if (typeof userData.slug === 'string') return { kind: 'tile', slug: userData.slug };
+      if (typeof userData.dest === 'string') return { kind: 'screen', dest: userData.dest as DestId };
+      return null;
+    },
+    setTileHover(slug: string | null): void {
+      const mesh = slug !== null ? (tileMeshes[tileIndexForSlug(slug)] ?? null) : null;
+      if (mesh === hoveredMesh) return;
+      if (hoveredMesh) {
+        gsap.killTweensOf(hoveredMesh.scale);
+        if (opts.reducedMotion) hoveredMesh.scale.setScalar(1);
+        else gsap.to(hoveredMesh.scale, { x: 1, y: 1, z: 1, duration: HOVER_DURATION, ease: HOVER_EASE });
+      }
+      if (mesh) {
+        gsap.killTweensOf(mesh.scale);
+        if (opts.reducedMotion) mesh.scale.setScalar(HOVER_SCALE);
+        else {
+          gsap.to(mesh.scale, {
+            x: HOVER_SCALE,
+            y: HOVER_SCALE,
+            z: HOVER_SCALE,
+            duration: HOVER_DURATION,
+            ease: HOVER_EASE,
+          });
+        }
+      }
+      hoveredMesh = mesh;
     },
     update(dt: number): void {
       for (const s of anchored) {
