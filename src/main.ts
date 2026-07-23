@@ -15,6 +15,11 @@ import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
 import { DEST_ORDER, destForPath, type DestId } from './routes';
+import type { ScrollNav } from './home/scroll-nav';
+
+// Module-level input mode tracking; Task 12's takeover controller will update
+// this via scrollNav.setMode() — keep both names greppable for future refactors.
+let inputMode: 'world' | 'takeover' = 'world';
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -47,9 +52,10 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));
 
-    // TODO(phase3): retain handle — setMode('takeover') needed for 2D case-study mode
+    // @ts-ignore Task 12 will use this in takeover.onModeChange
+    let scrollNav: ScrollNav | null = null;
     if (!reducedMotion) {
-      initScrollNav((px) => director.feedScroll(px));
+      scrollNav = initScrollNav((px) => director.feedScroll(px));
       window.addEventListener('mousemove', (e) => {
         director.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
       });
@@ -68,6 +74,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     window.addEventListener('keydown', (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (inputMode === 'takeover') return; // Task 12: takeover mode disables world navigation
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const current = DESTINATIONS.reduce((best, d) =>
         Math.abs(wrapDelta(d.cameraZ, world.camera.position.z)) <
