@@ -1,0 +1,16 @@
+/* 2D takeover overlay — full-viewport DOM "pages" (case studies, etc.) that
+ * swipe up over the always-running Three.js canvas. Owned by
+ * src/page2d/takeover.ts; imported there so the module is self-contained. */
+
+.takeover {
+  position: fixed;
+  inset: 0;
+  z-index: 20; /* above .chrome (10) and .reticle-field (6) */
+  background: #fdfdfd;
+  overflow-y: auto;
+  will-change: transform;
+}
+
+.takeover:focus {
+  outline: none;
+}
