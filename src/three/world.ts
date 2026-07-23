@@ -60,6 +60,23 @@ export function nextSlug(slug: string): string {
 }
 
 /**
+ * True when `obj` and every ancestor up to the scene root has `.visible`
+ * true. Raycaster does NOT consult Object3D.visible (only the renderer
+ * does), so pick() must gate on this explicitly — otherwise a ray toward a
+ * fully-faded-out WORK wall or ABOUT screen (materializeAmount ~0, which
+ * world.ts already expresses as `root.visible = false`) would still report
+ * a hit the user cannot see.
+ */
+export function isEffectivelyVisible(obj: THREE.Object3D): boolean {
+  let o: THREE.Object3D | null = obj;
+  while (o) {
+    if (!o.visible) return false;
+    o = o.parent;
+  }
+  return true;
+}
+
+/**
  * World-space camera focus target for a tile: its center x/y (the WORK
  * group has no x/y offset) and a z framed to fill the viewport, using the
  * same framing math as other destinations (Task 1).
@@ -282,10 +299,15 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
     pick(ndcX: number, ndcY: number): PickResult | null {
       raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
       const hits = raycaster.intersectObjects(pickables, false);
-      if (hits.length === 0) return null;
-      const { userData } = hits[0].object;
-      if (typeof userData.slug === 'string') return { kind: 'tile', slug: userData.slug };
-      if (typeof userData.dest === 'string') return { kind: 'screen', dest: userData.dest as DestId };
+      for (const hit of hits) {
+        // skip hits on geometry that's faded out (materialize state) — Raycaster
+        // ignores Object3D.visible, so this must be checked explicitly (see
+        // isEffectivelyVisible).
+        if (!isEffectivelyVisible(hit.object)) continue;
+        const { userData } = hit.object;
+        if (typeof userData.slug === 'string') return { kind: 'tile', slug: userData.slug };
+        if (typeof userData.dest === 'string') return { kind: 'screen', dest: userData.dest as DestId };
+      }
       return null;
     },
     setTileHover(slug: string | null): void {
@@ -342,6 +364,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
     },
     destroy(): void {
       atmosphere.destroy();
+      for (const mesh of tileMeshes) gsap.killTweensOf(mesh.scale);
       for (const d of disposables) d.dispose();
       homeMock.traverse((o) => {
         if (o instanceof THREE.Mesh) {

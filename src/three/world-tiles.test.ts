@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import {
   CAMERA_FOV,
   DESTINATIONS,
@@ -6,6 +7,7 @@ import {
   TILE_GAP,
   TILE_H,
   TILE_W,
+  isEffectivelyVisible,
   nextSlug,
   tileFocusTarget,
   tileIndexForSlug,
@@ -87,5 +89,48 @@ describe('tileFocusTarget', () => {
 
   it('throws for an unknown slug', () => {
     expect(() => tileFocusTarget('not-a-project', vpW, vpH)).toThrow();
+  });
+});
+
+describe('isEffectivelyVisible', () => {
+  it('is true when the object and every ancestor are visible', () => {
+    const grandparent = new THREE.Group();
+    const parent = new THREE.Group();
+    const child = new THREE.Object3D();
+    grandparent.add(parent);
+    parent.add(child);
+    expect(isEffectivelyVisible(child)).toBe(true);
+  });
+
+  it('is false when the object itself is invisible', () => {
+    const obj = new THREE.Object3D();
+    obj.visible = false;
+    expect(isEffectivelyVisible(obj)).toBe(false);
+  });
+
+  it('is false when a parent is invisible, even if the object itself is visible', () => {
+    // mirrors the WORK wall: tiles stay visible=true while the group (materialize
+    // state) toggles — pick() must still treat a faded-out wall as unpickable
+    const group = new THREE.Group();
+    group.visible = false;
+    const tile = new THREE.Object3D();
+    group.add(tile);
+    expect(tile.visible).toBe(true);
+    expect(isEffectivelyVisible(tile)).toBe(false);
+  });
+
+  it('is false when a distant ancestor (not the immediate parent) is invisible', () => {
+    const root = new THREE.Group();
+    root.visible = false;
+    const mid = new THREE.Group();
+    const leaf = new THREE.Object3D();
+    root.add(mid);
+    mid.add(leaf);
+    expect(isEffectivelyVisible(leaf)).toBe(false);
+  });
+
+  it('is true for a standalone object with no parent', () => {
+    const obj = new THREE.Object3D();
+    expect(isEffectivelyVisible(obj)).toBe(true);
   });
 });
