@@ -38,7 +38,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     });
     stage.addLayer(bg);
     const world = initWorld({ reducedMotion });
-    bg.setSpineProvider(() => world.camera.position.z);
+    bg.setCameraProvider(() => world.camera.position);
     stage.addLayer(world);
     const distFromHome = (): number => Math.abs(wrapDelta(HOME_REST_Z, world.camera.position.z));
 

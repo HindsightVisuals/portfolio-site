@@ -34,6 +34,13 @@ const RESEED_RADIUS = 5;
 const ZOOM_MAX = 0.06;
 /** Home spine Z position reference for zoom parallax (mirrors HOME_REST_Z). */
 const HOME_SPINE_REF = 34;
+/** Mouse-magnet parallax: UV shift per world unit of camera lateral offset.
+ * Kept well below the dots' apparent motion so the RD reads as the farthest
+ * layer (full magnet deflection ≈ 1% of screen vs several % for near dots). */
+const PARALLAX_UV_PER_UNIT = 0.01;
+/** Permanent slight overscan so parallax + edge clamping never smears the
+ * texture border; must leave more margin than the max parallax offset. */
+const BASE_OVERSCAN = 1.03;
 
 const VERT = /* glsl */ `
 varying vec2 vUv;
@@ -98,14 +105,16 @@ uniform float uShade;
 uniform float uOpacity;
 uniform float uDebug;
 uniform float uZoom;
+uniform vec2 uOffset;
 
 void main() {
   // grey -> white -> grey across x
   float grad = mix(uEdge, uCenter, sin(vUv.x * 3.14159265));
   // Tight threshold band on the upscaled field = crisp organic edges
   // (wide band reads soft/blurry; keep ~0.04 width for antialiasing).
-  // Pattern sample zooms; gradient keeps raw vUv.x; debug keeps raw vUv (unaffected by zoom).
-  vec2 uvZ = (vUv - 0.5) / uZoom + 0.5;
+  // Pattern sample zooms + parallax-shifts; gradient keeps raw vUv.x;
+  // debug keeps raw vUv (unaffected by both).
+  vec2 uvZ = (vUv - 0.5) / uZoom + 0.5 + uOffset;
   float B = texture2D(uState, uvZ).g;
   float mask = smoothstep(0.18, 0.22, B);
   float lum = mix(grad, uShade, mask * uOpacity);
@@ -121,7 +130,19 @@ export interface BackgroundOpts {
 
 export interface BackgroundLayer extends StageLayer {
   destroy(): void;
-  setSpineProvider(fn: () => number): void;
+  setCameraProvider(fn: () => { x: number; y: number; z: number }): void;
+}
+
+/** Screen UV → sim UV under the view shader's zoom + parallax offset.
+ * Mirrors VIEW_FRAG's uvZ so the erase brush lands under the cursor. */
+export function viewToSimUV(
+  u: number,
+  v: number,
+  zoom: number,
+  offU: number,
+  offV: number,
+): { u: number; v: number } {
+  return { u: (u - 0.5) / zoom + 0.5 + offU, v: (v - 0.5) / zoom + 0.5 + offV };
 }
 
 function makeSeedTexture(w: number, h: number): THREE.DataTexture {
@@ -214,7 +235,8 @@ export function initBackgroundLayer(
       uShade: { value: PATTERN_SHADE },
       uOpacity: { value: PATTERN_OPACITY },
       uDebug: { value: opts.debug ? 1 : 0 },
-      uZoom: { value: 1 },
+      uZoom: { value: BASE_OVERSCAN },
+      uOffset: { value: new THREE.Vector2(0, 0) },
     },
   });
   const viewScene = new THREE.Scene();
@@ -258,18 +280,30 @@ export function initBackgroundLayer(
   let simClock = 0;
   let nextSeedAt = RESEED_BASE_S + Math.random() * RESEED_JITTER_S;
 
-  // Spine provider for zoom parallax (set by main.ts after world creation)
-  let spineProvider: (() => number) | null = null;
+  // Camera provider for zoom + mouse-magnet parallax (set by main.ts after world creation)
+  let cameraProvider: (() => { x: number; y: number; z: number }) | null = null;
+  let curZoom = BASE_OVERSCAN;
+  let curOffU = 0;
+  let curOffV = 0;
 
-  // Mouse → sim UV for the erase brush. Sim UV maps 1:1 to the viewport
-  // (the view quad samples the full sim texture across the full canvas).
+  // Mouse → sim UV for the erase brush, mapped through the same zoom/offset
+  // as the view shader so the brush stays under the cursor.
+  let rawU = 0;
+  let rawV = 0;
+  let cursorActive = false;
+  const syncMouseUniform = (): void => {
+    if (!cursorActive) return;
+    const { u, v } = viewToSimUV(rawU, rawV, curZoom, curOffU, curOffV);
+    simMaterial.uniforms.uMouse.value.set(u, v);
+  };
   const onMouseMove = (e: MouseEvent): void => {
-    simMaterial.uniforms.uMouse.value.set(
-      e.clientX / window.innerWidth,
-      1 - e.clientY / window.innerHeight,
-    );
+    rawU = e.clientX / window.innerWidth;
+    rawV = 1 - e.clientY / window.innerHeight;
+    cursorActive = true;
+    syncMouseUniform();
   };
   const onMouseLeave = (): void => {
+    cursorActive = false;
     simMaterial.uniforms.uMouse.value.set(-10, -10);
   };
   if (!opts.reducedMotion) {
@@ -280,6 +314,7 @@ export function initBackgroundLayer(
   return {
     update(): void {
       if (opts.reducedMotion) return;
+      syncMouseUniform(); // camera drift moves the sampled region under a still cursor
       simClock += 1 / 60;
       if (simClock >= nextSeedAt) {
         simMaterial.uniforms.uSeedPos.value.set(Math.random(), Math.random());
@@ -291,9 +326,14 @@ export function initBackgroundLayer(
       }
     },
     render(r: THREE.WebGLRenderer): void {
-      if (spineProvider) {
-        const progress = (((HOME_SPINE_REF - spineProvider()) % 240) + 240) % 240 / 240;
-        viewMaterial.uniforms.uZoom.value = 1 + (ZOOM_MAX / 2) * (1 - Math.cos(progress * Math.PI * 2));
+      if (cameraProvider) {
+        const cam = cameraProvider();
+        const progress = (((HOME_SPINE_REF - cam.z) % 240) + 240) % 240 / 240;
+        curZoom = BASE_OVERSCAN + (ZOOM_MAX / 2) * (1 - Math.cos(progress * Math.PI * 2));
+        curOffU = PARALLAX_UV_PER_UNIT * cam.x;
+        curOffV = PARALLAX_UV_PER_UNIT * cam.y;
+        viewMaterial.uniforms.uZoom.value = curZoom;
+        viewMaterial.uniforms.uOffset.value.set(curOffU, curOffV);
       }
       viewMaterial.uniforms.uState.value = read.texture;
       r.setRenderTarget(null);
@@ -316,8 +356,8 @@ export function initBackgroundLayer(
       simMaterial.dispose();
       viewMaterial.dispose();
     },
-    setSpineProvider(fn: () => number): void {
-      spineProvider = fn;
+    setCameraProvider(fn: () => { x: number; y: number; z: number }): void {
+      cameraProvider = fn;
     },
   };
 }
