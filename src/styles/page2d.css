@@ -26,16 +26,21 @@
 }
 
 /* --- 2D nav bar + cloth-V tab (Task 7) ---
- * `.nav2d` paints its own background as two flanking strips (::before/
- * ::after) with a 220px transparent gap dead center. `.takeover` behind it
- * has no background of its own (see above), so that gap is a real window
- * straight through to the always-running canvas — not a mask/clip trick. */
+ * `.nav2d` is `position: sticky; top: 0` inside `.takeover` (the scroll
+ * container — `overflow-y: auto`), so it stays pinned to the top of the
+ * viewport as the page scrolls underneath it instead of scrolling away with
+ * the rest of the content. It paints its own background as two flanking
+ * strips (::before/::after) with a 220px transparent gap dead center.
+ * `.takeover` behind it has no background of its own (see above), so that
+ * gap is a real window straight through to the always-running canvas — not
+ * a mask/clip trick — and it stays live at any scroll position because the
+ * nav itself never leaves the top of the viewport. */
 
 .nav2d {
-  position: relative;
-  z-index: 1; /* sits above .takeover-body content that scrolls under it */
+  position: sticky;
+  top: 0;
+  z-index: 1; /* stays above .takeover-body content scrolling underneath it */
   height: 64px;
-  flex-shrink: 0;
 }
 
 .nav2d::before,
@@ -100,6 +105,11 @@
   display: block;
   width: 100%;
   height: 100%;
+  /* Non-root inline <svg> defaults to `overflow: hidden` per the UA
+   * stylesheet — the elastic hover overshoot peaks past the 64px viewBox
+   * (~57.7px at CLOTH_HOVER_PX=52), so this must be explicit or the curve
+   * clips mid-bounce. */
+  overflow: visible;
 }
 
 .nav2d-wordmark:focus-visible,
