@@ -7,6 +7,13 @@ export interface CaseStudyOpts {
   reducedMotion: boolean;
   onNext(slug: string): void;
   navbar: HTMLElement;
+  /**
+   * When true, skip the internal `revealSections` call — the caller (the
+   * Task 12 wiring) will run `mountReveal` AFTER the takeover mounts this
+   * article, so the scroll observer binds to the real `.takeover` root
+   * instead of the viewport-root fallback. See reveal.ts.
+   */
+  deferReveal?: boolean;
 }
 
 /** Decorative 16/9 placeholder block — future media slots (F14+) render into these. */
@@ -119,7 +126,9 @@ export function buildCaseStudy(slug: string, opts: CaseStudyOpts): HTMLElement {
   body.append(...sections);
   article.append(opts.navbar, body);
 
-  revealSections(article, sections, { reducedMotion: opts.reducedMotion });
+  if (!opts.deferReveal) {
+    revealSections(article, sections, { reducedMotion: opts.reducedMotion });
+  }
 
   return article;
 }

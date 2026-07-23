@@ -75,3 +75,29 @@ export function revealSections(
 
   return () => observer.disconnect();
 }
+
+/**
+ * Mount-time wrapper around `revealSections` for takeover pages (Task 12):
+ * call this AFTER the page `article` is attached to its `.takeover` scroll
+ * container (i.e. after `takeover.open()` has synchronously appended it), so
+ * the observer binds to the REAL scroll root rather than silently falling
+ * back to the viewport. Queries the article's own `<section>` children — the
+ * page builders (case-study.ts, about.ts) skip their internal
+ * `revealSections` call when built with `deferReveal: true`, handing that
+ * responsibility here.
+ *
+ * `scrollRoot` defaults to the article's enclosing `.takeover`; pass one
+ * explicitly to override. Returns the same cleanup fn `revealSections` does.
+ */
+export function mountReveal(
+  article: HTMLElement,
+  opts: { reducedMotion: boolean; scrollRoot?: Element | null }
+): () => void {
+  const sections = Array.from(article.querySelectorAll<HTMLElement>('section'));
+  const scrollRoot =
+    opts.scrollRoot !== undefined ? opts.scrollRoot : article.closest('.takeover');
+  return revealSections(article, sections, {
+    reducedMotion: opts.reducedMotion,
+    scrollRoot,
+  });
+}

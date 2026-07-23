@@ -57,6 +57,9 @@
   height: 100%;
   background: #fdfdfd;
   z-index: 0;
+  /* nav2d--scrolled closes the notch by growing the strips to meet dead
+   * center — ease the width change so the canvas window fades shut. */
+  transition: width 0.25s ease;
 }
 
 .nav2d::before {
@@ -67,6 +70,15 @@
 .nav2d::after {
   right: 0;
   width: calc(50% - 110px);
+}
+
+/* Once the takeover has scrolled past NOTCH_SCROLL_THRESHOLD_PX (main.ts),
+ * the strips meet in the middle and paint the notch center #fdfdfd, closing
+ * the live-canvas window so scrolled body content doesn't show through it.
+ * The cloth-tab SVG (z-index 1) still sits above, so the curve stays drawn. */
+.nav2d--scrolled::before,
+.nav2d--scrolled::after {
+  width: 50%;
 }
 
 .nav2d-wordmark,
@@ -157,6 +169,7 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 32px;
+  align-items: start; /* a taller (long-role) column must not stretch its siblings */
   border-top: 1px solid #eaeaea;
   border-bottom: 1px solid #eaeaea;
 }
@@ -165,6 +178,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0; /* let long values wrap inside the track instead of overflowing the 4-col strip */
 }
 
 .cs-meta-label {
@@ -179,6 +193,7 @@
   font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.5;
+  overflow-wrap: break-word; /* a long unbroken role string wraps rather than blowing out the column */
 }
 
 .cs-brief {

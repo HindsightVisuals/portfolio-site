@@ -5,7 +5,7 @@ import './styles/base.css';
 import gsap from 'gsap';
 import { initStage } from './three/stage';
 import { initBackgroundLayer } from './three/background';
-import { initWorld, DESTINATIONS, HOME_REST_Z } from './three/world';
+import { initWorld, DESTINATIONS, HOME_REST_Z, SLUGS } from './three/world';
 import { initCameraDirector } from './three/camera-director';
 import { initTagline } from './home/tagline';
 import { initReticles } from './home/reticles';
@@ -14,7 +14,12 @@ import { initScrollNav, type ScrollNav } from './home/scroll-nav';
 import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
-import { DEST_ORDER, destForPath, type DestId } from './routes';
+import { DEST_ORDER, destForPath, slugForPath, type DestId } from './routes';
+import { initTakeover } from './page2d/takeover';
+import { buildNavbar } from './page2d/navbar';
+import { buildCaseStudy } from './page2d/case-study';
+import { buildAbout } from './page2d/about';
+import { mountReveal } from './page2d/reveal';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
@@ -58,8 +63,135 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         director.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
       });
     }
-    void scrollNav; // written here, read by Task 12's takeover wiring (silences TS6133 until then)
     const router = initRouter(director, { reducedMotion });
+
+    // --- 2D takeover wiring (Task 12): the DOM side of the signature journey ---
+    const aboutRest = DESTINATIONS.find((d) => d.id === 'about')!.cameraZ;
+    // Camera within this wrapped-z distance of the ABOUT screen's rest counts
+    // as "framed at rest" — a click then opens the About takeover in place
+    // rather than flying to it first.
+    const ABOUT_REST_EPS = 2;
+    // scrollTop past which the nav2d notch closes (paints #fdfdfd over the
+    // live-canvas window) — see .nav2d--scrolled in page2d.css.
+    const NOTCH_SCROLL_THRESHOLD_PX = 32;
+
+    const takeover = initTakeover({
+      reducedMotion,
+      onModeChange(mode) {
+        // Both gates share this single source of truth: the arrow-key handler
+        // reads the module-let `inputMode`; the wheel handler reads scrollNav's
+        // own mode. (scrollNav is null under reduced motion — no wheel nav.)
+        inputMode = mode;
+        scrollNav?.setMode(mode);
+      },
+    });
+
+    // The project slug the camera is currently framed on — set when a project
+    // flight begins, and only trusted while director.isFocused(). A click on
+    // the already-framed tile opens its page; a click on any OTHER visible tile
+    // re-navigates. Seeded from a deep-link boot path so a click on the
+    // deep-linked framed tile opens rather than re-navigates.
+    let focusedSlug: string | null = slugForPath(location.pathname);
+
+    const navToProject = (slug: string): void => {
+      focusedSlug = slug;
+      void router.navigateToProject(slug);
+    };
+
+    const makeTakeoverNavbar = (): HTMLElement =>
+      buildNavbar({
+        reducedMotion,
+        onCloth: () => void takeover.close(),
+        onWordmark: () => void takeover.close().then(() => router.navigate('home')),
+        onContact: () => void takeover.close().then(() => router.navigate('contact')),
+      });
+
+    // open() appends the page synchronously (before its swipe tween — verified
+    // in takeover.ts runOpen), so mountReveal can bind the reveal observer to
+    // the now-live `.takeover` scroll root immediately, without awaiting the
+    // animation. Pages are built fresh per open (no caching).
+    const openCaseStudy = (slug: string): void => {
+      const page = buildCaseStudy(slug, {
+        reducedMotion,
+        navbar: makeTakeoverNavbar(),
+        deferReveal: true,
+        onNext: async (next) => {
+          await takeover.close();
+          await router.navigateToProject(next, { abbreviated: true });
+        },
+      });
+      void takeover.open(page);
+      mountReveal(page, { reducedMotion });
+    };
+
+    const openAbout = (): void => {
+      const page = buildAbout({
+        reducedMotion,
+        navbar: makeTakeoverNavbar(),
+        deferReveal: true,
+        onContact: () => void takeover.close().then(() => router.navigate('contact')),
+      });
+      void takeover.open(page);
+      mountReveal(page, { reducedMotion });
+    };
+
+    // nav2d notch: close the live-canvas window once the takeover body scrolls
+    // past the threshold, reopen it at the top. Capture phase because scroll
+    // events don't bubble; matches on the `.takeover` container so it tracks
+    // whichever page is currently open. Reduced motion behaves identically —
+    // this is a visibility correctness rule, not decorative motion.
+    window.addEventListener(
+      'scroll',
+      (e) => {
+        const t = e.target;
+        if (!(t instanceof HTMLElement) || !t.classList.contains('takeover')) return;
+        const nav = t.querySelector<HTMLElement>('.nav2d');
+        nav?.classList.toggle('nav2d--scrolled', t.scrollTop > NOTCH_SCROLL_THRESHOLD_PX);
+      },
+      true,
+    );
+
+    // Pointer hover over the world: RAF-throttled pick drives tile hover + the
+    // canvas cursor. No-ops while a takeover covers the viewport.
+    let pendingPointer: { x: number; y: number } | null = null;
+    let hoverRaf = 0;
+    const processHover = (): void => {
+      hoverRaf = 0;
+      const p = pendingPointer;
+      if (!p) return;
+      if (takeover.isOpen()) {
+        world.setTileHover(null);
+        canvas.style.cursor = '';
+        return;
+      }
+      const ndcX = (p.x / window.innerWidth) * 2 - 1;
+      const ndcY = -((p.y / window.innerHeight) * 2 - 1);
+      const hit = world.pick(ndcX, ndcY);
+      world.setTileHover(hit?.kind === 'tile' ? hit.slug : null);
+      canvas.style.cursor = hit ? 'pointer' : '';
+    };
+    window.addEventListener('mousemove', (e) => {
+      pendingPointer = { x: e.clientX, y: e.clientY };
+      if (!hoverRaf) hoverRaf = requestAnimationFrame(processHover);
+    });
+
+    // Click routing: a focused tile opens its takeover; any other tile flies to
+    // frame it; the ABOUT screen at rest opens the About takeover, otherwise
+    // flies there. No-ops while a takeover is open (it also covers the canvas).
+    canvas.addEventListener('click', (e) => {
+      if (takeover.isOpen()) return;
+      const ndcX = (e.clientX / window.innerWidth) * 2 - 1;
+      const ndcY = -((e.clientY / window.innerHeight) * 2 - 1);
+      const hit = world.pick(ndcX, ndcY);
+      if (!hit) return;
+      if (hit.kind === 'tile') {
+        if (director.isFocused() && hit.slug === focusedSlug) openCaseStudy(hit.slug);
+        else navToProject(hit.slug);
+      } else if (hit.dest === 'about') {
+        if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) openAbout();
+        else router.navigate('about');
+      }
+    });
 
     // nav links fly (full-length flythrough)
     for (const a of document.querySelectorAll<HTMLAnchorElement>('.site-nav a[data-nav]')) {
@@ -102,9 +234,19 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       }
     });
 
+    // First render must follow initRouter: under reduced motion the router's
+    // deep-link boot does an instant jumpTo/jumpToFocus (no frame loop to paint
+    // it later), so the camera must be positioned before this first paint or
+    // the deep-linked cut arrives one frame stale.
     stage.start();
     const tagline = initTagline(taglineEl);
-    const reticles = initReticles(fieldEl, { reducedMotion });
+    const reticles = initReticles(fieldEl, {
+      reducedMotion,
+      onActivate: (i) => {
+        if (takeover.isOpen()) return; // guard: takeover mode swallows home nav
+        navToProject(SLUGS[i]);
+      },
+    });
 
     const bootDest = destForPath(location.pathname) ?? 'home';
     // intro is a single-shot writer racing bindHomeVisibility; kill it the moment
