@@ -9,8 +9,11 @@ const EASE_IN = 'expo.out';
 export const SWIPE_OUT_S = 0.6;
 const EASE_OUT = 'expo.in';
 
-// Home-DOM elements that must go inert while a takeover is open.
-const INERT_SELECTORS = ['.chrome', '.reticle-field'];
+// Home-DOM elements that must go inert while a takeover is open. `.screen-proxies`
+// (home/screen-proxies.ts) holds the keyboard-only proxy buttons for the WORK
+// tiles/ABOUT screen — those targets are covered by the takeover itself once
+// open, so the proxies must stop being keyboard-reachable too.
+const INERT_SELECTORS = ['.chrome', '.reticle-field', '.screen-proxies'];
 
 export interface TakeoverOpts {
   reducedMotion: boolean;

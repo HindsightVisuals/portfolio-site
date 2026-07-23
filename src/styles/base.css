@@ -205,3 +205,47 @@ body {
   outline: 2px solid var(--ink);
   outline-offset: 12px;
 }
+
+/* --- keyboard proxies for 3D-only hit targets (WORK tiles, ABOUT screen) ---
+ * `.screen-proxies` sits alongside `.reticle-field` in DOM order but is
+ * itself invisible (no layout box worth positioning) — every child button
+ * carries its own sr-only clip. See home/screen-proxies.ts. */
+.screen-proxies {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Standard sr-only pattern: present for AT + keyboard, invisible on screen
+ * until :focus-visible pops it into a real on-screen badge (below) so a
+ * sighted keyboard user can see where focus is. */
+.screen-proxy {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.screen-proxy:focus-visible {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 8px 14px;
+  clip: auto;
+  white-space: normal;
+  pointer-events: auto;
+  background: var(--bg-center);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  font: inherit;
+  z-index: 11; /* above .chrome (10), below .takeover (20) */
+  cursor: pointer;
+}

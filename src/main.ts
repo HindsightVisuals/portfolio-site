@@ -20,6 +20,7 @@ import { buildNavbar } from './page2d/navbar';
 import { buildCaseStudy } from './page2d/case-study';
 import { buildAbout } from './page2d/about';
 import { mountReveal } from './page2d/reveal';
+import { initScreenProxies } from './home/screen-proxies';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
@@ -34,7 +35,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const canvas = document.querySelector<HTMLCanvasElement>('#bg-canvas');
     const taglineEl = document.querySelector<HTMLElement>('.tagline');
     const fieldEl = document.querySelector<HTMLElement>('.reticle-field');
-    if (!canvas || !taglineEl || !fieldEl) throw new Error('homepage DOM incomplete');
+    const screenProxiesEl = document.querySelector<HTMLElement>('.screen-proxies');
+    if (!canvas || !taglineEl || !fieldEl || !screenProxiesEl) throw new Error('homepage DOM incomplete');
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const debug = new URLSearchParams(location.search).has('debug-rd');
@@ -167,6 +169,25 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       mountReveal(page, { reducedMotion });
     };
 
+    // Shared routing decision for a WORK tile / the ABOUT screen, used by
+    // BOTH the canvas click handler (mouse, via raycast pick) and the
+    // keyboard-only screen-proxy buttons below (spec: Accessibility section
+    // of docs/superpowers/specs/2026-07-22-phase3-signature-journey-design.md
+    // — tiles/About need keyboard-reachable proxies since the 3D hit targets
+    // otherwise only respond to a mouse click). Framed already → open in
+    // place; not framed → navigate/fly to frame it (a second activation then
+    // opens — same two-step the mouse already requires).
+    const activateTile = (slug: string): void => {
+      if (takeover.isOpen()) return;
+      if (director.isFocused() && slug === slugForPath(location.pathname)) openCaseStudy(slug);
+      else navToProject(slug);
+    };
+    const activateAbout = (): void => {
+      if (takeover.isOpen()) return;
+      if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) openAbout();
+      else router.navigate('about');
+    };
+
     // nav2d notch: close the live-canvas window once the takeover body scrolls
     // past the threshold, reopen it at the top. Capture phase because scroll
     // events don't bubble; matches on the `.takeover` container so it tracks
@@ -216,13 +237,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       const ndcY = -((e.clientY / window.innerHeight) * 2 - 1);
       const hit = world.pick(ndcX, ndcY);
       if (!hit) return;
-      if (hit.kind === 'tile') {
-        if (director.isFocused() && hit.slug === slugForPath(location.pathname)) openCaseStudy(hit.slug);
-        else navToProject(hit.slug);
-      } else if (hit.dest === 'about') {
-        if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) openAbout();
-        else router.navigate('about');
-      }
+      if (hit.kind === 'tile') activateTile(hit.slug);
+      else if (hit.dest === 'about') activateAbout();
     });
 
     // nav links fly (full-length flythrough)
@@ -253,7 +269,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // home DOM fades as the camera leaves (reticles; chrome stays). Tagline
     // opacity is owned solely by tagline.ts (via the intro sequence or the
     // scroll-away interrupt below) — it must not also be written here.
-    // TODO(phase3): toggle aria-hidden/inert alongside the fade for screen-reader correctness
+    // (home-visibility.ts also toggles `inert` alongside the fade — see its
+    // own doc comment for the ownership split with takeover.ts.)
     const homeEls: HTMLElement[] = [fieldEl];
     const homeVisibility = bindHomeVisibility(homeEls, () => world.camera.position.z);
     stage.onFrame((dt) => homeVisibility.update(dt));
@@ -278,6 +295,11 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         if (takeover.isOpen()) return; // guard: takeover mode swallows home nav
         navToProject(SLUGS[i]);
       },
+    });
+    initScreenProxies(screenProxiesEl, {
+      slugs: SLUGS,
+      onTile: activateTile,
+      onAbout: activateAbout,
     });
 
     const bootDest = destForPath(location.pathname) ?? 'home';

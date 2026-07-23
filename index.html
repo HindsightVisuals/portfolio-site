@@ -36,6 +36,13 @@
       <div class="reticle-row" data-row="1"></div>
     </div>
 
+    <!-- Keyboard-reachable proxies for the WORK tiles + ABOUT screen — those
+         hit targets otherwise only exist as 3D meshes clickable via canvas
+         raycast (mouse-only). Populated by src/home/screen-proxies.ts. See
+         docs/superpowers/specs/2026-07-22-phase3-signature-journey-design.md
+         (Accessibility section). -->
+    <nav class="screen-proxies" aria-label="Jump to a project or section"></nav>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
