@@ -34,6 +34,9 @@ export function initStage(canvas: HTMLCanvasElement, opts: StageOpts): StageHand
   const renderFrame = (dt: number): void => {
     for (const cb of frameCbs) cb(dt);
     for (const layer of layers) layer.update?.(dt);
+    // clear() acts on the bound target — a layer's update() may leave one bound
+    // (the RD sim's ping-pong buffer); rebind the canvas or we wipe its state
+    renderer.setRenderTarget(null);
     renderer.clear(true, true, false);
     for (const layer of layers) {
       renderer.clearDepth();
