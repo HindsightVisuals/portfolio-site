@@ -36,13 +36,19 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
   let state: TakeoverState = 'closed';
   let container: HTMLDivElement | null = null;
   let tween: gsap.core.Tween | null = null;
-  // True only while the currently-open takeover owns the top history entry
-  // we pushed — guards close()'s history.back() and is reset on every close.
-  let historyPushed = false;
   // Set by destroy(). killing an in-flight tween resolves the awaited
   // promise below via onInterrupt, so runOpen/runClose must check this
   // before touching state/DOM/callbacks that destroy() already tore down.
   let destroyed = false;
+  // The reducer no-ops a close event while `opening` (only 'opened' moves it
+  // forward), so a popstate that lands mid-open-tween can't close the
+  // overlay right away even though the browser has already popped our
+  // history entry by that point. Remember it here and finish the close for
+  // real once the open transition reaches 'open'.
+  let pendingPopClose = false;
+
+  const topIsTakeover = (): boolean =>
+    (window.history.state as { takeover?: boolean } | null)?.takeover === true;
 
   const setInert = (inert: boolean): void => {
     for (const sel of INERT_SELECTORS) {
@@ -75,9 +81,6 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
 
     if (o.pushHistory !== false) {
       window.history.pushState({ takeover: true }, '', window.location.href);
-      historyPushed = true;
-    } else {
-      historyPushed = false;
     }
 
     setInert(true);
@@ -101,6 +104,14 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
     if (destroyed || container !== div) return; // torn down mid-animation — bail
     page.focus();
     state = takeoverReducer(state, 'opened');
+
+    if (pendingPopClose) {
+      // A back navigation landed while we were still opening (see the flag's
+      // doc comment) — finish what it started now that 'close' is a valid
+      // transition again.
+      pendingPopClose = false;
+      void runClose({ fromPopstate: true });
+    }
   }
 
   async function runClose(o: { fromPopstate?: boolean }): Promise<void> {
@@ -135,9 +146,11 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
     opts.onModeChange('world');
     state = takeoverReducer(state, 'closed');
 
-    const shouldGoBack = !o.fromPopstate && historyPushed;
-    historyPushed = false;
-    if (shouldGoBack) window.history.back();
+    // "the takeover state is on top" — read live, not a locally-tracked
+    // flag: a popstate that fired earlier (e.g. mid-opening, see
+    // pendingPopClose) already popped our pushed entry off the real
+    // history stack, and a stale flag would call back() a second time here.
+    if (!o.fromPopstate && topIsTakeover()) window.history.back();
   }
 
   const onKeydown = (e: KeyboardEvent): void => {
@@ -146,8 +159,14 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
 
   const onPopstate = (): void => {
     if (state === 'closed') return;
-    const s = window.history.state as { takeover?: boolean } | null;
-    if (s?.takeover) return; // still sitting on our pushed entry — nothing to do
+    if (topIsTakeover()) return; // still sitting on our pushed entry — nothing to do
+    if (state === 'opening') {
+      // Can't close for real yet — the reducer no-ops 'close' while
+      // opening. The history entry is already gone though, so finish this
+      // once the open transition lands (see runOpen).
+      pendingPopClose = true;
+      return;
+    }
     void runClose({ fromPopstate: true });
   };
 
@@ -165,6 +184,11 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
       return state !== 'closed';
     },
     destroy(): void {
+      // Teardown, not a close() — deliberately does not call
+      // opts.onModeChange('world'). The wiring layer (Task 12) is
+      // responsible for its own mode state when it tears this controller
+      // down; assuming 'world' here would be wrong if destroy() is ever
+      // called for reasons other than leaving takeover mode.
       destroyed = true;
       window.removeEventListener('keydown', onKeydown);
       window.removeEventListener('popstate', onPopstate);
@@ -177,7 +201,7 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
         setInert(false);
       }
       state = 'closed';
-      historyPushed = false;
+      pendingPopClose = false;
     },
   };
 }
