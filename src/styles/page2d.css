@@ -33,8 +33,14 @@
  * strips (::before/::after) with a 220px transparent gap dead center.
  * `.takeover` behind it has no background of its own (see above), so that
  * gap is a real window straight through to the always-running canvas — not
- * a mask/clip trick — and it stays live at any scroll position because the
- * nav itself never leaves the top of the viewport. */
+ * a mask/clip trick. The strips stay pinned and painted above scrolling
+ * content, but the notch itself is a transparent hole, not a painted
+ * layer — z-index only protects the strips, so scrolled `.takeover-body`
+ * content will geometrically occupy that band and show through once the
+ * page scrolls. The notch is guaranteed canvas-live only near scrollTop 0;
+ * Task 12 is expected to add a `nav2d--scrolled` treatment that closes the
+ * notch with a painted background once the page scrolls past the top
+ * (decision recorded here, not yet implemented). */
 
 .nav2d {
   position: sticky;
