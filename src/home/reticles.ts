@@ -1,5 +1,6 @@
 import gsap from 'gsap';
 import { magneticOffset } from './magnetics';
+import { iconIndexAt } from './cycle';
 
 const RETICLE_COUNT = 8;
 const PER_ROW = 4;
@@ -7,13 +8,55 @@ const STAGGER_S = 0.12;
 const MAGNET_RADIUS = 120;
 const BRACKET_MAX = 12;
 const ICON_MAX = 6;
+const CYCLE_TICK_MS = 250;
 
-/* Placeholder ⊕ — archival/sci-fi circled plus. Final icons supplied by Adam. */
-const PLACEHOLDER_ICON = `
-<svg viewBox="0 0 64 64" width="64" height="64" fill="none" aria-hidden="true">
-  <circle cx="32" cy="32" r="16" stroke="currentColor" stroke-width="2.5" />
-  <path d="M32 23v18M23 32h18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-</svg>`;
+/*
+ * Placeholder glyph set — archival/sci-fi instrument-scanning language.
+ * 24x24, stroke-width 2, stroke currentColor, no fill (dots are the only
+ * filled marks — a literal "dot"). Final icons supplied by Adam.
+ */
+const GLYPHS: string[] = [
+  // 0: circled plus (existing)
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+    <path d="M12 7v10M7 12h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </svg>`,
+  // 1: circled X
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+    <path d="M8.5 8.5l7 7M15.5 8.5l-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </svg>`,
+  // 2: triangle with center dot
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <path d="M12 4L20.5 19H3.5L12 4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+    <circle cx="12" cy="14.5" r="1.4" fill="currentColor" stroke="none" />
+  </svg>`,
+  // 3: square with center +
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <rect x="4" y="4" width="16" height="16" stroke="currentColor" stroke-width="2" />
+    <path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </svg>`,
+  // 4: hexagon with center dot
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <path d="M12 3L19.8 7.5L19.8 16.5L12 21L4.2 16.5L4.2 7.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  </svg>`,
+  // 5: concentric circles
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+    <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2" />
+  </svg>`,
+  // 6: diamond with slash
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <path d="M12 3L21 12L12 21L3 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+    <path d="M7 7L17 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </svg>`,
+  // 7: quartered circle (cross reaches the rim, unlike glyph 0)
+  `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+    <path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </svg>`,
+];
 
 export interface ReticleField {
   buildOn(): Promise<void>;
@@ -32,12 +75,16 @@ interface Mover {
 
 export function initReticles(
   field: HTMLElement,
-  opts: { reducedMotion: boolean } = { reducedMotion: false },
+  opts: { reducedMotion: boolean; onActivate?(index: number): void } = { reducedMotion: false },
 ): ReticleField {
   const rows = field.querySelectorAll<HTMLElement>('.reticle-row');
   if (rows.length < 2) throw new Error('.reticle-row elements not found');
 
   const reticles: HTMLButtonElement[] = [];
+  const iconEls: HTMLElement[] = [];
+  const hovered: boolean[] = new Array(RETICLE_COUNT).fill(false);
+  const shownIndex: number[] = new Array(RETICLE_COUNT).fill(0);
+
   for (let i = 0; i < RETICLE_COUNT; i++) {
     const btn = document.createElement('button');
     btn.className = 'reticle';
@@ -49,13 +96,28 @@ export function initReticles(
         <span class="overlay"></span>
         <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       </span>
-      <span class="icon">${PLACEHOLDER_ICON}</span>`;
+      <span class="icon">${GLYPHS[0]}</span>`;
     btn.addEventListener('click', () => {
-      // Stub — destinations are a follow-up design conversation.
-      console.info(`[reticle] slot ${i} clicked — destination TBD`);
+      if (opts.onActivate) {
+        opts.onActivate(i);
+      } else {
+        // Stub — destinations are a follow-up design conversation.
+        console.info(`[reticle] slot ${i} clicked — destination TBD`);
+      }
+    });
+    // Cycling pause: hovered reticles hold their current glyph until the
+    // pointer leaves (native <button> click already handles Enter/Space).
+    btn.addEventListener('mouseenter', () => {
+      hovered[i] = true;
+      btn.classList.add('is-hover');
+    });
+    btn.addEventListener('mouseleave', () => {
+      hovered[i] = false;
+      btn.classList.remove('is-hover');
     });
     rows[Math.floor(i / PER_ROW)].appendChild(btn);
     reticles.push(btn);
+    iconEls.push(btn.querySelector<HTMLElement>('.icon')!);
   }
 
   gsap.set(reticles, { autoAlpha: 0 });
@@ -99,6 +161,24 @@ export function initReticles(
     window.addEventListener('mousemove', onMove);
   }
 
+  // Instrument-scan icon cycling: one shared timer drives all 8 reticles,
+  // each reading its own phase-shifted index off the same clock (cycle.ts).
+  // Hard cuts only — no fades. Reduced motion never cycles.
+  let cycleTimer: ReturnType<typeof setInterval> | null = null;
+  if (!opts.reducedMotion) {
+    cycleTimer = setInterval(() => {
+      const now = performance.now();
+      for (let i = 0; i < RETICLE_COUNT; i++) {
+        if (hovered[i]) continue;
+        const idx = iconIndexAt(now, i, RETICLE_COUNT);
+        if (idx !== shownIndex[i]) {
+          shownIndex[i] = idx;
+          iconEls[i].innerHTML = GLYPHS[idx];
+        }
+      }
+    }, CYCLE_TICK_MS);
+  }
+
   return {
     buildOn(): Promise<void> {
       refreshCenters();
@@ -128,6 +208,10 @@ export function initReticles(
         window.removeEventListener('mousemove', onMove);
       }
       window.removeEventListener('resize', refreshCenters);
+      if (cycleTimer !== null) {
+        clearInterval(cycleTimer);
+        cycleTimer = null;
+      }
       buildTl?.kill();
       buildTl = null;
       for (const btn of reticles) {
