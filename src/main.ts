@@ -86,15 +86,14 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       },
     });
 
-    // The project slug the camera is currently framed on — set when a project
-    // flight begins, and only trusted while director.isFocused(). A click on
-    // the already-framed tile opens its page; a click on any OTHER visible tile
-    // re-navigates. Seeded from a deep-link boot path so a click on the
-    // deep-linked framed tile opens rather than re-navigates.
-    let focusedSlug: string | null = slugForPath(location.pathname);
-
+    // The slug the camera is framed on is derived from the URL at click time,
+    // never stored: the router keeps /work/[slug] current on EVERY project
+    // arrival (navigate, next, pop, deep-link), so slugForPath(location.pathname)
+    // is always the framed tile. (The router's known stale-URL wart — scroll-
+    // defocus leaves the /work/[slug] URL in place — is harmless here because
+    // director.isFocused() is false by then, so the open-guard below falls
+    // through to a re-navigate regardless.)
     const navToProject = (slug: string): void => {
-      focusedSlug = slug;
       void router.navigateToProject(slug);
     };
 
@@ -209,7 +208,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       const hit = world.pick(ndcX, ndcY);
       if (!hit) return;
       if (hit.kind === 'tile') {
-        if (director.isFocused() && hit.slug === focusedSlug) openCaseStudy(hit.slug);
+        if (director.isFocused() && hit.slug === slugForPath(location.pathname)) openCaseStudy(hit.slug);
         else navToProject(hit.slug);
       } else if (hit.dest === 'about') {
         if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) openAbout();

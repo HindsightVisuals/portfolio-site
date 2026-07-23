@@ -34,6 +34,13 @@ export function bindHomeVisibility(
         for (const el of els) {
           el.style.opacity = '0';
           el.style.pointerEvents = 'none';
+          // Faded home is non-interactive: `inert` also neutralizes descendant
+          // controls (reticle buttons keep their own pointer-events:auto, so a
+          // bare pointer-events:none on the field can't disable them) and hides
+          // them from assistive tech. home-visibility is the SOLE owner of the
+          // field's fade-inert; takeover.ts saves/restores whatever state it
+          // finds so it never clobbers this (see takeover.ts setInert).
+          el.toggleAttribute('inert', true);
         }
         return;
       }
@@ -41,9 +48,11 @@ export function bindHomeVisibility(
       const opacity = 1 - away;
       if (Math.abs(opacity - lastOpacity) < 0.001) return;
       lastOpacity = opacity;
+      const faded = opacity < 0.5;
       for (const el of els) {
         el.style.opacity = String(opacity);
-        el.style.pointerEvents = opacity < 0.5 ? 'none' : '';
+        el.style.pointerEvents = faded ? 'none' : '';
+        el.toggleAttribute('inert', faded);
       }
     },
 

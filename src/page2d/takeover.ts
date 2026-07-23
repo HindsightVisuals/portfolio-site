@@ -50,16 +50,34 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
   const topIsTakeover = (): boolean =>
     (window.history.state as { takeover?: boolean } | null)?.takeover === true;
 
+  // Saved inert/aria-hidden state per home element, captured when the takeover
+  // makes them inert on open and restored on close. Restoring (rather than
+  // unconditionally removing) is essential: home-visibility.ts owns the home
+  // DOM's fade-inert and has already set `inert` on `.reticle-field` by the
+  // time a takeover opens over a framed WORK tile. If close() blindly removed
+  // `inert`, the faded reticle field would become interactive again — with no
+  // home-visibility rewrite guaranteed to re-assert it (its per-frame update
+  // short-circuits when opacity is unchanged, and reduced motion has no frame
+  // loop at all). Saving+restoring keeps the two writers non-conflicting.
+  const priorInertState = new Map<Element, { inert: boolean; ariaHidden: string | null }>();
   const setInert = (inert: boolean): void => {
     for (const sel of INERT_SELECTORS) {
       const el = document.querySelector<HTMLElement>(sel);
       if (!el) continue;
       if (inert) {
+        priorInertState.set(el, {
+          inert: el.hasAttribute('inert'),
+          ariaHidden: el.getAttribute('aria-hidden'),
+        });
         el.setAttribute('inert', '');
         el.setAttribute('aria-hidden', 'true');
       } else {
-        el.removeAttribute('inert');
-        el.removeAttribute('aria-hidden');
+        const prev = priorInertState.get(el);
+        priorInertState.delete(el);
+        if (prev?.inert) el.setAttribute('inert', '');
+        else el.removeAttribute('inert');
+        if (prev && prev.ariaHidden !== null) el.setAttribute('aria-hidden', prev.ariaHidden);
+        else el.removeAttribute('aria-hidden');
       }
     }
   };
