@@ -10,16 +10,16 @@ import { initCameraDirector } from './three/camera-director';
 import { initTagline } from './home/tagline';
 import { initReticles } from './home/reticles';
 import { runHomeSequence } from './home/sequence';
-import { initScrollNav } from './home/scroll-nav';
+import { initScrollNav, type ScrollNav } from './home/scroll-nav';
 import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
 import { DEST_ORDER, destForPath, type DestId } from './routes';
-import type { ScrollNav } from './home/scroll-nav';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
-// this via scrollNav.setMode() — keep both names greppable for future refactors.
+// both inputMode and scrollNav.setMode() — keep both names greppable for future refactors.
 let inputMode: 'world' | 'takeover' = 'world';
+let scrollNav: ScrollNav | null = null;
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -52,8 +52,6 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));
 
-    // @ts-ignore Task 12 will use this in takeover.onModeChange
-    let scrollNav: ScrollNav | null = null;
     if (!reducedMotion) {
       scrollNav = initScrollNav((px) => director.feedScroll(px));
       window.addEventListener('mousemove', (e) => {
