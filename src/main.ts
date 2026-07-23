@@ -6,6 +6,7 @@ import gsap from 'gsap';
 import { initStage } from './three/stage';
 import { initBackgroundLayer } from './three/background';
 import { initWorld, DESTINATIONS, HOME_REST_Z, SLUGS } from './three/world';
+import { getProject } from './content/projects';
 import { initCameraDirector } from './three/camera-director';
 import { initTagline } from './home/tagline';
 import { initReticles } from './home/reticles';
@@ -25,6 +26,18 @@ import { initScreenProxies } from './home/screen-proxies';
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
 let inputMode: 'world' | 'takeover' = 'world';
+
+// Disposer for the currently-open takeover page's mountReveal() observer
+// (page2d/reveal.ts). mountReveal returns a cleanup fn that disconnects its
+// IntersectionObserver and drops its references to the (detached-on-close)
+// article; nothing else in the close paths (Escape, popstate, cloth click,
+// wordmark/contact) invokes it, so each open leaked an observer + the whole
+// article subtree. Cleared here on the takeover's 'world' onModeChange —
+// which runOpen/runClose (page2d/takeover.ts) fire on every close path
+// except destroy() (page-lifetime teardown, not a mode change) — and
+// defensively before every new mountReveal() call in case a caller ever
+// opens a second page without an intervening close.
+let activeRevealCleanup: (() => void) | null = null;
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -85,6 +98,10 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         // own mode. (scrollNav is null under reduced motion — no wheel nav.)
         inputMode = mode;
         scrollNav?.setMode(mode);
+        if (mode === 'world' && activeRevealCleanup) {
+          activeRevealCleanup();
+          activeRevealCleanup = null;
+        }
       },
     });
 
@@ -155,7 +172,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         },
       });
       void takeover.open(page);
-      mountReveal(page, { reducedMotion });
+      activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
+      activeRevealCleanup = mountReveal(page, { reducedMotion });
     };
 
     const openAbout = (): void => {
@@ -166,7 +184,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         onContact: () => void closeTakeoverThenNavigate('contact'),
       });
       void takeover.open(page);
-      mountReveal(page, { reducedMotion });
+      activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
+      activeRevealCleanup = mountReveal(page, { reducedMotion });
     };
 
     // Shared routing decision for a WORK tile / the ABOUT screen, used by
@@ -291,6 +310,12 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const tagline = initTagline(taglineEl);
     const reticles = initReticles(fieldEl, {
       reducedMotion,
+      // SLUGS[i] -> its project's real title (content/projects.ts is the
+      // single source of truth), not the WORK-wall tile label array in
+      // world.ts (that one's private) — keeps reticles.ts a plain UI
+      // component driven entirely by opts, no dependency on either the
+      // three.js world module or the content loader.
+      titles: SLUGS.map((slug) => getProject(slug).title),
       onActivate: (i) => {
         if (takeover.isOpen()) return; // guard: takeover mode swallows home nav
         navToProject(SLUGS[i]);

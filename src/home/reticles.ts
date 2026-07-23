@@ -75,7 +75,9 @@ interface Mover {
 
 export function initReticles(
   field: HTMLElement,
-  opts: { reducedMotion: boolean; onActivate?(index: number): void } = { reducedMotion: false },
+  opts: { reducedMotion: boolean; titles?: string[]; onActivate?(index: number): void } = {
+    reducedMotion: false,
+  },
 ): ReticleField {
   const rows = field.querySelectorAll<HTMLElement>('.reticle-row');
   if (rows.length < 2) throw new Error('.reticle-row elements not found');
@@ -91,7 +93,8 @@ export function initReticles(
     btn.className = 'reticle';
     btn.type = 'button';
     btn.dataset.slot = String(i);
-    btn.setAttribute('aria-label', `Navigation slot ${i + 1} (coming soon)`);
+    const title = opts.titles?.[i];
+    btn.setAttribute('aria-label', title ? `Fly to ${title} project` : `Fly to project ${i + 1}`);
     btn.innerHTML = `
       <span class="brackets" aria-hidden="true">
         <span class="overlay"></span>
@@ -99,39 +102,29 @@ export function initReticles(
       </span>
       <span class="icon">${GLYPHS[0]}</span>`;
     btn.addEventListener('click', () => {
-      if (opts.onActivate) {
-        opts.onActivate(i);
-      } else {
-        // Stub — destinations are a follow-up design conversation.
-        console.info(`[reticle] slot ${i} clicked — destination TBD`);
-      }
+      opts.onActivate?.(i);
     });
     // Cycling pause: hovered/focused reticles hold their current glyph until
     // the pointer leaves or focus moves on (native <button> click already
     // handles Enter/Space). Hover and keyboard focus are tracked separately
     // so one ending (e.g. the mouse drifting off a keyboard-focused reticle)
-    // can't prematurely resume cycling while the other still applies; the
-    // `is-hover` class only comes off once neither is active.
-    const syncPauseClass = (): void => {
-      btn.classList.toggle('is-hover', hovered[i] || focused[i]);
-    };
+    // can't prematurely resume cycling while the other still applies — the
+    // `hovered`/`focused` flags below are consulted directly by the cycle
+    // timer's gate (see `cycleTimer` below), which skips repainting a glyph
+    // for any slot where either flag is still true. No CSS class involved.
     btn.addEventListener('mouseenter', () => {
       hovered[i] = true;
-      syncPauseClass();
     });
     btn.addEventListener('mouseleave', () => {
       hovered[i] = false;
-      syncPauseClass();
     });
     // Same pause, keyboard-driven: a tabbed-to reticle holds its glyph too,
     // so it doesn't visibly change under a sighted keyboard user's focus.
     btn.addEventListener('focus', () => {
       focused[i] = true;
-      syncPauseClass();
     });
     btn.addEventListener('blur', () => {
       focused[i] = false;
-      syncPauseClass();
     });
     rows[Math.floor(i / PER_ROW)].appendChild(btn);
     reticles.push(btn);
