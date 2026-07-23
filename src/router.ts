@@ -24,20 +24,32 @@ export function initRouter(director: CameraDirector, opts: { reducedMotion: bool
     else void director.flyTo(id, { abbreviated });
   };
 
-  // CameraDirector has no cut-only equivalent of flyToFocus (jumpTo only
-  // takes a DestId, not an arbitrary focus target) — see camera-director.ts.
-  // Reduced motion here falls back to an abbreviated flyToFocus rather than
-  // a true instant cut. Flagged in task-11-report.md as a concern rather
-  // than adding new director API unreviewed.
+  // Reduced motion uses jumpToFocus — a true instant cut, camera position
+  // set directly with no tween and no dependency on a following update()
+  // tick (there is no continuous frame loop under reduced motion; see
+  // camera-director.ts's jumpToFocus doc comment).
   const goToProject = (slug: string, abbreviated: boolean): Promise<void> => {
     const target = tileFocusTarget(slug, window.innerWidth, window.innerHeight);
-    return director.flyToFocus(target, { abbreviated: opts.reducedMotion ? true : abbreviated });
+    if (opts.reducedMotion) {
+      director.jumpToFocus(target);
+      return Promise.resolve();
+    }
+    return director.flyToFocus(target, { abbreviated });
   };
 
   // URL reflects arrivals (settles and flight landings alike). Compared by
   // dest-equivalence (destForPath), not raw pathname equality, so landing on
   // 'work' after a project focus flight doesn't clobber the /work/[slug]
   // path navigateToProject already pushed for this same arrival.
+  //
+  // Known wart, accepted for now: scroll-defocusing away from a focused
+  // project tile also arrives back at 'work' (via the director's own
+  // settle-to-rest, not a router-initiated flight) — destForPath still
+  // reports 'work' for the un-navigated-away-from /work/[slug] URL, so this
+  // guard skips the pushState and the URL is left pointing at a project the
+  // camera has since defocused from. Distinguishing "arrived at work
+  // focused-and-framed" from "arrived at work via defocus-settle" needs more
+  // state than this router tracks today.
   const offArrive = director.onArrive((id) => {
     const path = pathForDest(id);
     if (destForPath(window.location.pathname) !== id) {
@@ -77,6 +89,13 @@ export function initRouter(director: CameraDirector, opts: { reducedMotion: bool
     },
     navigateToProject(slug: string, navOpts?: { abbreviated?: boolean }): Promise<void> {
       const path = pathForSlug(slug);
+      // Validate against SLUGS (via the route helpers, so router.ts doesn't
+      // need its own SLUGS import) BEFORE touching history — an unknown
+      // slug must reject cleanly, not pollute history and then throw once
+      // tileFocusTarget() hits it downstream.
+      if (slugForPath(path) !== slug) {
+        return Promise.reject(new Error(`navigateToProject: unknown project slug "${slug}"`));
+      }
       window.history.pushState({ dest: 'work', slug }, '', path);
       currentPath = path;
       return goToProject(slug, navOpts?.abbreviated ?? false);

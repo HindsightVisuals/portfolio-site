@@ -35,6 +35,7 @@ export interface CameraDirector {
   flyTo(id: DestId, opts?: { abbreviated?: boolean }): Promise<void>;
   flyToFocus(target: { x: number; y: number; z: number }, opts?: { abbreviated?: boolean }): Promise<void>;
   jumpTo(id: DestId): void;
+  jumpToFocus(target: { x: number; y: number; z: number }): void;
   feedScroll(pixels: number): void;
   setPointer(nx: number, ny: number): void;
   update(dt: number): void;
@@ -186,6 +187,37 @@ export function initCameraDirector(
       state.z = targetZ;
       camera.position.z = state.z;
       emitArrive(targetZ);
+    },
+
+    /**
+     * Cut-only equivalent of flyToFocus, for reduced motion: sets camera
+     * position (x, y, AND z — unlike jumpTo, which leaves x/y for update()'s
+     * per-frame magnet blend to ease toward 0) directly so the frame is
+     * correctly framed even with no update() tick following this call.
+     * Mirrors flyToFocus's depart/arrive sequencing but instant, and — like
+     * flyToFocus's onComplete — calls arriveCbs directly with the
+     * already-known destId rather than emitArrive(z): a focus target's z is
+     * offset by framing distance from any destination's exact cameraZ, so
+     * emitArrive's sameSpot lookup would find nothing to fire.
+     */
+    jumpToFocus(target: { x: number; y: number; z: number }): void {
+      const destId = nearestDestId(target.z);
+      killSettle();
+      for (const cb of departCbs) cb(destId);
+      focusState = focusReducer(focusState, 'fly');
+      mode = 'free';
+      velocity = 0;
+      lateralTween?.kill();
+      lateralTween = null;
+      const targetZ = wrappedTarget(target.z, state.z);
+      state.z = targetZ;
+      lateral.x = target.x;
+      lateral.y = target.y;
+      camera.position.x = target.x;
+      camera.position.y = target.y;
+      camera.position.z = state.z;
+      focusState = focusReducer(focusState, 'arrive');
+      for (const cb of arriveCbs) cb(destId);
     },
 
     feedScroll(pixels: number): void {
