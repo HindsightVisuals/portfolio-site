@@ -6,11 +6,105 @@
   position: fixed;
   inset: 0;
   z-index: 20; /* above .chrome (10) and .reticle-field (6) */
-  background: #fdfdfd;
+  /* No background here on purpose — the live canvas must show through the
+   * cloth-V notch cut into .nav2d below. Opacity everywhere else comes from
+   * .nav2d's flanking strips (top 64px) and .takeover-body (the rest). */
   overflow-y: auto;
   will-change: transform;
 }
 
 .takeover:focus {
   outline: none;
+}
+
+/* Future page content (Task 12+) mounts its scrollable body in a
+ * `.takeover-body` wrapper below `.nav2d` so `.takeover` itself can stay
+ * transparent for the notch above. */
+.takeover-body {
+  background: #fdfdfd;
+  min-height: calc(100% - 64px);
+}
+
+/* --- 2D nav bar + cloth-V tab (Task 7) ---
+ * `.nav2d` paints its own background as two flanking strips (::before/
+ * ::after) with a 220px transparent gap dead center. `.takeover` behind it
+ * has no background of its own (see above), so that gap is a real window
+ * straight through to the always-running canvas — not a mask/clip trick. */
+
+.nav2d {
+  position: relative;
+  z-index: 1; /* sits above .takeover-body content that scrolls under it */
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.nav2d::before,
+.nav2d::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #fdfdfd;
+  z-index: 0;
+}
+
+.nav2d::before {
+  left: 0;
+  width: calc(50% - 110px); /* 220px transparent notch, centered */
+}
+
+.nav2d::after {
+  right: 0;
+  width: calc(50% - 110px);
+}
+
+.nav2d-wordmark,
+.nav2d-contact,
+.cloth-tab {
+  position: absolute;
+  z-index: 1; /* above the ::before/::after strips */
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.nav2d-wordmark {
+  left: 48px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.nav2d-contact {
+  right: 48px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  font-variant: small-caps;
+}
+
+.cloth-tab {
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 64px;
+  line-height: 0;
+}
+
+.cloth-tab-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.nav2d-wordmark:focus-visible,
+.nav2d-contact:focus-visible,
+.cloth-tab:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
 }
