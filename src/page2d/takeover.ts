@@ -46,6 +46,12 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
   // history entry by that point. Remember it here and finish the close for
   // real once the open transition reaches 'open'.
   let pendingPopClose = false;
+  // The element focused immediately before open() ran (typically the reticle
+  // or tile that triggered the journey), captured fresh on every open so
+  // close() can hand focus back somewhere sensible instead of dropping it to
+  // <body> when the focused takeover article is removed from the DOM. Null
+  // when nothing meaningful was focused (or it's since left the document).
+  let previouslyFocused: HTMLElement | null = null;
 
   const topIsTakeover = (): boolean =>
     (window.history.state as { takeover?: boolean } | null)?.takeover === true;
@@ -86,6 +92,11 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
     const next = takeoverReducer(state, 'open');
     if (next === state) return; // already open/opening — no-op
     state = next;
+
+    previouslyFocused =
+      document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+        ? document.activeElement
+        : null;
 
     // "immediately on open-start", ahead of the mount/animate work below.
     opts.onModeChange('takeover');
@@ -162,6 +173,17 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
 
     setInert(false);
     opts.onModeChange('world');
+
+    // Hand focus back to whatever triggered this open (a reticle, a framed
+    // tile's canvas click leaves nothing focusable so this is a no-op, a
+    // navbar button, …) — the article that held focus is already removed
+    // from the DOM above, so without this the browser would drop focus to
+    // <body>. Guard against a target that's left the document since (e.g. a
+    // reticle whose field went inert/faded while the takeover was open).
+    const toFocus = previouslyFocused;
+    previouslyFocused = null;
+    if (toFocus && document.contains(toFocus) && !toFocus.closest('[inert]')) toFocus.focus();
+
     state = takeoverReducer(state, 'closed');
 
     // "the takeover state is on top" — read live, not a locally-tracked

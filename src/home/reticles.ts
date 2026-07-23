@@ -83,6 +83,7 @@ export function initReticles(
   const reticles: HTMLButtonElement[] = [];
   const iconEls: HTMLElement[] = [];
   const hovered: boolean[] = new Array(RETICLE_COUNT).fill(false);
+  const focused: boolean[] = new Array(RETICLE_COUNT).fill(false);
   const shownIndex: number[] = new Array(RETICLE_COUNT).fill(0);
 
   for (let i = 0; i < RETICLE_COUNT; i++) {
@@ -105,15 +106,32 @@ export function initReticles(
         console.info(`[reticle] slot ${i} clicked — destination TBD`);
       }
     });
-    // Cycling pause: hovered reticles hold their current glyph until the
-    // pointer leaves (native <button> click already handles Enter/Space).
+    // Cycling pause: hovered/focused reticles hold their current glyph until
+    // the pointer leaves or focus moves on (native <button> click already
+    // handles Enter/Space). Hover and keyboard focus are tracked separately
+    // so one ending (e.g. the mouse drifting off a keyboard-focused reticle)
+    // can't prematurely resume cycling while the other still applies; the
+    // `is-hover` class only comes off once neither is active.
+    const syncPauseClass = (): void => {
+      btn.classList.toggle('is-hover', hovered[i] || focused[i]);
+    };
     btn.addEventListener('mouseenter', () => {
       hovered[i] = true;
-      btn.classList.add('is-hover');
+      syncPauseClass();
     });
     btn.addEventListener('mouseleave', () => {
       hovered[i] = false;
-      btn.classList.remove('is-hover');
+      syncPauseClass();
+    });
+    // Same pause, keyboard-driven: a tabbed-to reticle holds its glyph too,
+    // so it doesn't visibly change under a sighted keyboard user's focus.
+    btn.addEventListener('focus', () => {
+      focused[i] = true;
+      syncPauseClass();
+    });
+    btn.addEventListener('blur', () => {
+      focused[i] = false;
+      syncPauseClass();
     });
     rows[Math.floor(i / PER_ROW)].appendChild(btn);
     reticles.push(btn);
@@ -169,7 +187,7 @@ export function initReticles(
     cycleTimer = setInterval(() => {
       const now = performance.now();
       for (let i = 0; i < RETICLE_COUNT; i++) {
-        if (hovered[i]) continue;
+        if (hovered[i] || focused[i]) continue;
         const idx = iconIndexAt(now, i, RETICLE_COUNT);
         if (idx !== shownIndex[i]) {
           shownIndex[i] = idx;

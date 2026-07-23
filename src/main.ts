@@ -97,21 +97,16 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       void router.navigateToProject(slug);
     };
 
-    const makeTakeoverNavbar = (): HTMLElement =>
-      buildNavbar({
-        reducedMotion,
-        onCloth: () => void takeover.close(),
-        onWordmark: () => void takeover.close().then(() => router.navigate('home')),
-        onContact: () => void takeover.close().then(() => router.navigate('contact')),
-      });
-
     // takeover.close() unwinds its own pushed history entry via an async
-    // history.back(); that popstate lands on the current project path (matching
-    // router.currentPath, so router.onPop no-ops). A push made before it lands
-    // (navigateToProject) moves currentPath first, so the unwind then looks like
-    // a real back-navigation and router.onPop re-flies to the OLD slug. Await
-    // the unwind before pushing the next project. The listener is registered in
-    // the microtask after close() resolves — ahead of the queued popstate
+    // history.back(); that popstate lands on the path that was current before
+    // the takeover opened (matching router.currentPath, so router.onPop
+    // no-ops). Any history push made before that unwind lands (navigateToProject,
+    // or a plain router.navigate) moves currentPath first, so the unwind then
+    // looks like a real back-navigation and router.onPop re-flies to the OLD
+    // destination — clobbering the navigation that was just requested. Every
+    // takeover-close-then-navigate path (Next, wordmark, contact) must await
+    // the unwind before pushing again. The listener is registered in the
+    // microtask after close() resolves — ahead of the queued popstate
     // macrotask — so it can't be missed; the timeout is a safety net for paths
     // that pushed no history entry.
     const afterTakeoverHistoryUnwind = (): Promise<void> =>
@@ -126,6 +121,20 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         };
         window.addEventListener('popstate', finish);
         const timer = setTimeout(finish, 100);
+      });
+
+    const closeTakeoverThenNavigate = async (id: DestId): Promise<void> => {
+      await takeover.close();
+      await afterTakeoverHistoryUnwind();
+      router.navigate(id);
+    };
+
+    const makeTakeoverNavbar = (): HTMLElement =>
+      buildNavbar({
+        reducedMotion,
+        onCloth: () => void takeover.close(),
+        onWordmark: () => void closeTakeoverThenNavigate('home'),
+        onContact: () => void closeTakeoverThenNavigate('contact'),
       });
 
     // open() appends the page synchronously (before its swipe tween — verified
@@ -152,7 +161,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         reducedMotion,
         navbar: makeTakeoverNavbar(),
         deferReveal: true,
-        onContact: () => void takeover.close().then(() => router.navigate('contact')),
+        onContact: () => void closeTakeoverThenNavigate('contact'),
       });
       void takeover.open(page);
       mountReveal(page, { reducedMotion });
