@@ -2,7 +2,8 @@ import gsap from 'gsap';
 import type * as THREE from 'three';
 import type { DestId } from '../routes';
 import type { Destination } from './world';
-import { nearestWrapped, resolveSnapTargetLooped, sameSpot, SPINE_PERIOD } from './loop';
+import { focusReducer, type FocusState } from './focus';
+import { nearestWrapped, resolveSnapTargetLooped, sameSpot, wrapDelta, SPINE_PERIOD } from './loop';
 
 /** Nearest wrapped instance; exact half-period ties resolve FORWARD (deeper, -z) —
  * the loop's canonical travel direction (Home -> Work -> About -> Contact -> ...). */
@@ -25,11 +26,14 @@ const SNAP_BELOW = 2.0;          // |v| threshold to begin settling
 const MAGNET_X = 1.2;            // pointer x range (normalized −1..1)
 const MAGNET_Y = 0.8;            // pointer y range (normalized −1..1)
 const MAGNET_EASE = 2.0;         // per-second approach rate
+const FOCUS_MAGNET_SCALE = 0.3;  // magnet strength while a focus flight is settled
+const FOCUS_RELEASE_S = 0.9;     // lateral ease-home duration when focus is broken by scroll
 
 type Mode = 'free' | 'settling' | 'flying';
 
 export interface CameraDirector {
   flyTo(id: DestId, opts?: { abbreviated?: boolean }): Promise<void>;
+  flyToFocus(target: { x: number; y: number; z: number }, opts?: { abbreviated?: boolean }): Promise<void>;
   jumpTo(id: DestId): void;
   feedScroll(pixels: number): void;
   setPointer(nx: number, ny: number): void;
@@ -37,6 +41,7 @@ export interface CameraDirector {
   onArrive(cb: (id: DestId) => void): () => void;
   onDepart(cb: (dest: DestId) => void): () => void;
   getVelocity(): number;
+  isFocused(): boolean;
   destroy(): void;
 }
 
@@ -47,10 +52,13 @@ export function initCameraDirector(
   const rests = destinations.map((d) => d.cameraZ);
 
   const state = { z: destinations[0].cameraZ };
+  const lateral = { x: 0, y: 0 }; // off-axis flight-target lateral offset (focus mode)
+  let focusState: FocusState = 'free';
   let velocity = 0;
   let measuredVelocity = 0;
   let mode: Mode = 'free';
   let settleTween: gsap.core.Tween | null = null;
+  let lateralTween: gsap.core.Tween | null = null;
   let pendingFlyResolve: (() => void) | null = null;
   let pointerX = 0;
   let pointerY = 0;
@@ -60,6 +68,21 @@ export function initCameraDirector(
   const emitArrive = (z: number): void => {
     const dest = destinations.find((d) => sameSpot(d.cameraZ, z));
     if (dest) for (const cb of arriveCbs) cb(dest.id);
+  };
+
+  /** Destination whose cameraZ is nearest z by wrapped distance (used for focus flights,
+   * whose target.z is an arbitrary off-axis point rather than an exact rest). */
+  const nearestDestId = (z: number): DestId => {
+    let best = destinations[0];
+    let bestD = Math.abs(wrapDelta(best.cameraZ, z));
+    for (const d of destinations) {
+      const dist = Math.abs(wrapDelta(d.cameraZ, z));
+      if (dist < bestD) {
+        best = d;
+        bestD = dist;
+      }
+    }
+    return best.id;
   };
 
   const killSettle = (): void => {
@@ -91,21 +114,56 @@ export function initCameraDirector(
       if (!dest) return Promise.reject(new Error(`unknown destination ${id}`));
       killSettle();
       for (const cb of departCbs) cb(id);
+      focusState = focusReducer(focusState, 'flyElsewhere');
       mode = 'flying';
       velocity = 0;
       const targetZ = wrappedTarget(dest.cameraZ, state.z);
+      const duration = opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S;
+      lateralTween?.kill();
       return new Promise((resolve) => {
         pendingFlyResolve = resolve;
+        lateralTween = gsap.to(lateral, { x: 0, y: 0, duration, ease: FLY_EASE });
         settleTween = gsap.to(state, {
           z: targetZ,
-          duration: opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S,
+          duration,
           ease: FLY_EASE,
           onComplete: () => {
             mode = 'free';
             settleTween = null;
+            focusState = 'free';
             const r = pendingFlyResolve;
             pendingFlyResolve = null;
             emitArrive(targetZ);
+            r?.();
+          },
+        });
+      });
+    },
+
+    flyToFocus(target: { x: number; y: number; z: number }, opts?: { abbreviated?: boolean }): Promise<void> {
+      killSettle();
+      const destId = nearestDestId(target.z);
+      for (const cb of departCbs) cb(destId);
+      focusState = focusReducer(focusState, 'fly');
+      mode = 'flying';
+      velocity = 0;
+      const targetZ = wrappedTarget(target.z, state.z);
+      const duration = opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S;
+      lateralTween?.kill();
+      return new Promise((resolve) => {
+        pendingFlyResolve = resolve;
+        lateralTween = gsap.to(lateral, { x: target.x, y: target.y, duration, ease: FLY_EASE });
+        settleTween = gsap.to(state, {
+          z: targetZ,
+          duration,
+          ease: FLY_EASE,
+          onComplete: () => {
+            mode = 'free';
+            settleTween = null;
+            focusState = focusReducer(focusState, 'arrive');
+            const r = pendingFlyResolve;
+            pendingFlyResolve = null;
+            for (const cb of arriveCbs) cb(destId);
             r?.();
           },
         });
@@ -119,6 +177,11 @@ export function initCameraDirector(
       for (const cb of departCbs) cb(id);
       mode = 'free';
       velocity = 0;
+      focusState = 'free';
+      lateralTween?.kill();
+      lateralTween = null;
+      lateral.x = 0;
+      lateral.y = 0;
       const targetZ = wrappedTarget(dest.cameraZ, state.z);
       state.z = targetZ;
       camera.position.z = state.z;
@@ -127,6 +190,20 @@ export function initCameraDirector(
 
     feedScroll(pixels: number): void {
       if (mode === 'flying') return;
+      if (focusState === 'focused') {
+        focusState = focusReducer(focusState, 'scroll');
+        lateralTween?.kill();
+        lateralTween = gsap.to(lateral, {
+          x: 0,
+          y: 0,
+          duration: FOCUS_RELEASE_S,
+          ease: SETTLE_EASE,
+          onComplete: () => {
+            focusState = focusReducer(focusState, 'released');
+            lateralTween = null;
+          },
+        });
+      }
       if (mode === 'settling') {
         killSettle();
         mode = 'free';
@@ -159,9 +236,10 @@ export function initCameraDirector(
       const targetX = pointerX * MAGNET_X;
       const targetY = -pointerY * MAGNET_Y;
       const suspend = mode === 'flying' ? 0 : 1;
+      const magnetScale = focusState === 'focused' ? FOCUS_MAGNET_SCALE : 1;
       const k = Math.min(dt * MAGNET_EASE, 1);
-      camera.position.x += (targetX * suspend - camera.position.x) * k;
-      camera.position.y += (targetY * suspend - camera.position.y) * k;
+      camera.position.x += ((lateral.x + targetX * suspend * magnetScale) - camera.position.x) * k;
+      camera.position.y += ((lateral.y + targetY * suspend * magnetScale) - camera.position.y) * k;
       if (dt > 0) measuredVelocity = (state.z - before) / dt;
     },
 
@@ -179,8 +257,13 @@ export function initCameraDirector(
       return measuredVelocity;
     },
 
+    isFocused(): boolean {
+      return focusState === 'focused';
+    },
+
     destroy(): void {
       killSettle();
+      lateralTween?.kill();
       arriveCbs.clear();
       departCbs.clear();
     },
