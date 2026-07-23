@@ -1,0 +1,32 @@
+{
+  "title": "Spy Hop",
+  "slug": "spy-hop",
+  "order": 3,
+  "client": "Spy Hop",
+  "year": "— placeholder —",
+  "role": "Project managed, upsold scope, created the design system, built pages, facilitated dev and interactions. Website redesign.",
+  "tools": [
+    "Figma",
+    "Claude"
+  ],
+  "disciplines": [
+    "Web",
+    "Design system",
+    "Leadership"
+  ],
+  "brief": "The ask: website redesign. Scope expanded into a full design system and dev facilitation.",
+  "process": [
+    "Initial discovery / brief",
+    "Upsell story — how scope expanded and why",
+    "Design system creation (tokens, components, patterns)",
+    "Page build",
+    "Dev handoff and interaction facilitation",
+    "— placeholder —"
+  ],
+  "deliverables": [
+    "Launched website",
+    "Design system documentation",
+    "— placeholder —"
+  ],
+  "pullQuote": "— placeholder —"
+}

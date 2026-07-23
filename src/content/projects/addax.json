@@ -1,0 +1,32 @@
+{
+  "title": "Addax",
+  "slug": "addax",
+  "order": 2,
+  "client": "Addax",
+  "year": "— placeholder —",
+  "role": "Designed the trailer customizer Three.js experience. Built 3D models with web optimization in mind. Helped with management, art direction, and overall design. Website redesign + customizer.",
+  "tools": [
+    "Three.js",
+    "— placeholder —",
+    "— placeholder —"
+  ],
+  "disciplines": [
+    "Web",
+    "3D",
+    "Interactive"
+  ],
+  "brief": "The ask: redesign the website + build an interactive 3D customizer for trailers.",
+  "process": [
+    "Customizer UX — how users configure their trailer in 3D",
+    "Model optimization for web (poly budget, texture compression, draw call limits)",
+    "Art direction across stills + interactive",
+    "Site redesign architecture",
+    "— placeholder —"
+  ],
+  "deliverables": [
+    "Live website with interactive 3D customizer",
+    "Branding Material and Motion",
+    "3D models"
+  ],
+  "pullQuote": "— placeholder —"
+}
