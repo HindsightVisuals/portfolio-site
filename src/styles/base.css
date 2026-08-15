@@ -249,3 +249,88 @@ body {
   z-index: 11; /* above .chrome (10), below .takeover (20) */
   cursor: pointer;
 }
+
+/* --- F15 cursor system ---------------------------------------------------
+ * Spec: docs/superpowers/specs/2026-08-14-f15-cursor-system-design.md
+ * Values here are tune-by-eye starting points.
+ *
+ * The wrapper is `display: contents` ON PURPOSE. A positioned wrapper with a
+ * z-index would form a stacking context, and mix-blend-mode blends against the
+ * backdrop *within* its stacking context — the cursor would then multiply
+ * against an empty layer instead of the page. Generating no box keeps each
+ * child in the root stacking context, where the WebGL canvas, chrome and
+ * takeover pages are its real backdrop. Do not give this element position,
+ * z-index, opacity, filter or transform. */
+.cursor-layer {
+  display: contents;
+}
+
+.cursor-square,
+.cursor-trail,
+.cursor-glass {
+  position: fixed;
+  pointer-events: none;
+  z-index: 100; /* above .takeover (20), the highest in the app */
+}
+
+.cursor-square {
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ink);
+  background: rgba(20, 20, 20, 0.35);
+  /* multiply in BOTH states, not just hover: black-on-white under multiply is
+   * identical to normal blending, so rest looks unchanged, and keeping it
+   * constant avoids a blend-mode snap mid-transition (blend is not
+   * interpolable). On this light ground, screen() would render the green as
+   * pure white — see the spec's blend-mode decision. */
+  mix-blend-mode: multiply;
+  transition:
+    width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    background-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.cursor-square--hover {
+  width: 32px;
+  height: 32px;
+  border-color: #61e891;
+  background: rgba(97, 232, 145, 0.35);
+}
+
+.cursor-trail {
+  inset: 0;
+  mix-blend-mode: multiply;
+}
+
+/* Frosted-glass node riding the dying end of the trail. CSS cannot
+ * displacement-map a backdrop, so this is blur, not refraction; the radial mask
+ * feathers it so there is no visible disc edge. backdrop-filter is written per
+ * frame by cursor.ts. */
+.cursor-glass {
+  top: 0;
+  left: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  -webkit-mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+}
+
+/* Hide the OS cursor everywhere the custom one is mounted. !important is
+ * required because main.ts writes canvas.style.cursor inline as a fallback for
+ * the no-custom-cursor case, and inline styles otherwise win. Text-entry
+ * elements keep their caret affordance — no custom square replaces an I-beam. */
+html.has-custom-cursor,
+html.has-custom-cursor *:not(input):not(textarea):not([contenteditable]) {
+  cursor: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-square {
+    transition: none;
+  }
+}

@@ -22,6 +22,7 @@ import { buildCaseStudy } from './page2d/case-study';
 import { buildAbout } from './page2d/about';
 import { mountReveal } from './page2d/reveal';
 import { initScreenProxies } from './home/screen-proxies';
+import { initCursor } from './home/cursor';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
@@ -57,6 +58,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const HOME_LEAVE_DIST = 10; // leaving-home threshold for intro interrupt + treatment B
 
     const stage = initStage(canvas, { reducedMotion });
+    // F15: null on coarse pointers, where the whole system is gated off and the
+    // OS cursor is left alone. Every consumer below treats null as normal.
+    const cursor = initCursor({ reducedMotion });
     const bg = initBackgroundLayer(stage.renderer, { reducedMotion, debug }, () => {
       if (reducedMotion) stage.requestFrame();
     });
@@ -233,14 +237,20 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       if (!p) return;
       if (takeover.isOpen()) {
         world.setTileHover(null);
-        canvas.style.cursor = '';
+        // The takeover covers the canvas; its own DOM drives hover from here.
+        if (cursor) cursor.setWorldHover(false);
+        else canvas.style.cursor = '';
         return;
       }
       const ndcX = (p.x / window.innerWidth) * 2 - 1;
       const ndcY = -((p.y / window.innerHeight) * 2 - 1);
       const hit = world.pick(ndcX, ndcY);
       world.setTileHover(hit?.kind === 'tile' ? hit.slug : null);
-      canvas.style.cursor = hit ? 'pointer' : '';
+      // With the custom cursor mounted the OS cursor is hidden, so the inline
+      // 'pointer' write is meaningless — feed the square instead. The inline
+      // write survives only as the coarse-pointer fallback.
+      if (cursor) cursor.setWorldHover(!!hit);
+      else canvas.style.cursor = hit ? 'pointer' : '';
     };
     window.addEventListener('mousemove', (e) => {
       pendingPointer = { x: e.clientX, y: e.clientY };
