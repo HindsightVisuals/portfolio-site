@@ -74,6 +74,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // RD travel stretch: the background deforms along the axis of travel while
     // the camera is moving (scroll, flythroughs and settling all feed this).
     bg.setVelocityProvider(() => director.getVelocity());
+    // Press-and-hold sucks the RD field toward the cursor. Null cursor (coarse
+    // pointer) means no pull, which is the right behaviour on touch anyway.
+    bg.setPullProvider(() => cursor?.getHoldProgress() ?? 0);
     if (debugWorld) director.jumpTo('work');
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));

@@ -34,6 +34,12 @@ import {
   smoothTrail,
   bandSlices,
   shouldMount,
+  holdRamp,
+  holdRelease,
+  holdSize,
+  holdAlpha,
+  holdEdgeBlur,
+  CLICK_SUPPRESS_MS,
   type TrailPoint,
 } from './cursor-math';
 
@@ -58,6 +64,8 @@ const SEMI_DENSE_SAMPLES = 30;
 export interface Cursor {
   /** Fed by main.ts's world raycast — true when a WORK tile or the ABOUT screen is under the pointer. */
   setWorldHover(hovering: boolean): void;
+  /** 0..1 press-and-hold progress. Drives the RD pull in background.ts. */
+  getHoldProgress(): number;
   destroy(): void;
 }
 
@@ -110,6 +118,17 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     }
   }
 
+  // The press-and-hold circle. Its own element rather than a mutated square:
+  // the square carries CSS transitions for the hover swell, and driving size
+  // per frame through those transitions would fight them.
+  let holdEl: HTMLElement | null = null;
+  if (!reducedMotion) {
+    holdEl = document.createElement('div');
+    holdEl.className = 'cursor-hold';
+    holdEl.style.opacity = '0';
+    layer.appendChild(holdEl);
+  }
+
   const square = document.createElement('div');
   square.className = 'cursor-square';
   square.style.opacity = '0'; // revealed on first move, so it never flashes at 0,0
@@ -127,6 +146,13 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   let hoverApplied = false;
   let points: TrailPoint[] = [];
   let raf = 0;
+
+  // Press-and-hold: ramping while the button is down, easing out after release.
+  let holdSince: number | null = null;
+  let releaseAt: number | null = null;
+  let releaseFrom = 0;
+  let holdValue = 0;
+  let pendingClickSuppressor: (() => void) | null = null;
 
   const sizeCanvases = (): void => {
     const dpr = window.devicePixelRatio || 1;
@@ -236,14 +262,51 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     }
   };
 
+  /** Current hold progress, ramping while down and easing out after release. */
+  const currentHold = (now: number): number => {
+    if (holdSince !== null) return holdRamp(now - holdSince);
+    if (releaseAt !== null) {
+      const v = holdRelease(releaseFrom, now - releaseAt);
+      if (v <= 0.001) {
+        releaseAt = null;
+        return 0;
+      }
+      return v;
+    }
+    return 0;
+  };
+
+  const updateHold = (): void => {
+    if (!holdEl) return;
+    if (holdValue <= 0.001) {
+      holdEl.style.opacity = '0';
+      if (seen) square.style.opacity = '1';
+      return;
+    }
+    const size = holdSize(holdValue);
+    holdEl.style.opacity = '1';
+    holdEl.style.width = `${size}px`;
+    holdEl.style.height = `${size}px`;
+    holdEl.style.background = `rgba(${CURSOR_GREEN}, ${holdAlpha(holdValue)})`;
+    holdEl.style.filter = `blur(${holdEdgeBlur(holdValue)}px)`;
+    holdEl.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`;
+    // The square dissolves as the circle takes over, so the cursor reads as
+    // becoming the circle rather than gaining a second shape.
+    square.style.opacity = `${1 - holdValue}`;
+  };
+
   const frame = (): void => {
     raf = 0;
     const now = performance.now();
     points = pruneTrail(points, now);
+    holdValue = currentHold(now);
     drawTrail(now);
     updateGlass(now);
+    updateHold();
     // Park once there is nothing left to animate; pointermove restarts us.
-    if (points.length > 0) raf = requestAnimationFrame(frame);
+    if (points.length > 0 || holdSince !== null || holdValue > 0.001) {
+      raf = requestAnimationFrame(frame);
+    }
   };
 
   const ensureFrame = (): void => {
@@ -288,12 +351,63 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   };
 
   const onPointerOver = (): void => {
-    if (seen) square.style.opacity = '1';
+    // pointerover fires on every element transition, not just window re-entry,
+    // so it must not stomp the square's dissolve mid-hold — updateHold() owns
+    // the opacity while a press is live and restores it on release.
+    if (seen && holdValue <= 0.001) square.style.opacity = '1';
   };
 
   const onResize = (): void => sizeCanvases();
 
+  /**
+   * Swallow the click that ends a long press, so a hold on a reticle or a WORK
+   * tile can build and release without navigating. Capture phase on window runs
+   * ahead of every target handler. The timeout is a safety net for presses that
+   * produce no click at all (drag out, pointercancel).
+   */
+  const suppressNextClick = (): void => {
+    pendingClickSuppressor?.();
+    const onClick = (e: MouseEvent): void => {
+      e.stopPropagation();
+      e.preventDefault();
+      cleanup();
+    };
+    const timer = window.setTimeout(() => cleanup(), 400);
+    function cleanup(): void {
+      window.removeEventListener('click', onClick, true);
+      window.clearTimeout(timer);
+      pendingClickSuppressor = null;
+    }
+    window.addEventListener('click', onClick, true);
+    pendingClickSuppressor = cleanup;
+  };
+
+  const onPointerDown = (e: PointerEvent): void => {
+    if (reducedMotion || e.button !== 0) return;
+    holdSince = performance.now();
+    releaseAt = null;
+    ensureFrame();
+  };
+
+  const endHold = (): void => {
+    if (holdSince === null) return;
+    const now = performance.now();
+    const heldMs = now - holdSince;
+    releaseFrom = holdRamp(heldMs);
+    releaseAt = now;
+    holdSince = null;
+    if (heldMs >= CLICK_SUPPRESS_MS) suppressNextClick();
+    ensureFrame();
+  };
+
+  const onPointerUp = (): void => endHold();
+  const onWindowBlur = (): void => endHold();
+
   window.addEventListener('pointermove', onPointerMove, { passive: true });
+  window.addEventListener('pointerdown', onPointerDown, { passive: true });
+  window.addEventListener('pointerup', onPointerUp, { passive: true });
+  window.addEventListener('pointercancel', onPointerUp, { passive: true });
+  window.addEventListener('blur', onWindowBlur);
   window.addEventListener('pointerout', onPointerOut, { passive: true });
   window.addEventListener('pointerover', onPointerOver, { passive: true });
   window.addEventListener('resize', onResize);
@@ -303,11 +417,19 @@ export function initCursor(opts: CursorOpts): Cursor | null {
       worldHover = hovering;
       applyHover();
     },
+    getHoldProgress(): number {
+      return holdValue;
+    },
     destroy(): void {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerout', onPointerOut);
       window.removeEventListener('pointerover', onPointerOver);
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('blur', onWindowBlur);
       window.removeEventListener('resize', onResize);
+      pendingClickSuppressor?.();
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       layer.remove();

@@ -56,6 +56,12 @@ export const STRETCH_MAX = 0.1;
  * instead of snapping to whatever the velocity happens to be this frame. */
 const STRETCH_SMOOTH_RATE = 6;
 
+/** Sample expansion at a full press-and-hold. Higher = the field contracts
+ * harder into the cursor. */
+const PULL_MAX = 0.55;
+/** Radius of the pull lens, in aspect-corrected view-UV. */
+const PULL_RADIUS = 0.38;
+
 const VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
@@ -120,6 +126,10 @@ uniform float uOpacity;
 uniform float uDebug;
 uniform vec2 uZoom;   // per-axis; x != y is the travel stretch
 uniform vec2 uOffset;
+uniform vec2 uPullAnchor; // cursor in the same space as uvZ
+uniform float uPull;      // 0 = off; press-and-hold strength
+uniform float uPullRadius;
+uniform float uAspect;    // width/height, so the pull lens stays circular
 
 void main() {
   // grey -> white -> grey across x
@@ -129,6 +139,15 @@ void main() {
   // Pattern sample zooms + parallax-shifts; gradient keeps raw vUv.x;
   // debug keeps raw vUv (unaffected by both).
   vec2 uvZ = (vUv - 0.5) / uZoom + 0.5 + uOffset;
+  // Press-and-hold pull: sampling FARTHER from the anchor makes the pattern
+  // appear to contract toward it. The anchor is the warp's fixed point, so the
+  // erase brush under the cursor stays put. Falloff keeps it a local lens.
+  if (uPull > 0.0) {
+    vec2 d = uvZ - uPullAnchor;
+    float dist = length(vec2(d.x * uAspect, d.y));
+    float fall = 1.0 - smoothstep(0.0, uPullRadius, dist);
+    uvZ = clamp(uPullAnchor + d * (1.0 + uPull * fall), 0.0, 1.0);
+  }
   float B = texture2D(uState, uvZ).g;
   float mask = smoothstep(0.18, 0.22, B);
   float lum = mix(grad, uShade, mask * uOpacity);
@@ -147,6 +166,8 @@ export interface BackgroundLayer extends StageLayer {
   setCameraProvider(fn: () => { x: number; y: number; z: number }): void;
   /** Signed camera-z velocity (world units/s) driving the travel stretch. */
   setVelocityProvider(fn: () => number): void;
+  /** 0..1 press-and-hold progress driving the cursor-anchored pull. */
+  setPullProvider(fn: () => number): void;
 }
 
 /** Screen UV → sim UV under the view shader's zoom + parallax offset.
@@ -277,6 +298,10 @@ export function initBackgroundLayer(
       uDebug: { value: opts.debug ? 1 : 0 },
       uZoom: { value: new THREE.Vector2(BASE_OVERSCAN, BASE_OVERSCAN) },
       uOffset: { value: new THREE.Vector2(0, 0) },
+      uPullAnchor: { value: new THREE.Vector2(0.5, 0.5) },
+      uPull: { value: 0 },
+      uPullRadius: { value: PULL_RADIUS },
+      uAspect: { value: window.innerWidth / window.innerHeight },
     },
   });
   const viewScene = new THREE.Scene();
@@ -331,6 +356,9 @@ export function initBackgroundLayer(
   // Travel stretch (set by main.ts once the camera director exists)
   let velocityProvider: (() => number) | null = null;
   let curStretch = 0;
+
+  // Press-and-hold pull (set by main.ts from the cursor system)
+  let pullProvider: (() => number) | null = null;
 
   // Mouse → sim UV for the erase brush, mapped through the same zoom/offset
   // as the view shader so the brush stays under the cursor.
@@ -392,11 +420,23 @@ export function initBackgroundLayer(
       curZoomX = z.x;
       curZoomY = z.y;
       viewMaterial.uniforms.uZoom.value.set(curZoomX, curZoomY);
+
+      // Pull anchor rides the cursor through the same mapping as the erase
+      // brush, so the lens centre and the brush stay on the same pixel.
+      const pull = pullProvider && cursorActive ? pullProvider() : 0;
+      viewMaterial.uniforms.uPull.value = PULL_MAX * Math.max(0, Math.min(1, pull));
+      if (pull > 0) {
+        const a = viewToSimUV(rawU, rawV, curZoomX, curZoomY, curOffU, curOffV);
+        viewMaterial.uniforms.uPullAnchor.value.set(a.u, a.v);
+      }
       viewMaterial.uniforms.uState.value = read.texture;
       r.setRenderTarget(null);
       r.render(viewScene, camera);
     },
     resize(): void {
+      // Aspect is applied immediately, not debounced: it only keeps the pull
+      // lens circular, and a stale value would visibly oval it mid-hold.
+      viewMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
       // debounce internally exactly as before, but only rebuild the sim grid —
       // renderer sizing is the stage's job now
       if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);
@@ -418,6 +458,9 @@ export function initBackgroundLayer(
     },
     setVelocityProvider(fn: () => number): void {
       velocityProvider = fn;
+    },
+    setPullProvider(fn: () => number): void {
+      pullProvider = fn;
     },
   };
 }

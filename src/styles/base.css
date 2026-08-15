@@ -267,7 +267,8 @@ body {
 
 .cursor-square,
 .cursor-trail,
-.cursor-glass {
+.cursor-glass,
+.cursor-hold {
   position: fixed;
   pointer-events: none;
   z-index: 100; /* above .takeover (20), the highest in the app */
@@ -292,6 +293,21 @@ body {
     border-color 220ms cubic-bezier(0.4, 0, 0.2, 1),
     background-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
   will-change: transform;
+}
+
+/* Press-and-hold circle. Size, fill alpha and edge blur are all written per
+ * frame by cursor.ts — no CSS transition here on purpose, or it would lag the
+ * hold ramp it is meant to express. Same multiply blend as the rest of the
+ * cursor: on this white ground a `color` or `screen` blend would render the
+ * green as white. */
+.cursor-hold {
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  mix-blend-mode: multiply;
+  will-change: transform, width, height;
 }
 
 .cursor-square--hover {

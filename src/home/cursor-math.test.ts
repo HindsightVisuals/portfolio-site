@@ -8,6 +8,18 @@ import {
   GLASS_MAX_BLUR_PX,
   CORE_MAX_BLUR_PX,
   TRAIL_BANDS,
+  HOLD_RAMP_MS,
+  HOLD_RELEASE_MS,
+  HOLD_MIN_SIZE,
+  HOLD_MAX_SIZE,
+  HOLD_MIN_ALPHA,
+  HOLD_MAX_ALPHA,
+  HOLD_MAX_EDGE_BLUR,
+  holdRamp,
+  holdRelease,
+  holdSize,
+  holdAlpha,
+  holdEdgeBlur,
   pruneTrail,
   pointAge,
   trailAlpha,
@@ -241,6 +253,94 @@ describe('glassStrength', () => {
   it('clamps out-of-range ages to zero rather than going negative', () => {
     expect(glassStrength(1.5)).toBeCloseTo(0, 6);
     expect(glassStrength(-0.5)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('holdRamp', () => {
+  it('starts at zero and reaches full at the ramp duration', () => {
+    expect(holdRamp(0)).toBeCloseTo(0, 6);
+    expect(holdRamp(HOLD_RAMP_MS)).toBeCloseTo(1, 6);
+  });
+
+  it('saturates instead of running away on a very long hold', () => {
+    expect(holdRamp(HOLD_RAMP_MS * 50)).toBeCloseTo(1, 6);
+  });
+
+  it('increases monotonically', () => {
+    let prev = -1;
+    for (let i = 0; i <= 40; i++) {
+      const v = holdRamp((i / 40) * HOLD_RAMP_MS);
+      expect(v).toBeGreaterThanOrEqual(prev);
+      prev = v;
+    }
+  });
+
+  it('eases in rather than starting linearly', () => {
+    // smoothstep is below linear in the first half
+    expect(holdRamp(HOLD_RAMP_MS * 0.25)).toBeLessThan(0.25);
+  });
+});
+
+describe('holdRelease', () => {
+  it('returns the held value at the instant of release', () => {
+    expect(holdRelease(0.8, 0)).toBeCloseTo(0.8, 6);
+  });
+
+  it('reaches zero by the end of the release window', () => {
+    expect(holdRelease(0.8, HOLD_RELEASE_MS)).toBeCloseTo(0, 6);
+    expect(holdRelease(1, HOLD_RELEASE_MS * 3)).toBeCloseTo(0, 6);
+  });
+
+  it('decays monotonically and never exceeds the value it started from', () => {
+    let prev = Infinity;
+    for (let i = 0; i <= 20; i++) {
+      const v = holdRelease(0.6, (i / 20) * HOLD_RELEASE_MS);
+      expect(v).toBeLessThanOrEqual(0.6 + 1e-9);
+      expect(v).toBeLessThanOrEqual(prev + 1e-9);
+      prev = v;
+    }
+  });
+
+  it('releasing from zero stays at zero', () => {
+    expect(holdRelease(0, 0)).toBeCloseTo(0, 6);
+    expect(holdRelease(0, 100)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('hold visuals', () => {
+  it('starts at the hover square size and alpha, so the morph is continuous', () => {
+    expect(holdSize(0)).toBeCloseTo(HOLD_MIN_SIZE, 6);
+    expect(holdAlpha(0)).toBeCloseTo(HOLD_MIN_ALPHA, 6);
+  });
+
+  it('starts crisp and blurs only as it grows', () => {
+    expect(holdEdgeBlur(0)).toBeCloseTo(0, 6);
+    expect(holdEdgeBlur(1)).toBeCloseTo(HOLD_MAX_EDGE_BLUR, 6);
+  });
+
+  it('grows, saturates and softens together across the hold', () => {
+    let ps = -1;
+    let pa = -1;
+    let pb = -1;
+    for (let i = 0; i <= 20; i++) {
+      const p = i / 20;
+      const s = holdSize(p);
+      const a = holdAlpha(p);
+      const b = holdEdgeBlur(p);
+      expect(s).toBeGreaterThan(ps);
+      expect(a).toBeGreaterThan(pa);
+      expect(b).toBeGreaterThan(pb);
+      ps = s;
+      pa = a;
+      pb = b;
+    }
+  });
+
+  it('clamps out-of-range progress rather than overshooting', () => {
+    expect(holdSize(5)).toBeCloseTo(HOLD_MAX_SIZE, 6);
+    expect(holdSize(-5)).toBeCloseTo(HOLD_MIN_SIZE, 6);
+    expect(holdAlpha(5)).toBeCloseTo(HOLD_MAX_ALPHA, 6);
+    expect(holdEdgeBlur(-5)).toBeCloseTo(0, 6);
   });
 });
 

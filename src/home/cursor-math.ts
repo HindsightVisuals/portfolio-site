@@ -41,6 +41,61 @@ export const GLASS_PEAK_AGE = 0.6;
 /** Peak backdrop blur, in CSS px. */
 export const GLASS_MAX_BLUR_PX = 5;
 
+/* --- press-and-hold ---------------------------------------------------- */
+
+/** Time to reach a full hold, in ms. */
+export const HOLD_RAMP_MS = 1200;
+/** Ease-out duration after release, in ms. */
+export const HOLD_RELEASE_MS = 320;
+/** Circle diameter at hold 0 — matches the hover square so the morph is continuous. */
+export const HOLD_MIN_SIZE = 32;
+/** Circle diameter at a full hold, in CSS px. */
+export const HOLD_MAX_SIZE = 150;
+/** Green fill alpha at hold 0 — matches the hover square's fill. */
+export const HOLD_MIN_ALPHA = 0.35;
+/** Green fill alpha at a full hold. */
+export const HOLD_MAX_ALPHA = 0.85;
+/** Edge blur at a full hold, in CSS px. Zero at hold 0, so it starts crisp. */
+export const HOLD_MAX_EDGE_BLUR = 16;
+/**
+ * A press longer than this swallows its click, so you can hold on a reticle or
+ * a WORK tile, watch the pull build, and release without navigating. Quick
+ * clicks are untouched.
+ */
+export const CLICK_SUPPRESS_MS = 350;
+
+/** Smoothstep — gradual in, gradual out. */
+const smoothstep = (t: number): number => {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+};
+
+/** Hold progress from how long the button has been down. */
+export function holdRamp(heldMs: number): number {
+  return smoothstep(heldMs / HOLD_RAMP_MS);
+}
+
+/** Hold progress while easing back out, from the value held at release. */
+export function holdRelease(fromValue: number, sinceReleaseMs: number): number {
+  const k = 1 - clamp01(sinceReleaseMs / HOLD_RELEASE_MS);
+  return clamp01(fromValue) * smoothstep(k);
+}
+
+/** Circle diameter for a hold progress, in CSS px. */
+export function holdSize(progress: number): number {
+  return HOLD_MIN_SIZE + (HOLD_MAX_SIZE - HOLD_MIN_SIZE) * clamp01(progress);
+}
+
+/** Green fill alpha for a hold progress. */
+export function holdAlpha(progress: number): number {
+  return HOLD_MIN_ALPHA + (HOLD_MAX_ALPHA - HOLD_MIN_ALPHA) * clamp01(progress);
+}
+
+/** Edge blur for a hold progress, in CSS px. */
+export function holdEdgeBlur(progress: number): number {
+  return HOLD_MAX_EDGE_BLUR * clamp01(progress);
+}
+
 export interface TrailPoint {
   x: number;
   y: number;
