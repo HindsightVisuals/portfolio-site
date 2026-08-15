@@ -44,8 +44,8 @@ const BASE_OVERSCAN = 1.03;
 
 /** Camera z speed (world units/s) at which the travel stretch saturates. */
 const STRETCH_REF_SPEED = 35;
-/** Peak vertical magnification from travel. 0.06 = 6% taller at full speed. */
-const STRETCH_MAX = 0.06;
+/** Peak vertical magnification from travel. 0.1 = 10% taller at full speed. */
+export const STRETCH_MAX = 0.1;
 /* No horizontal squash, deliberately. Narrowing x samples a WIDER region, which
  * eats the BASE_OVERSCAN margin that exists to keep parallax off the clamped
  * texture edge. Measured: at full parallax the left edge sits at uv.x 0.0026

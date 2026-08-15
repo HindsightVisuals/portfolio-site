@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { viewToSimUV, travelStretch, stretchedZoom } from './background';
+import { viewToSimUV, travelStretch, stretchedZoom, STRETCH_MAX } from './background';
 
 describe('viewToSimUV', () => {
   it('is identity at zoom 1 with no offset', () => {
@@ -53,8 +53,9 @@ describe('travelStretch', () => {
   });
 
   it('stays a slight effect at full speed', () => {
-    expect(travelStretch(1e9)).toBeLessThanOrEqual(0.06);
+    expect(travelStretch(1e9)).toBeCloseTo(STRETCH_MAX, 12);
     expect(travelStretch(1e9)).toBeGreaterThan(0);
+    expect(travelStretch(1e9)).toBeLessThan(0.2); // "slight" — a guard, not a spec
   });
 
   it('survives a non-finite velocity without poisoning the uniform', () => {
@@ -71,7 +72,7 @@ describe('stretchedZoom', () => {
   });
 
   it('magnifies vertically', () => {
-    const z = stretchedZoom(1.03, 0.06);
+    const z = stretchedZoom(1.03, STRETCH_MAX);
     expect(z.y).toBeGreaterThan(1.03);
   });
 
@@ -84,7 +85,7 @@ describe('stretchedZoom', () => {
   it('keeps the left edge inside the texture at full stretch and full parallax', () => {
     // mirrors VIEW_FRAG: uvZ.x = (vUv.x - 0.5) / zoom.x + 0.5 + offU
     const MAX_OFF_U = 0.01 * 1.2; // PARALLAX_UV_PER_UNIT * MAGNET_X
-    const { x } = stretchedZoom(1.03, 0.06);
+    const { x } = stretchedZoom(1.03, STRETCH_MAX);
     expect((0 - 0.5) / x + 0.5 - MAX_OFF_U).toBeGreaterThan(0);
   });
 
