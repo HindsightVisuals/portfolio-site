@@ -71,6 +71,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const distFromHome = (): number => Math.abs(wrapDelta(HOME_REST_Z, world.camera.position.z));
 
     const director = initCameraDirector(world.camera, DESTINATIONS);
+    // RD travel stretch: the background deforms along the axis of travel while
+    // the camera is moving (scroll, flythroughs and settling all feed this).
+    bg.setVelocityProvider(() => director.getVelocity());
     if (debugWorld) director.jumpTo('work');
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));

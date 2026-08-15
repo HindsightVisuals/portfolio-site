@@ -42,6 +42,20 @@ const PARALLAX_UV_PER_UNIT = 0.01;
  * texture border; must leave more margin than the max parallax offset. */
 const BASE_OVERSCAN = 1.03;
 
+/** Camera z speed (world units/s) at which the travel stretch saturates. */
+const STRETCH_REF_SPEED = 35;
+/** Peak vertical magnification from travel. 0.06 = 6% taller at full speed. */
+const STRETCH_MAX = 0.06;
+/* No horizontal squash, deliberately. Narrowing x samples a WIDER region, which
+ * eats the BASE_OVERSCAN margin that exists to keep parallax off the clamped
+ * texture edge. Measured: at full parallax the left edge sits at uv.x 0.0026
+ * today, and a 45% squash drives it to -0.0109 — past the edge, which smears.
+ * The stretch is vertical-only; y magnifies, so it gains margin rather than
+ * spending it. Revisit only alongside a BASE_OVERSCAN increase. */
+/** Exponential approach rate (per second) for the stretch — eases in and out
+ * instead of snapping to whatever the velocity happens to be this frame. */
+const STRETCH_SMOOTH_RATE = 6;
+
 const VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
@@ -104,7 +118,7 @@ uniform float uCenter;
 uniform float uShade;
 uniform float uOpacity;
 uniform float uDebug;
-uniform float uZoom;
+uniform vec2 uZoom;   // per-axis; x != y is the travel stretch
 uniform vec2 uOffset;
 
 void main() {
@@ -131,18 +145,44 @@ export interface BackgroundOpts {
 export interface BackgroundLayer extends StageLayer {
   destroy(): void;
   setCameraProvider(fn: () => { x: number; y: number; z: number }): void;
+  /** Signed camera-z velocity (world units/s) driving the travel stretch. */
+  setVelocityProvider(fn: () => number): void;
 }
 
 /** Screen UV → sim UV under the view shader's zoom + parallax offset.
- * Mirrors VIEW_FRAG's uvZ so the erase brush lands under the cursor. */
+ * Mirrors VIEW_FRAG's uvZ so the erase brush lands under the cursor.
+ * Zoom is per-axis: travel stretches the field vertically, so the brush has to
+ * follow the same anisotropic mapping or it drifts off the pointer while moving. */
 export function viewToSimUV(
   u: number,
   v: number,
-  zoom: number,
+  zoomX: number,
+  zoomY: number,
   offU: number,
   offV: number,
 ): { u: number; v: number } {
-  return { u: (u - 0.5) / zoom + 0.5 + offU, v: (v - 0.5) / zoom + 0.5 + offV };
+  return { u: (u - 0.5) / zoomX + 0.5 + offU, v: (v - 0.5) / zoomY + 0.5 + offV };
+}
+
+/**
+ * Travel stretch from camera speed: 0 at rest, rising to STRETCH_MAX at
+ * STRETCH_REF_SPEED and clamped there. Uses speed, not signed velocity — a
+ * scale is symmetric about the centre, so only the axis of travel matters, not
+ * which way along it the camera is going.
+ */
+export function travelStretch(velocity: number): number {
+  const speed = Math.abs(velocity);
+  if (!Number.isFinite(speed)) return 0;
+  return STRETCH_MAX * Math.min(1, speed / STRETCH_REF_SPEED);
+}
+
+/** Per-axis zoom for a given base zoom and stretch: taller along the axis of
+ * travel, x untouched, so the field elongates rather than simply scaling up. */
+export function stretchedZoom(baseZoom: number, stretch: number): { x: number; y: number } {
+  return {
+    x: baseZoom,
+    y: baseZoom * (1 + Math.max(0, stretch)),
+  };
 }
 
 function makeSeedTexture(w: number, h: number): THREE.DataTexture {
@@ -235,7 +275,7 @@ export function initBackgroundLayer(
       uShade: { value: PATTERN_SHADE },
       uOpacity: { value: PATTERN_OPACITY },
       uDebug: { value: opts.debug ? 1 : 0 },
-      uZoom: { value: BASE_OVERSCAN },
+      uZoom: { value: new THREE.Vector2(BASE_OVERSCAN, BASE_OVERSCAN) },
       uOffset: { value: new THREE.Vector2(0, 0) },
     },
   });
@@ -283,8 +323,14 @@ export function initBackgroundLayer(
   // Camera provider for zoom + mouse-magnet parallax (set by main.ts after world creation)
   let cameraProvider: (() => { x: number; y: number; z: number }) | null = null;
   let curZoom = BASE_OVERSCAN;
+  let curZoomX = BASE_OVERSCAN;
+  let curZoomY = BASE_OVERSCAN;
   let curOffU = 0;
   let curOffV = 0;
+
+  // Travel stretch (set by main.ts once the camera director exists)
+  let velocityProvider: (() => number) | null = null;
+  let curStretch = 0;
 
   // Mouse → sim UV for the erase brush, mapped through the same zoom/offset
   // as the view shader so the brush stays under the cursor.
@@ -293,7 +339,7 @@ export function initBackgroundLayer(
   let cursorActive = false;
   const syncMouseUniform = (): void => {
     if (!cursorActive) return;
-    const { u, v } = viewToSimUV(rawU, rawV, curZoom, curOffU, curOffV);
+    const { u, v } = viewToSimUV(rawU, rawV, curZoomX, curZoomY, curOffU, curOffV);
     simMaterial.uniforms.uMouse.value.set(u, v);
   };
   const onMouseMove = (e: MouseEvent): void => {
@@ -312,8 +358,14 @@ export function initBackgroundLayer(
   }
 
   return {
-    update(): void {
+    update(dt: number): void {
       if (opts.reducedMotion) return;
+      // Ease the stretch toward the speed-derived target. dt is 0 on the
+      // reduced-motion requestFrame() path, which leaves the stretch untouched.
+      if (velocityProvider && dt > 0) {
+        const target = travelStretch(velocityProvider());
+        curStretch += (target - curStretch) * (1 - Math.exp(-STRETCH_SMOOTH_RATE * dt));
+      }
       syncMouseUniform(); // camera drift moves the sampled region under a still cursor
       simClock += 1 / 60;
       if (simClock >= nextSeedAt) {
@@ -332,9 +384,14 @@ export function initBackgroundLayer(
         curZoom = BASE_OVERSCAN + (ZOOM_MAX / 2) * (1 - Math.cos(progress * Math.PI * 2));
         curOffU = PARALLAX_UV_PER_UNIT * cam.x;
         curOffV = PARALLAX_UV_PER_UNIT * cam.y;
-        viewMaterial.uniforms.uZoom.value = curZoom;
         viewMaterial.uniforms.uOffset.value.set(curOffU, curOffV);
       }
+      // Applied outside the cameraProvider guard so the axes stay in sync with
+      // curZoom even before a provider is attached.
+      const z = stretchedZoom(curZoom, curStretch);
+      curZoomX = z.x;
+      curZoomY = z.y;
+      viewMaterial.uniforms.uZoom.value.set(curZoomX, curZoomY);
       viewMaterial.uniforms.uState.value = read.texture;
       r.setRenderTarget(null);
       r.render(viewScene, camera);
@@ -358,6 +415,9 @@ export function initBackgroundLayer(
     },
     setCameraProvider(fn: () => { x: number; y: number; z: number }): void {
       cameraProvider = fn;
+    },
+    setVelocityProvider(fn: () => number): void {
+      velocityProvider = fn;
     },
   };
 }
