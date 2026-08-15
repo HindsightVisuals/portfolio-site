@@ -166,10 +166,17 @@ body {
   pointer-events: auto;
 }
 
+/* Flex-centred, not `display: block`: the glyph is text, so as a block it sat
+ * on its baseline at the top-left of the 64px box instead of in the middle of
+ * the bracket frame. line-height 1 collapses the leading so the centring is on
+ * the glyph rather than on an inherited line box. */
 .reticle .icon {
   position: absolute;
   inset: 0;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .reticle .brackets {

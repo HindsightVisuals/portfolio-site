@@ -56,10 +56,16 @@ export const STRETCH_MAX = 0.1;
  * instead of snapping to whatever the velocity happens to be this frame. */
 const STRETCH_SMOOTH_RATE = 6;
 
-/** Sample expansion at a full press-and-hold. Higher = the field contracts
- * harder into the cursor. */
-const PULL_MAX = 0.55;
-/** Radius of the pull lens, in aspect-corrected view-UV. */
+/**
+ * Per-SIM-STEP sample expansion at a full press-and-hold. This compounds: the
+ * field contracts by roughly (1 + rate)^steps near the anchor, and the sim runs
+ * STEPS_PER_FRAME steps per frame, so small numbers go a long way. At 0.0009
+ * and 60fps a full-strength hold pulls the centre in ~2x per second.
+ * (Like the rest of the sim, this is per-frame rather than per-second, so it
+ * runs faster on a high-refresh display — a pre-existing property of the loop.)
+ */
+const PULL_RATE_MAX = 0.0009;
+/** Radius of the pull lens, in aspect-corrected sim UV. */
 const PULL_RADIUS = 0.38;
 
 const VERT = /* glsl */ `
@@ -82,18 +88,36 @@ uniform vec2 uSimDims;    // sim grid size in px, for circular brush distance
 uniform float uBrushR;    // erase radius in sim px
 uniform vec2 uSeedPos;    // sim UV; (-10,-10) = inactive
 uniform float uSeedR;     // radius in sim px
+uniform float uPullRate;  // per-step advection toward the cursor; 0 = off
+uniform float uPullRadius;
+uniform float uAspect;    // width/height, so the pull lens stays circular
 
 void main() {
-  vec2 c = texture2D(uState, vUv).rg;
+  // Press-and-hold pull, applied INSIDE the feedback loop rather than to the
+  // finished image: each step reads its state from slightly farther out, so
+  // the pattern is genuinely carried inward and the next step reacts from the
+  // moved state. The effect compounds over steps and, unlike a view warp, the
+  // deformation is real — it stays after release and heals organically the way
+  // the erase brush does. Per-step displacement is tiny (radius * rate), so
+  // the read never lands far enough out to matter at the texture edge.
+  vec2 uv = vUv;
+  if (uPullRate > 0.0) {
+    vec2 dd = uv - uMouse;
+    float dist = length(vec2(dd.x * uAspect, dd.y));
+    float fall = 1.0 - smoothstep(0.0, uPullRadius, dist);
+    uv = uMouse + dd * (1.0 + uPullRate * fall);
+  }
+
+  vec2 c = texture2D(uState, uv).rg;
   vec2 lap = -c;
-  lap += 0.2 * texture2D(uState, vUv + vec2(uTexel.x, 0.0)).rg;
-  lap += 0.2 * texture2D(uState, vUv - vec2(uTexel.x, 0.0)).rg;
-  lap += 0.2 * texture2D(uState, vUv + vec2(0.0, uTexel.y)).rg;
-  lap += 0.2 * texture2D(uState, vUv - vec2(0.0, uTexel.y)).rg;
-  lap += 0.05 * texture2D(uState, vUv + uTexel).rg;
-  lap += 0.05 * texture2D(uState, vUv - uTexel).rg;
-  lap += 0.05 * texture2D(uState, vUv + vec2(uTexel.x, -uTexel.y)).rg;
-  lap += 0.05 * texture2D(uState, vUv + vec2(-uTexel.x, uTexel.y)).rg;
+  lap += 0.2 * texture2D(uState, uv + vec2(uTexel.x, 0.0)).rg;
+  lap += 0.2 * texture2D(uState, uv - vec2(uTexel.x, 0.0)).rg;
+  lap += 0.2 * texture2D(uState, uv + vec2(0.0, uTexel.y)).rg;
+  lap += 0.2 * texture2D(uState, uv - vec2(0.0, uTexel.y)).rg;
+  lap += 0.05 * texture2D(uState, uv + uTexel).rg;
+  lap += 0.05 * texture2D(uState, uv - uTexel).rg;
+  lap += 0.05 * texture2D(uState, uv + vec2(uTexel.x, -uTexel.y)).rg;
+  lap += 0.05 * texture2D(uState, uv + vec2(-uTexel.x, uTexel.y)).rg;
 
   float A = c.r;
   float B = c.g;
@@ -126,10 +150,6 @@ uniform float uOpacity;
 uniform float uDebug;
 uniform vec2 uZoom;   // per-axis; x != y is the travel stretch
 uniform vec2 uOffset;
-uniform vec2 uPullAnchor; // cursor in the same space as uvZ
-uniform float uPull;      // 0 = off; press-and-hold strength
-uniform float uPullRadius;
-uniform float uAspect;    // width/height, so the pull lens stays circular
 
 void main() {
   // grey -> white -> grey across x
@@ -139,15 +159,6 @@ void main() {
   // Pattern sample zooms + parallax-shifts; gradient keeps raw vUv.x;
   // debug keeps raw vUv (unaffected by both).
   vec2 uvZ = (vUv - 0.5) / uZoom + 0.5 + uOffset;
-  // Press-and-hold pull: sampling FARTHER from the anchor makes the pattern
-  // appear to contract toward it. The anchor is the warp's fixed point, so the
-  // erase brush under the cursor stays put. Falloff keeps it a local lens.
-  if (uPull > 0.0) {
-    vec2 d = uvZ - uPullAnchor;
-    float dist = length(vec2(d.x * uAspect, d.y));
-    float fall = 1.0 - smoothstep(0.0, uPullRadius, dist);
-    uvZ = clamp(uPullAnchor + d * (1.0 + uPull * fall), 0.0, 1.0);
-  }
   float B = texture2D(uState, uvZ).g;
   float mask = smoothstep(0.18, 0.22, B);
   float lum = mix(grad, uShade, mask * uOpacity);
@@ -281,6 +292,9 @@ export function initBackgroundLayer(
       uBrushR: { value: BRUSH_RADIUS },
       uSeedPos: { value: new THREE.Vector2(-10, -10) },
       uSeedR: { value: RESEED_RADIUS },
+      uPullRate: { value: 0 },
+      uPullRadius: { value: PULL_RADIUS },
+      uAspect: { value: window.innerWidth / window.innerHeight },
     },
   });
   const simScene = new THREE.Scene();
@@ -298,10 +312,6 @@ export function initBackgroundLayer(
       uDebug: { value: opts.debug ? 1 : 0 },
       uZoom: { value: new THREE.Vector2(BASE_OVERSCAN, BASE_OVERSCAN) },
       uOffset: { value: new THREE.Vector2(0, 0) },
-      uPullAnchor: { value: new THREE.Vector2(0.5, 0.5) },
-      uPull: { value: 0 },
-      uPullRadius: { value: PULL_RADIUS },
-      uAspect: { value: window.innerWidth / window.innerHeight },
     },
   });
   const viewScene = new THREE.Scene();
@@ -395,6 +405,16 @@ export function initBackgroundLayer(
         curStretch += (target - curStretch) * (1 - Math.exp(-STRETCH_SMOOTH_RATE * dt));
       }
       syncMouseUniform(); // camera drift moves the sampled region under a still cursor
+
+      // Pull is set BEFORE the step loop so this frame's steps advect with it.
+      // uMouse doubles as the anchor, which guarantees the pull centres exactly
+      // where the erase brush is. The brush itself fades out as the hold builds
+      // — it exists to part the pattern around the cursor, and a hole there
+      // would eat the very pattern the pull is gathering.
+      const pull = pullProvider && cursorActive ? Math.max(0, Math.min(1, pullProvider())) : 0;
+      simMaterial.uniforms.uPullRate.value = PULL_RATE_MAX * pull;
+      simMaterial.uniforms.uBrushR.value = BRUSH_RADIUS * (1 - pull);
+
       simClock += 1 / 60;
       if (simClock >= nextSeedAt) {
         simMaterial.uniforms.uSeedPos.value.set(Math.random(), Math.random());
@@ -420,15 +440,6 @@ export function initBackgroundLayer(
       curZoomX = z.x;
       curZoomY = z.y;
       viewMaterial.uniforms.uZoom.value.set(curZoomX, curZoomY);
-
-      // Pull anchor rides the cursor through the same mapping as the erase
-      // brush, so the lens centre and the brush stay on the same pixel.
-      const pull = pullProvider && cursorActive ? pullProvider() : 0;
-      viewMaterial.uniforms.uPull.value = PULL_MAX * Math.max(0, Math.min(1, pull));
-      if (pull > 0) {
-        const a = viewToSimUV(rawU, rawV, curZoomX, curZoomY, curOffU, curOffV);
-        viewMaterial.uniforms.uPullAnchor.value.set(a.u, a.v);
-      }
       viewMaterial.uniforms.uState.value = read.texture;
       r.setRenderTarget(null);
       r.render(viewScene, camera);
@@ -436,7 +447,7 @@ export function initBackgroundLayer(
     resize(): void {
       // Aspect is applied immediately, not debounced: it only keeps the pull
       // lens circular, and a stale value would visibly oval it mid-hold.
-      viewMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+      simMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
       // debounce internally exactly as before, but only rebuild the sim grid —
       // renderer sizing is the stage's job now
       if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);

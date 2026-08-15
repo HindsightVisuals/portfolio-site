@@ -43,8 +43,9 @@ export const GLASS_MAX_BLUR_PX = 5;
 
 /* --- press-and-hold ---------------------------------------------------- */
 
-/** Time to reach a full hold, in ms. */
-export const HOLD_RAMP_MS = 1200;
+/** Time to reach a full hold, in ms. Long on purpose — the pull is a slow
+ * build, and the RD advection needs seconds of sim steps to accumulate. */
+export const HOLD_RAMP_MS = 5500;
 /** Ease-out duration after release, in ms. */
 export const HOLD_RELEASE_MS = 320;
 /** Circle diameter at hold 0 — matches the hover square so the morph is continuous. */
