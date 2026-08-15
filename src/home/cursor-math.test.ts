@@ -6,12 +6,16 @@ import {
   TRAIL_TAIL_WIDTH,
   GLASS_PEAK_AGE,
   GLASS_MAX_BLUR_PX,
+  CORE_MAX_BLUR_PX,
+  TRAIL_BANDS,
   pruneTrail,
   pointAge,
   trailAlpha,
   trailWidth,
-  blurBucket,
+  coreBlur,
   glassStrength,
+  smoothTrail,
+  bandSlices,
   shouldMount,
   type TrailPoint,
 } from './cursor-math';
@@ -110,26 +114,104 @@ describe('trailWidth', () => {
   });
 });
 
-describe('blurBucket', () => {
-  it('is sharp for the newest third', () => {
-    expect(blurBucket(0)).toBe(0);
-    expect(blurBucket(0.32)).toBe(0);
+describe('coreBlur', () => {
+  it('is sharp at the head and maximal at the tail', () => {
+    expect(coreBlur(0)).toBeCloseTo(0, 6);
+    expect(coreBlur(1)).toBeCloseTo(CORE_MAX_BLUR_PX, 6);
   });
 
-  it('is mid-blur for the middle third', () => {
-    expect(blurBucket(1 / 3)).toBe(1.5);
-    expect(blurBucket(0.65)).toBe(1.5);
-  });
-
-  it('is full blur for the oldest third', () => {
-    expect(blurBucket(2 / 3)).toBe(3);
-    expect(blurBucket(1)).toBe(3);
-  });
-
-  it('never returns a value outside the three buckets', () => {
+  it('increases continuously — no buckets, no banding', () => {
+    let prev = -1;
     for (let i = 0; i <= 50; i++) {
-      expect([0, 1.5, 3]).toContain(blurBucket(i / 50));
+      const v = coreBlur(i / 50);
+      expect(v).toBeGreaterThan(prev);
+      prev = v;
     }
+  });
+
+  it('is eased so the head stays defined longer than a linear ramp would', () => {
+    // at half age an eased ramp must be below the linear midpoint
+    expect(coreBlur(0.5)).toBeLessThan(CORE_MAX_BLUR_PX * 0.5);
+  });
+
+  it('clamps out-of-range ages into the valid blur span', () => {
+    expect(coreBlur(-1)).toBeCloseTo(0, 6);
+    expect(coreBlur(4)).toBeCloseTo(CORE_MAX_BLUR_PX, 6);
+  });
+});
+
+describe('smoothTrail', () => {
+  it('passes short inputs through untouched', () => {
+    expect(smoothTrail([])).toEqual([]);
+    const one = [pt(0, 5, 5)];
+    expect(smoothTrail(one)).toEqual(one);
+  });
+
+  it('emits (n-1)*sub + 1 points', () => {
+    const pts = [pt(0, 0, 0), pt(10, 10, 0), pt(20, 20, 0), pt(30, 30, 0)];
+    expect(smoothTrail(pts, 6)).toHaveLength(3 * 6 + 1);
+    expect(smoothTrail(pts, 1)).toHaveLength(4);
+  });
+
+  it('starts and ends exactly on the original endpoints', () => {
+    const pts = [pt(0, 1, 2), pt(10, 40, 9), pt(20, 90, 3)];
+    const out = smoothTrail(pts, 5);
+    expect(out[0].x).toBeCloseTo(1, 6);
+    expect(out[0].y).toBeCloseTo(2, 6);
+    expect(out[out.length - 1].x).toBeCloseTo(90, 6);
+    expect(out[out.length - 1].y).toBeCloseTo(3, 6);
+  });
+
+  it('keeps timestamps non-decreasing so every generated point ages correctly', () => {
+    const pts = [pt(0, 0, 0), pt(50, 30, 10), pt(100, 60, 40), pt(150, 10, 80)];
+    const out = smoothTrail(pts, 6);
+    for (let i = 1; i < out.length; i++) {
+      expect(out[i].t).toBeGreaterThanOrEqual(out[i - 1].t);
+    }
+  });
+
+  it('reproduces a straight line without wandering off it', () => {
+    const pts = [pt(0, 0, 0), pt(10, 10, 0), pt(20, 20, 0), pt(30, 30, 0)];
+    for (const p of smoothTrail(pts, 8)) {
+      expect(p.y).toBeCloseTo(0, 6); // all input y are 0
+      expect(p.x).toBeGreaterThanOrEqual(-1e-9);
+      expect(p.x).toBeLessThanOrEqual(30 + 1e-9);
+    }
+  });
+
+  it('produces monotonic x for a monotonic input sweep', () => {
+    const pts = [pt(0, 0, 0), pt(10, 25, 0), pt(20, 60, 0), pt(30, 110, 0)];
+    const out = smoothTrail(pts, 6);
+    for (let i = 1; i < out.length; i++) {
+      expect(out[i].x).toBeGreaterThanOrEqual(out[i - 1].x - 1e-9);
+    }
+  });
+});
+
+describe('bandSlices', () => {
+  it('returns nothing for a degenerate trail', () => {
+    expect(bandSlices(0)).toEqual([]);
+    expect(bandSlices(1)).toEqual([]);
+  });
+
+  it('covers the whole index range with no gaps', () => {
+    const slices = bandSlices(100, TRAIL_BANDS);
+    expect(slices[0][0]).toBe(0);
+    expect(slices[slices.length - 1][1]).toBe(99);
+    for (let i = 1; i < slices.length; i++) {
+      // adjacent bands share an endpoint, so the strokes join seamlessly
+      expect(slices[i][0]).toBe(slices[i - 1][1]);
+    }
+  });
+
+  it('never emits an empty slice', () => {
+    for (const count of [2, 3, 5, 13, 47, 200]) {
+      for (const [a, b] of bandSlices(count)) expect(b).toBeGreaterThan(a);
+    }
+  });
+
+  it('cannot ask for more bands than there are segments', () => {
+    expect(bandSlices(3, 50).length).toBeLessThanOrEqual(2);
   });
 });
 

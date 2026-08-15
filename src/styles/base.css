@@ -306,6 +306,14 @@ body {
   mix-blend-mode: multiply;
 }
 
+/* The wide halo. One GPU blur pass over the whole layer is far cheaper than a
+ * 20px+ canvas filter per age band per frame, which is why the trail is split
+ * into a bleed canvas and a core canvas rather than drawn once. Raise this to
+ * make the trail bleed further; the core stays legible underneath. */
+.cursor-trail--bleed {
+  filter: blur(18px);
+}
+
 /* Frosted-glass node riding the dying end of the trail. CSS cannot
  * displacement-map a backdrop, so this is blur, not refraction; the radial mask
  * feathers it so there is no visible disc edge. backdrop-filter is written per
@@ -313,11 +321,11 @@ body {
 .cursor-glass {
   top: 0;
   left: 0;
-  width: 28px;
-  height: 28px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  -webkit-mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
-  mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(closest-side, #000 15%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 15%, transparent 100%);
 }
 
 /* Hide the OS cursor everywhere the custom one is mounted. !important is

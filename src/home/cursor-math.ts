@@ -1,15 +1,14 @@
 /**
- * Pure math for the F15 cursor system — trail decay, blur ramps and the mount
- * gate. Kept free of DOM and globals so the whole testable surface of the
- * feature lives in one place; cursor.ts is the untested DOM/RAF shell around it.
+ * Pure math for the F15 cursor system — trail decay, smoothing, blur ramps and
+ * the mount gate. Kept free of DOM and globals so the whole testable surface of
+ * the feature lives in one place; cursor.ts is the untested DOM/RAF shell.
  *
  * Spec: docs/superpowers/specs/2026-08-14-f15-cursor-system-design.md
  *
- * Every constant here is tune-by-eye — the values are a starting point for
- * review, not a tuned result.
+ * Every constant here is tune-by-eye.
  */
 
-/** How long a trail point survives, in ms. Short by direction: a smear, not a ribbon. */
+/** How long a trail point survives, in ms. */
 export const TRAIL_MS = 250;
 /** Opacity of a point the instant it is left behind. It never exceeds this. */
 export const TRAIL_PEAK_ALPHA = 0.2;
@@ -17,10 +16,30 @@ export const TRAIL_PEAK_ALPHA = 0.2;
 export const TRAIL_HEAD_WIDTH = 10;
 /** Stroke width at the tail of the trail, in CSS px. */
 export const TRAIL_TAIL_WIDTH = 2;
+
+/**
+ * Peak per-band blur on the core trail, in CSS px. Replaces the original
+ * three-bucket quantisation, which was visible as banding.
+ */
+export const CORE_MAX_BLUR_PX = 7;
+/**
+ * How many age bands the trail is drawn in. Each band is ONE stroke() call, so
+ * a self-overlapping path composites once and cannot build up alpha at the
+ * joins — the beading that made the old trail read as discrete frames. More
+ * bands = smoother alpha ramp, more draw calls.
+ */
+export const TRAIL_BANDS = 12;
+/** Catmull-Rom subdivisions per input segment. Turns the polyline into a curve. */
+export const TRAIL_SUBDIVISIONS = 6;
+/** The bleed layer's stroke width, as a multiple of the core width. */
+export const BLEED_WIDTH_MULT = 3.5;
+/** The bleed layer's alpha, as a multiple of the core alpha. */
+export const BLEED_ALPHA_MULT = 0.75;
+
 /** Age at which the glass frost is strongest — late, so it peaks as the green dies. */
 export const GLASS_PEAK_AGE = 0.6;
-/** Peak backdrop blur, in CSS px. "Very lightly" per the direction. */
-export const GLASS_MAX_BLUR_PX = 2;
+/** Peak backdrop blur, in CSS px. */
+export const GLASS_MAX_BLUR_PX = 5;
 
 export interface TrailPoint {
   x: number;
@@ -52,15 +71,13 @@ export function trailWidth(age: number): number {
 }
 
 /**
- * Blur for a point, quantised into thirds of its life. Bucketing rather than a
- * continuous ramp bounds the number of canvas filter state changes per frame —
- * three `ctx.filter` writes instead of one per segment.
+ * Continuous blur ramp for the core trail. Eased so the head stays defined and
+ * the tail blows out — the point bleeds outward as it dies rather than simply
+ * dimming.
  */
-export function blurBucket(age: number): 0 | 1.5 | 3 {
+export function coreBlur(age: number): number {
   const a = clamp01(age);
-  if (a < 1 / 3) return 0;
-  if (a < 2 / 3) return 1.5;
-  return 3;
+  return CORE_MAX_BLUR_PX * a * a;
 }
 
 /**
@@ -73,6 +90,68 @@ export function glassStrength(age: number): number {
   const rising = a / GLASS_PEAK_AGE;
   const falling = (1 - a) / (1 - GLASS_PEAK_AGE);
   return GLASS_MAX_BLUR_PX * Math.min(rising, falling);
+}
+
+/**
+ * Catmull-Rom subdivision through the sampled points. The raw samples are a
+ * polyline whose corners are visible on a fast sweep; this resamples them onto
+ * a smooth curve. Timestamps are interpolated linearly so every generated point
+ * still ages correctly.
+ *
+ * Endpoints are duplicated as their own control neighbours, so the curve starts
+ * and ends exactly on the first and last samples.
+ */
+export function smoothTrail(points: TrailPoint[], subdivisions = TRAIL_SUBDIVISIONS): TrailPoint[] {
+  if (points.length < 2) return points.slice();
+  const sub = Math.max(1, Math.floor(subdivisions));
+  const out: TrailPoint[] = [];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] ?? points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] ?? points[i + 1];
+
+    for (let s = 0; s < sub; s++) {
+      const u = s / sub;
+      const u2 = u * u;
+      const u3 = u2 * u;
+      // Standard Catmull-Rom basis (tension 0.5).
+      out.push({
+        x:
+          0.5 *
+          (2 * p1.x +
+            (-p0.x + p2.x) * u +
+            (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * u2 +
+            (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * u3),
+        y:
+          0.5 *
+          (2 * p1.y +
+            (-p0.y + p2.y) * u +
+            (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * u2 +
+            (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * u3),
+        t: p1.t + (p2.t - p1.t) * u,
+      });
+    }
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+/**
+ * Contiguous index ranges covering a point list, one per age band. Adjacent
+ * bands share an endpoint so the strokes join with no gap.
+ */
+export function bandSlices(count: number, bands = TRAIL_BANDS): Array<[number, number]> {
+  if (count < 2) return [];
+  const n = Math.max(1, Math.min(Math.floor(bands), count - 1));
+  const slices: Array<[number, number]> = [];
+  for (let b = 0; b < n; b++) {
+    const start = Math.floor((b * (count - 1)) / n);
+    const end = Math.floor(((b + 1) * (count - 1)) / n);
+    if (end > start) slices.push([start, end]);
+  }
+  return slices;
 }
 
 /**
