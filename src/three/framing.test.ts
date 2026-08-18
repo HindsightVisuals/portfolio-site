@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { distanceForFraming, effectiveMarginPx } from './framing';
+import { distanceForFraming, effectiveMarginPx, worldPerPx } from './framing';
 
 describe('effectiveMarginPx', () => {
   it('returns 248 when 248*2 does not exceed 55% of smaller viewport dimension', () => {
@@ -49,5 +49,28 @@ describe('distanceForFraming', () => {
     const actualWidthFraction = planeW / (2 * distance * Math.tan(fovY / 2) * aspect);
 
     expect(actualWidthFraction).toBeCloseTo(expectedWidthFraction, 9);
+  });
+});
+
+describe('worldPerPx', () => {
+  it('scales linearly with distance — twice as far, twice as much world per pixel', () => {
+    expect(worldPerPx(20, 45, 1080)).toBeCloseTo(worldPerPx(10, 45, 1080) * 2, 10);
+  });
+
+  it('scales inversely with viewport height', () => {
+    expect(worldPerPx(10, 45, 1080)).toBeCloseTo(worldPerPx(10, 45, 2160) * 2, 10);
+  });
+
+  it('matches the frustum height at a known distance', () => {
+    // At distance d the visible height is 2*d*tan(fov/2); across vpH pixels
+    // that is the per-pixel size.
+    const d = 34;
+    const expected = (2 * d * Math.tan((45 * Math.PI) / 180 / 2)) / 1080;
+    expect(worldPerPx(d, 45, 1080)).toBeCloseTo(expected, 12);
+  });
+
+  it('is zero-safe on a degenerate viewport rather than returning Infinity', () => {
+    expect(Number.isFinite(worldPerPx(34, 45, 0))).toBe(true);
+    expect(worldPerPx(34, 45, 0)).toBe(0);
   });
 });

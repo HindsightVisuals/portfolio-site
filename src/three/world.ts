@@ -6,6 +6,8 @@ import { initAtmosphere, type Atmosphere } from './atmosphere';
 import { makeHomeMock } from './home-mock';
 import { nearestWrapped } from './loop';
 import { distanceForFraming, effectiveMarginPx } from './framing';
+import { makeTileMaterial, type TileMaterialHandle } from './tile-material';
+import { tileStillUrl } from '../work/tiles';
 
 export const CAMERA_OFFSET = 34;
 export const CAMERA_FOV = 45;
@@ -25,10 +27,10 @@ function materializeAmount(dist: number): number {
   return 1 - clamped * clamped * (3 - 2 * clamped); // smoothstep, inverted
 }
 
-// PROJECTS and SLUGS must stay in lockstep: the WORK wall is row-major
-// (row = floor(i/4), col = i%4), and tile index i is PROJECTS[i]'s tile,
-// picked/focused via SLUGS[i]. Content Audit order.
-const PROJECTS = ['Know Good', 'Addax', 'Spy Hop', 'Juan Valdez', 'Naboso', 'Animal', 'Babaloo', 'Hindsight'];
+// The WORK wall is row-major (row = floor(i/4), col = i%4); tile index i is
+// SLUGS[i]'s tile, picked/focused by that slug and given its image by
+// work/tiles.ts. Content Audit order — FROZEN, the router and reticles both
+// derive from it.
 export const SLUGS = ['know-good', 'addax', 'spy-hop', 'juan-valdez', 'naboso', 'animal', 'babaloo', 'hindsight'] as const;
 export const TILE_W = 7;
 export const TILE_H = 4.4;
@@ -38,7 +40,7 @@ const HOVER_DURATION = 0.25;
 const HOVER_EASE = 'power2.out';
 
 /** Row-major local (x, y) of tile i within the WORK wall group (z is the group's). */
-function tileLocalPosition(i: number): { x: number; y: number } {
+export function tileLocalPosition(i: number): { x: number; y: number } {
   const row = Math.floor(i / 4);
   const col = i % 4;
   return {
@@ -111,6 +113,7 @@ export interface WorldLayer extends StageLayer {
   setHomeMockVisible(v: boolean): void;
   pick(ndcX: number, ndcY: number): PickResult | null;
   setTileHover(slug: string | null): void;
+  setTileColor(slug: string, on: boolean): void;
   destroy(): void;
 }
 
@@ -161,53 +164,6 @@ function makeLabelTexture(label: string): THREE.CanvasTexture {
   return tex;
 }
 
-function makeTileTexture(name: string): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 320;
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-
-  const draw = (): void => {
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = SCREEN_BG;
-    ctx.fillRect(0, 0, c.width, c.height);
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1, 1, c.width - 2, c.height - 2);
-    // corner brackets echoing the reticle language
-    const inset = 16;
-    const arm = 16;
-    ctx.lineWidth = 3;
-    const corners: Array<[number, number, number, number]> = [
-      [inset, inset, 1, 1],
-      [c.width - inset, inset, -1, 1],
-      [inset, c.height - inset, 1, -1],
-      [c.width - inset, c.height - inset, -1, -1],
-    ];
-    for (const [x, y, sx, sy] of corners) {
-      ctx.beginPath();
-      ctx.moveTo(x + arm * sx, y);
-      ctx.lineTo(x, y);
-      ctx.lineTo(x, y + arm * sy);
-      ctx.stroke();
-    }
-    ctx.fillStyle = INK;
-    ctx.font = '700 44px loos-extended, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(name.toUpperCase(), c.width / 2, c.height / 2);
-    tex.needsUpdate = true;
-  };
-
-  draw();
-  // redraw once the real font is available
-  document.fonts.ready.then(draw).catch(() => {});
-  return tex;
-}
-
 export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(
@@ -233,32 +189,43 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
   const anchored: Array<{
     root: THREE.Object3D;
     anchorZ: number;
-    materials: THREE.MeshBasicMaterial[];
+    /** Materialize fade. Label screens write Material.opacity; tiles write uFade. */
+    setFade: (a: number) => void;
   }> = [];
+  const loader = new THREE.TextureLoader();
+  const tileHandles: TileMaterialHandle[] = [];
+  // gsap needs an object to interpolate; each tile's saturation rides one.
+  const satProxies = SLUGS.map(() => ({ v: 0 }));
   for (const dest of DESTINATIONS) {
     if (dest.id === 'home') continue; // the DOM homepage IS home — no plane
 
     if (dest.id === 'work') {
       // WORK: 2x4 wall of project thumbnail tiles instead of a single label plane
       const group = new THREE.Group();
-      const materials: THREE.MeshBasicMaterial[] = [];
-      for (let i = 0; i < PROJECTS.length; i++) {
-        const tex = makeTileTexture(PROJECTS[i]);
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+      for (let i = 0; i < SLUGS.length; i++) {
+        const tex = loader.load(tileStillUrl(SLUGS[i]));
+        tex.anisotropy = 4;
+        const handle = makeTileMaterial(tex);
         const geo = new THREE.PlaneGeometry(TILE_W, TILE_H);
-        const tile = new THREE.Mesh(geo, mat);
+        const tile = new THREE.Mesh(geo, handle.material);
         const { x, y } = tileLocalPosition(i);
         tile.position.set(x, y, 0);
         tile.userData.slug = SLUGS[i];
         group.add(tile);
-        disposables.push(tex, mat, geo);
-        materials.push(mat);
+        disposables.push(tex, handle, geo);
+        tileHandles.push(handle);
         pickables.push(tile);
         tileMeshes.push(tile);
       }
       group.position.set(0, 0, dest.anchorZ);
       scene.add(group);
-      anchored.push({ root: group, anchorZ: dest.anchorZ, materials });
+      anchored.push({
+        root: group,
+        anchorZ: dest.anchorZ,
+        setFade: (a) => {
+          for (const h of tileHandles) h.setFade(a);
+        },
+      });
       continue;
     }
 
@@ -269,7 +236,13 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
     mesh.position.set(0, 0, dest.anchorZ);
     scene.add(mesh);
     disposables.push(tex, mat, geo);
-    anchored.push({ root: mesh, anchorZ: dest.anchorZ, materials: [mat] });
+    anchored.push({
+      root: mesh,
+      anchorZ: dest.anchorZ,
+      setFade: (a) => {
+        mat.opacity = a;
+      },
+    });
     if (dest.id === 'about') {
       mesh.userData.dest = dest.id;
       pickables.push(mesh);
@@ -284,7 +257,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
   homeMock.position.z = homeAnchorZ;
   homeMock.visible = false;
   scene.add(homeMock);
-  anchored.push({ root: homeMock, anchorZ: homeAnchorZ, materials: [] });
+  anchored.push({ root: homeMock, anchorZ: homeAnchorZ, setFade: () => {} });
 
   let velocitySource: () => number = () => 0;
 
@@ -333,6 +306,31 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
       }
       hoveredMesh = mesh;
     },
+    /**
+     * Bring a tile to full colour, or return it to grey. The wall sits grey at
+     * rest; the pointer and the focused case study are the only two things that
+     * put colour on it, and WorkHover arbitrates between them.
+     */
+    setTileColor(slug: string, on: boolean): void {
+      const i = tileIndexForSlug(slug);
+      if (i < 0) return;
+      const proxy = satProxies[i];
+      const handle = tileHandles[i];
+      if (!handle) return;
+      const target = on ? 1 : 0;
+      gsap.killTweensOf(proxy);
+      if (opts.reducedMotion) {
+        proxy.v = target;
+        handle.setSaturation(target);
+        return;
+      }
+      gsap.to(proxy, {
+        v: target,
+        duration: HOVER_DURATION,
+        ease: HOVER_EASE,
+        onUpdate: () => handle.setSaturation(proxy.v),
+      });
+    },
     update(dt: number): void {
       for (const s of anchored) {
         // The home mock's position is only correct at the moment it's shown;
@@ -351,7 +349,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
         s.root.visible = a > 0.01;
         const sc = 1 - MATERIALIZE_SCALE * (1 - a);
         s.root.scale.setScalar(sc);
-        for (const m of s.materials) m.opacity = a;
+        s.setFade(a);
       }
       atmosphere.update(dt, velocitySource(), camera.position.z);
     },
@@ -365,6 +363,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
     destroy(): void {
       atmosphere.destroy();
       for (const mesh of tileMeshes) gsap.killTweensOf(mesh.scale);
+      for (const p of satProxies) gsap.killTweensOf(p);
       for (const d of disposables) d.dispose();
       homeMock.traverse((o) => {
         if (o instanceof THREE.Mesh) {
