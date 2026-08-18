@@ -93,7 +93,10 @@ export function mountReveal(
   article: HTMLElement,
   opts: { reducedMotion: boolean; scrollRoot?: Element | null }
 ): () => void {
-  const sections = Array.from(article.querySelectorAll<HTMLElement>('section'));
+  // 'section' covers the existing pages; '.reveal' lets a page opt in a
+  // <header> or <footer> too (the case study title block and footer are both).
+  // querySelectorAll de-dupes, so an element carrying both still appears once.
+  const sections = Array.from(article.querySelectorAll<HTMLElement>('section, .reveal'));
   const scrollRoot =
     opts.scrollRoot !== undefined ? opts.scrollRoot : article.closest('.takeover');
   return revealSections(article, sections, {

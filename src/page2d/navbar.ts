@@ -13,7 +13,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export interface NavbarOpts {
   reducedMotion: boolean;
-  onCloth(): void;
+  /** Omit to build a navbar with NO cloth tab — the case study page closes via
+   *  its curtain instead, so it must not also carry a second close affordance. */
+  onCloth?: () => void;
   onWordmark(): void;
   onContact(): void;
 }
@@ -31,7 +33,7 @@ function clothPathD(depth: number): string {
  */
 export function buildNavbar(opts: NavbarOpts): HTMLElement {
   const header = document.createElement('header');
-  header.className = 'nav2d';
+  header.className = opts.onCloth ? 'nav2d' : 'nav2d nav2d--no-cloth';
 
   const wordmark = document.createElement('button');
   wordmark.type = 'button';
@@ -83,7 +85,7 @@ export function buildNavbar(opts: NavbarOpts): HTMLElement {
   }
   // Reduced motion: no listeners above are attached, so depth never leaves
   // CLOTH_REST_PX — but the click below still fires either way.
-  clothTab.addEventListener('click', () => opts.onCloth());
+  clothTab.addEventListener('click', () => opts.onCloth?.());
 
   const contact = document.createElement('button');
   contact.type = 'button';
@@ -92,6 +94,6 @@ export function buildNavbar(opts: NavbarOpts): HTMLElement {
   /* TODO(F11): RD contact morph */
   contact.addEventListener('click', () => opts.onContact());
 
-  header.append(wordmark, clothTab, contact);
+  header.append(wordmark, ...(opts.onCloth ? [clothTab] : []), contact);
   return header;
 }

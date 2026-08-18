@@ -8,6 +8,12 @@ export interface Project {
   tools: string[];
   disciplines: string[];
   brief: string;
+  /** One-line statement headline, shown large on the case study page. */
+  statement: string;
+  /** External link for the page's CTA. Empty string when the project has no live site. */
+  url: string;
+  /** CTA label — 'visit site' for Spy Hop, a placeholder for the rest. */
+  cta: string;
   process: string[];
   deliverables: string[];
   pullQuote?: string;

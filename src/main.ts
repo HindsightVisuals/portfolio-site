@@ -21,6 +21,7 @@ import { buildNavbar } from './page2d/navbar';
 import { buildCaseStudy } from './page2d/case-study';
 import { buildAbout } from './page2d/about';
 import { mountReveal } from './page2d/reveal';
+import { initStrip, type Strip } from './page2d/strip';
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
 import { initHoverPanel } from './work/hover-panel';
@@ -41,6 +42,10 @@ let inputMode: 'world' | 'takeover' = 'world';
 // defensively before every new mountReveal() call in case a caller ever
 // opens a second page without an intervening close.
 let activeRevealCleanup: (() => void) | null = null;
+
+// The pinned horizontal strip measures against the live .takeover scroll root,
+// so like mountReveal it binds after open() and is torn down on close.
+let activeStrip: Strip | null = null;
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -117,9 +122,11 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         // own mode. (scrollNav is null under reduced motion — no wheel nav.)
         inputMode = mode;
         scrollNav?.setMode(mode);
-        if (mode === 'world' && activeRevealCleanup) {
-          activeRevealCleanup();
+        if (mode === 'world') {
+          activeRevealCleanup?.();
           activeRevealCleanup = null;
+          activeStrip?.destroy();
+          activeStrip = null;
         }
       },
     });
@@ -184,6 +191,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         reducedMotion,
         navbar: makeTakeoverNavbar(),
         deferReveal: true,
+        // The curtain is the close affordance now (brief 7.9) — same
+        // takeover.close() the navbar cloth notch used to call.
+        onClose: () => void takeover.close(),
         onNext: async (next) => {
           await takeover.close();
           await afterTakeoverHistoryUnwind();
@@ -193,6 +203,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       void takeover.open(page);
       activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
       activeRevealCleanup = mountReveal(page, { reducedMotion });
+      activeStrip?.destroy();
+      activeStrip = initStrip(page);
     };
 
     const openAbout = (): void => {
@@ -237,7 +249,11 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         const t = e.target;
         if (!(t instanceof HTMLElement) || !t.classList.contains('takeover')) return;
         const nav = t.querySelector<HTMLElement>('.nav2d');
-        nav?.classList.toggle('nav2d--scrolled', t.scrollTop > NOTCH_SCROLL_THRESHOLD_PX);
+        const scrolled = t.scrollTop > NOTCH_SCROLL_THRESHOLD_PX;
+        nav?.classList.toggle('nav2d--scrolled', scrolled);
+        // The case study's curtain is the same idea at full width: its window
+        // onto the live canvas shuts once the page starts scrolling.
+        t.querySelector('.cs-curtain')?.classList.toggle('cs-curtain--closed', scrolled);
       },
       true,
     );

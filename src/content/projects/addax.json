@@ -16,6 +16,9 @@
     "Interactive"
   ],
   "brief": "The ask: redesign the website + build an interactive 3D customizer for trailers.",
+  "statement": "— placeholder statement —",
+  "url": "",
+  "cta": "view project",
   "process": [
     "Customizer UX — how users configure their trailer in 3D",
     "Model optimization for web (poly budget, texture compression, draw call limits)",

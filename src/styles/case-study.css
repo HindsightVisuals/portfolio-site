@@ -1,0 +1,489 @@
+/* --- case study page ------------------------------------------------------
+ * Figma: file SvdjIdzoh9i95pLzTNj1a9, frame /work/spy-hop `24:1108` (1920x5369).
+ *
+ * This page INVERTS the site palette: near-black ground, white type. Every
+ * token is scoped to `.case-study` so nothing leaks into the light homepage or
+ * the About takeover, which share the same takeover shell.
+ *
+ * Layout is authored against the 1920 frame and expressed in fluid units so it
+ * holds at other widths — the Figma numbers are the reference, not a fixed
+ * canvas. */
+
+.case-study {
+  --cs-ink: #ffffff;
+  --cs-ground: #0a0a0a;
+  --cs-panel: #0e0e0e;
+  --cs-line: #676767;
+  /* Page gutter — Figma insets content 24px from a 1920 frame. */
+  --cs-gutter: clamp(16px, 1.25vw, 24px);
+
+  /* NO background here. Painting the article fills the strip above the
+   * curtain's wave too, and that strip has to stay transparent for the live
+   * canvas to show through it. The ground lives on .cs-content alone. */
+  color: var(--cs-ink);
+}
+
+/* Deliberately UNPAINTED. The ground lives on .cs-content, so the strip above
+ * the curtain's wave stays transparent and the live canvas shows through it —
+ * the same trick .nav2d already uses for its cloth notch. */
+.case-study .takeover-body {
+  background: transparent;
+  color: var(--cs-ink);
+}
+
+.cs-content {
+  background: var(--cs-ground);
+  /* flow-root: .cs-title's top margin would otherwise collapse THROUGH this
+   * box, dragging its painted top edge down and opening a transparent gap
+   * under the curtain that the live canvas showed through.
+   * overflow-x: clip: the strip rail is far wider than the viewport. 'clip'
+   * rather than 'hidden' because hidden makes this a scroll container, which
+   * would break the rail's position: sticky. */
+  display: flow-root;
+  overflow-x: clip;
+}
+
+/* The nav rides ON the window at the top of the page, over the live canvas, so
+ * its flanking strips paint nothing and its dark type reads against the light
+ * world behind. Once the page scrolls the window shuts and the nav inverts. */
+.case-study .nav2d::before,
+.case-study .nav2d::after {
+  background: transparent;
+  width: 0;
+}
+
+.case-study .nav2d--scrolled::before,
+.case-study .nav2d--scrolled::after {
+  background: var(--cs-ground);
+  width: 50%;
+}
+
+.case-study .nav2d--scrolled .nav2d-wordmark,
+.case-study .nav2d--scrolled .nav2d-contact {
+  color: var(--cs-ink);
+}
+
+/* --- archival tag chip ---------------------------------------------------
+ * Figma: 1px #676767, 2px radius, 8px/5px padding, 9px mono, 1.26px tracking. */
+.cs-tags {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cs-tag {
+  border: 1px solid var(--cs-line);
+  border-radius: 2px;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.26px;
+  color: var(--cs-ink);
+  white-space: nowrap;
+}
+
+/* --- curtain -------------------------------------------------------------
+ * Fills BELOW the wave, so the region above it is a window onto the live 3D
+ * world. Fixed to the top of the scroll container, not scrolled with content —
+ * it is chrome, not a section. */
+.cs-curtain {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: clamp(90px, 10.4vw, 200px);
+  /* Pulled up under the nav so the wave starts right below it, as in Figma
+   * (nav at y12, wave from y54 of a 1920 frame). */
+  margin-top: -8px;
+  pointer-events: none;
+}
+
+.cs-curtain-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cs-curtain-path {
+  fill: var(--cs-ground);
+}
+
+/* Shuts the window once the page scrolls, so content rising up behind the
+ * curtain is covered rather than showing through the transparent strip above
+ * the wave. Exactly what .nav2d--scrolled does for the cloth notch. */
+.cs-curtain-fill {
+  fill: var(--cs-ground);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.cs-curtain--closed .cs-curtain-fill {
+  opacity: 1;
+}
+
+.cs-curtain--closed .cs-curtain-close {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-curtain-fill {
+    transition: none;
+  }
+}
+
+/* The window above the wave — clickable, and the page's close affordance.
+ * Sized to the shallow part of the curve so it never covers page content. */
+.cs-curtain-close {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 60%;
+  border: 0;
+  background: none;
+  padding: 0;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.cs-curtain-close:focus-visible {
+  outline: 2px solid var(--cs-ink);
+  outline-offset: -6px;
+}
+
+/* --- title block ---------------------------------------------------------- */
+.cs-title {
+  /* Padding, not margin — see .cs-content's flow-root note. */
+  padding: clamp(24px, 3vw, 56px) var(--cs-gutter) 0;
+}
+
+/* Corner registration marks, echoing the homepage chrome. */
+.cs-marks {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.cs-marks span {
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+.cs-marks span::before,
+.cs-marks span::after {
+  content: '';
+  position: absolute;
+  background: var(--cs-ink);
+}
+
+.cs-marks span::before {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+}
+
+.cs-marks span::after {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+}
+
+.cs-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+}
+
+/* Figma: 64px cap height at 1920. */
+.cs-title-text {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(34px, 3.4vw, 64px);
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.cs-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-top: 6px;
+}
+
+/* --- hero ---------------------------------------------------------------- */
+.cs-hero {
+  display: flex;
+  gap: 32px;
+  align-items: stretch;
+  padding: clamp(24px, 3vw, 48px) var(--cs-gutter) 0;
+}
+
+.cs-meta-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 0 0 clamp(280px, 21vw, 390px);
+}
+
+/* Two nested boxes in Figma: a 4px-padded outer hairline, and an inner card
+ * carrying the gradient. Reproduced literally — the 4px reveal is visible. */
+.cs-meta-card {
+  border: 1px solid var(--cs-line);
+  border-radius: 4px;
+  padding: 4px;
+  flex: 1 1 auto;
+}
+
+.cs-meta-card-inner {
+  height: 100%;
+  border-radius: 4px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+  /* Figma: linear, rgba(67,67,67,.25) at 20.192% -> rgba(255,255,255,.25). */
+  background: linear-gradient(180deg, rgba(67, 67, 67, 0.25) 20.192%, rgba(255, 255, 255, 0.25) 100%);
+}
+
+.cs-meta-label {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.cs-meta-value {
+  font-family: var(--font-mono);
+  font-size: clamp(13px, 0.9vw, 16px);
+  line-height: 1.45;
+}
+
+/* The 3D logo's framing panel. C2 renders the logo into its own canvas above
+ * the page and tracks this element's rect. */
+.cs-stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-line);
+  border-radius: 4px;
+  min-height: clamp(320px, 33vw, 640px);
+}
+
+/* --- statements ----------------------------------------------------------- */
+.cs-statement,
+.cs-restate {
+  padding: clamp(48px, 6vw, 112px) var(--cs-gutter);
+}
+
+.cs-restate {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 48px;
+}
+
+.cs-statement-text {
+  margin: 0;
+  max-width: 12ch;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(28px, 2.6vw, 48px);
+  line-height: 1.16;
+}
+
+.cs-restate-brief {
+  margin: 0;
+  max-width: 34ch;
+  font-family: var(--font-mono);
+  font-size: clamp(12px, 0.85vw, 15px);
+  line-height: 1.5;
+}
+
+/* --- the panel the logo passes behind ------------------------------------
+ * Sits ABOVE the logo canvas (z-index 30) so the logo travels behind this one
+ * element while remaining above everything else on the page (brief 7.4). */
+.cs-behind {
+  padding: 0 var(--cs-gutter);
+}
+
+.cs-behind-panel {
+  position: relative;
+  z-index: 31;
+  height: clamp(320px, 38vw, 739px);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--cs-panel);
+  will-change: transform;
+}
+
+/* --- pinned horizontal strip ---------------------------------------------
+ * The section is tall; the rail sticks to the viewport inside it and is
+ * translated sideways by strip-scroll.ts as the section passes. */
+.cs-strip {
+  position: relative;
+}
+
+.cs-strip-rail {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 48px;
+  align-items: center;
+  height: 100vh;
+  padding: 0 var(--cs-gutter);
+  will-change: transform;
+}
+
+.cs-strip-panel {
+  flex: 0 0 auto;
+  width: min(var(--panel-w, 1450px), 92vw);
+  height: clamp(320px, 47vw, 905px);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-line);
+}
+
+/* The logo's landing pad — the logo pins to this rect and so leaves with it. */
+.cs-strip-panel--landing {
+  width: min(1450px, 92vw);
+}
+
+/* --- image pair ----------------------------------------------------------- */
+.cs-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  padding: clamp(48px, 6vw, 96px) var(--cs-gutter);
+}
+
+.cs-images .media-ph {
+  aspect-ratio: 924 / 455;
+}
+
+/* --- footer --------------------------------------------------------------- */
+.cs-footer {
+  padding: 0 var(--cs-gutter) clamp(24px, 2vw, 40px);
+}
+
+/* The big wordmark. C3 masks a live RD field to these letterforms; as plain
+ * type it is already the correct fallback. */
+.cs-footer-mark {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: clamp(72px, 12.4vw, 238px);
+  line-height: 0.86;
+  letter-spacing: -0.02em;
+  color: #3a3a3a;
+  user-select: none;
+}
+
+.cs-footer-heading {
+  margin: 0 0 clamp(24px, 3vw, 48px);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(38px, 6.4vw, 122px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.cs-footer-contact {
+  display: flex;
+  gap: clamp(32px, 5vw, 96px);
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+}
+
+.cs-footer-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cs-footer-link {
+  color: var(--cs-ink);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: clamp(14px, 1.1vw, 22px);
+  text-transform: uppercase;
+}
+
+.cs-footer-link--lg {
+  font-size: clamp(16px, 1.5vw, 30px);
+}
+
+.cs-footer-link:hover {
+  text-decoration: underline;
+}
+
+.cs-footer-availability {
+  margin: 0 0 32px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #9a9a9a;
+}
+
+.cs-footer-next {
+  border: 1px solid var(--cs-line);
+  border-radius: 2px;
+  background: none;
+  color: var(--cs-ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 12px 18px;
+  cursor: pointer;
+  margin-bottom: clamp(32px, 4vw, 64px);
+}
+
+.cs-footer-next:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cs-footer-strip {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: #9a9a9a;
+}
+
+/* --- media placeholders on the dark ground -------------------------------- */
+.case-study .media-ph {
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-line);
+  border-radius: 4px;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- narrow viewports ------------------------------------------------------
+ * The hero and restate stack; the strip stops pinning and becomes a normal
+ * horizontal scroller, which is the right affordance on touch anyway (F19 is
+ * still open, so this is a floor, not the mobile design). */
+@media (max-width: 900px) {
+  .cs-hero,
+  .cs-restate {
+    flex-direction: column;
+  }
+
+  .cs-images {
+    grid-template-columns: 1fr;
+  }
+
+  .cs-strip-rail {
+    position: static;
+    height: auto;
+    overflow-x: auto;
+    padding-block: 32px;
+  }
+}
