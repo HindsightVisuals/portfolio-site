@@ -21,13 +21,29 @@ export interface WorkHover {
   destroy(): void;
 }
 
+export interface Viewport {
+  w: number;
+  h: number;
+}
+
 export interface WorkHoverDeps {
   world: WorldLayer;
   director: CameraDirector;
   panel: HoverPanel;
+  /**
+   * Viewport size source. Injected rather than read off `window` inline so the
+   * controller's logic is testable in vitest's node environment, where there is
+   * no window at all.
+   */
+  viewport?: () => Viewport;
 }
 
-export function initWorkHover({ world, director, panel }: WorkHoverDeps): WorkHover {
+export function initWorkHover({
+  world,
+  director,
+  panel,
+  viewport = () => ({ w: window.innerWidth, h: window.innerHeight }),
+}: WorkHoverDeps): WorkHover {
   let hovered: string | null = null;
   let focused: string | null = null;
   let px = 0;
@@ -35,8 +51,7 @@ export function initWorkHover({ world, director, panel }: WorkHoverDeps): WorkHo
 
   /** World units per screen pixel at the distance a focused tile is framed from. */
   const currentWorldPerPx = (): number => {
-    const vpW = window.innerWidth;
-    const vpH = window.innerHeight;
+    const { w: vpW, h: vpH } = viewport();
     const dist = distanceForFraming(
       TILE_W,
       TILE_H,
