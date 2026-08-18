@@ -384,8 +384,16 @@ html.has-custom-cursor *:not(input):not(textarea):not([contenteditable]) {
   z-index: 12; /* above .chrome (10), below .cursor-square (100) */
   width: 450px;
   padding: 24px 28px;
-  border: 1px solid var(--ink);
+  border: 1px solid #fff;
   background: none;
+  color: #fff;
+  /* The panel always sits over a focused thumbnail, and those run from
+   * near-black (spy-hop, animal, naboso) to near-white (hindsight, addax). The
+   * mock draws it white, which is right over the dark ones and invisible over
+   * the light ones. `difference` keeps the mock's white-on-dark look and
+   * inverts to dark over pale imagery, so it reads on every tile. Same
+   * blend-mode language the cursor already uses. */
+  mix-blend-mode: difference;
   pointer-events: none;
   will-change: transform, opacity;
 }
