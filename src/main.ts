@@ -17,15 +17,28 @@ import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
 import { DEST_ORDER, destForPath, slugForPath, withBase, type DestId } from './routes';
 import { initTakeover } from './page2d/takeover';
-import { buildNavbar } from './page2d/navbar';
-import { buildCaseStudy } from './page2d/case-study';
-import { buildAbout } from './page2d/about';
-import { mountReveal } from './page2d/reveal';
-import { initStrip, type Strip } from './page2d/strip';
-import { initLogoStage, type LogoStage } from './page2d/logo-stage';
-import { initRdSurface, type RdSurface } from './page2d/rd-surface';
-import { mountCurtain, type CurtainLive } from './page2d/curtain-live';
-import { initBehindPanel, type BehindPanel } from './page2d/behind-panel';
+import type { Strip } from './page2d/strip';
+import type { LogoStage } from './page2d/logo-stage';
+import type { RdSurface } from './page2d/rd-surface';
+import type { CurtainLive } from './page2d/curtain-live';
+import type { BehindPanel } from './page2d/behind-panel';
+
+/**
+ * Everything a takeover page needs, loaded on first open. Keeps GLTFLoader and
+ * the case-study stylesheet out of the initial bundle — nothing here is
+ * reachable until the user opens a page.
+ */
+type TakeoverPageMods = typeof import('./page2d/takeover-page');
+let pageMods: TakeoverPageMods | null = null;
+let pageModsLoading: Promise<TakeoverPageMods> | null = null;
+const loadPageMods = (): Promise<TakeoverPageMods> => {
+  if (pageMods) return Promise.resolve(pageMods);
+  pageModsLoading ??= import('./page2d/takeover-page').then((m) => {
+    pageMods = m;
+    return m;
+  });
+  return pageModsLoading;
+};
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
 import { initHoverPanel } from './work/hover-panel';
@@ -139,6 +152,11 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         // own mode. (scrollNav is null under reduced motion — no wheel nav.)
         inputMode = mode;
         scrollNav?.setMode(mode);
+        // The takeover is opaque, so the world behind it is wasted work. On a
+        // case study that matters twice over: without this, the world stage,
+        // the logo stage and the RD field all render at once and only two of
+        // them are visible.
+        stage.setPaused(mode === 'takeover');
         if (mode === 'world') {
           activeRevealCleanup?.();
           activeRevealCleanup = null;
@@ -199,8 +217,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       router.navigate(id);
     };
 
-    const makeTakeoverNavbar = (): HTMLElement =>
-      buildNavbar({
+    const makeTakeoverNavbar = (m: TakeoverPageMods): HTMLElement =>
+      m.buildNavbar({
         reducedMotion,
         onCloth: () => void takeover.close(),
         onWordmark: () => void closeTakeoverThenNavigate('home'),
@@ -211,10 +229,14 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // in takeover.ts runOpen), so mountReveal can bind the reveal observer to
     // the now-live `.takeover` scroll root immediately, without awaiting the
     // animation. Pages are built fresh per open (no caching).
-    const openCaseStudy = (slug: string): void => {
-      const page = buildCaseStudy(slug, {
+    const openCaseStudy = async (slug: string): Promise<void> => {
+      const m = await loadPageMods();
+      // The module arrives a tick later, so re-check: a second activation
+      // during the load must not open a second page on top of the first.
+      if (takeover.isOpen()) return;
+      const page = m.buildCaseStudy(slug, {
         reducedMotion,
-        navbar: makeTakeoverNavbar(),
+        navbar: makeTakeoverNavbar(m),
         deferReveal: true,
         // The curtain is the close affordance now (brief 7.9) — same
         // takeover.close() the navbar cloth notch used to call.
@@ -227,32 +249,34 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       });
       void takeover.open(page);
       activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
-      activeRevealCleanup = mountReveal(page, { reducedMotion });
+      activeRevealCleanup = m.mountReveal(page, { reducedMotion });
       activeStrip?.destroy();
-      activeStrip = initStrip(page);
+      activeStrip = m.initStrip(page);
       activeLogo?.destroy();
-      activeLogo = initLogoStage(page, withBase, { reducedMotion, slug });
+      activeLogo = m.initLogoStage(page, withBase, { reducedMotion, slug });
       activeRd?.destroy();
-      activeRd = initRdSurface(page, { reducedMotion });
+      activeRd = m.initRdSurface(page, { reducedMotion });
       activeCurtain?.destroy();
-      activeCurtain = mountCurtain(page, { reducedMotion });
+      activeCurtain = m.mountCurtain(page, { reducedMotion });
       activeBehind?.destroy();
-      activeBehind = initBehindPanel(page, {
+      activeBehind = m.initBehindPanel(page, {
         reducedMotion,
         setCursorLabel: (l) => cursor?.setLabel(l),
       });
     };
 
-    const openAbout = (): void => {
-      const page = buildAbout({
+    const openAbout = async (): Promise<void> => {
+      const m = await loadPageMods();
+      if (takeover.isOpen()) return;
+      const page = m.buildAbout({
         reducedMotion,
-        navbar: makeTakeoverNavbar(),
+        navbar: makeTakeoverNavbar(m),
         deferReveal: true,
         onContact: () => void closeTakeoverThenNavigate('contact'),
       });
       void takeover.open(page);
       activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
-      activeRevealCleanup = mountReveal(page, { reducedMotion });
+      activeRevealCleanup = m.mountReveal(page, { reducedMotion });
     };
 
     // Shared routing decision for a WORK tile / the ABOUT screen, used by
@@ -265,12 +289,12 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // opens — same two-step the mouse already requires).
     const activateTile = (slug: string): void => {
       if (takeover.isOpen()) return;
-      if (director.isFocused() && slug === slugForPath(location.pathname)) openCaseStudy(slug);
+      if (director.isFocused() && slug === slugForPath(location.pathname)) void openCaseStudy(slug);
       else navToProject(slug);
     };
     const activateAbout = (): void => {
       if (takeover.isOpen()) return;
-      if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) openAbout();
+      if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) void openAbout();
       else router.navigate('about');
     };
 

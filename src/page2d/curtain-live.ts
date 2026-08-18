@@ -20,6 +20,7 @@ import {
   pruneRipples,
   type Ripple,
 } from './curtain-math';
+import { onPageVisibility, pageVisible } from '../page-visibility';
 
 /** How fast the hover pull eases in and out, per second. */
 const PULL_EASE = 3.4;
@@ -41,6 +42,7 @@ export function mountCurtain(
   let pullTarget = 0;
   let prev: { x: number; y: number } | null = null;
   let raf = 0;
+  let visible = pageVisible();
   const startedAt = performance.now();
 
   /** Pointer position in the SVG's own user space. */
@@ -79,6 +81,7 @@ export function mountCurtain(
   };
 
   let last = performance.now();
+  let offVisibility: (() => void) | null = null;
   const frame = (): void => {
     raf = 0;
     const now = performance.now();
@@ -90,13 +93,20 @@ export function mountCurtain(
 
     const t = (now - startedAt) / 1000;
     path.setAttribute('d', curtainPath(t, pull, ripples, now));
-    raf = requestAnimationFrame(frame);
+    if (visible) raf = requestAnimationFrame(frame);
   };
 
   if (opts.reducedMotion) {
     // Static rest shape — no warp, no ripple, no elastic pull.
     path.setAttribute('d', curtainPath(0, 0));
   } else {
+    offVisibility = onPageVisibility((v) => {
+      visible = v;
+      if (v && !raf) {
+        last = performance.now(); // discard the idle gap
+        raf = requestAnimationFrame(frame);
+      }
+    });
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('pointerleave', onPointerLeave, { passive: true });
     raf = requestAnimationFrame(frame);
@@ -104,6 +114,7 @@ export function mountCurtain(
 
   return {
     destroy(): void {
+      offVisibility?.();
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerleave', onPointerLeave);
       if (raf) cancelAnimationFrame(raf);

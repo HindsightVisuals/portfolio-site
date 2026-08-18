@@ -4,7 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>commms — interaction and story telling</title>
-    <link rel="stylesheet" href="https://use.typekit.net/jhm5bdq.css" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Typekit, loaded without blocking the first paint. A plain stylesheet
+         link here is a cross-origin, render-blocking request (Lighthouse: 290ms
+         on the deployed site). media="print" makes the browser fetch it at low
+         priority without blocking, and the onload swap promotes it to all.
+         Trade-off: text paints in Space Grotesk first and swaps to Loos when the
+         kit lands. Every rule already declares that fallback, and the strip,
+         logo and COMMMS mark all re-measure on document.fonts.ready. -->
+    <link rel="preconnect" href="https://use.typekit.net" crossorigin />
+    <link rel="preconnect" href="https://p.typekit.net" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://use.typekit.net/jhm5bdq.css"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript><link rel="stylesheet" href="https://use.typekit.net/jhm5bdq.css" /></noscript>
   </head>
   <body>
     <canvas id="bg-canvas"></canvas>

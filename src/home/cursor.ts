@@ -44,6 +44,7 @@ import {
   CLICK_SUPPRESS_MS,
   type TrailPoint,
 } from './cursor-math';
+import { onPageVisibility, pageVisible } from '../page-visibility';
 
 /** Anything that should trigger the green swell. `.reticle` is a <button>, so it is covered. */
 const HOVER_SELECTOR =
@@ -159,6 +160,7 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   let hoverApplied = false;
   let points: TrailPoint[] = [];
   let raf = 0;
+  let visible = pageVisible();
 
   // Press-and-hold: ramping while the button is down, easing out after release.
   // Two ramps over the same press — `holdValue` drives the RD pull (slow, 5.5s),
@@ -349,14 +351,24 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     updateGlass(now);
     updateHold();
     // Park once there is nothing left to animate; pointermove restarts us.
-    if (points.length > 0 || holdSince !== null || holdValue > 0.001 || shapeValue > 0.001) {
+    if (visible && (points.length > 0 || holdSince !== null || holdValue > 0.001 || shapeValue > 0.001)) {
       raf = requestAnimationFrame(frame);
     }
   };
 
   const ensureFrame = (): void => {
-    if (!reducedMotion && !raf) raf = requestAnimationFrame(frame);
+    // A hidden tab has no cursor to draw; the trail is rebuilt from live
+    // pointer samples on return, so nothing is lost by stopping.
+    if (!reducedMotion && !raf && visible) raf = requestAnimationFrame(frame);
   };
+
+  const offVisibility = onPageVisibility((v) => {
+    visible = v;
+    if (!v && raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+  });
 
   // --- listeners ----------------------------------------------------------
   const pushSample = (x: number, y: number, t: number): void => {
@@ -478,6 +490,7 @@ export function initCursor(opts: CursorOpts): Cursor | null {
       }
     },
     destroy(): void {
+      offVisibility();
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerout', onPointerOut);
       window.removeEventListener('pointerover', onPointerOver);

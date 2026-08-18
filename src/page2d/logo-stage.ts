@@ -28,6 +28,7 @@ import { approachExp } from '../three/magnet';
 import { worldPerPx } from '../three/framing';
 import { ease, logoPhase, rectCenter, rectLerp, trackProgress, type Rect } from './logo-track';
 import { offsetWithin } from './scroll-offset';
+import { onPageVisibility, pageVisible } from '../page-visibility';
 
 /** Camera distance. Arbitrary — worldPerPx() makes the framing independent of it. */
 const CAM_Z = 100;
@@ -114,6 +115,7 @@ export function initLogoStage(
   let tiltY = 0;
   let startedAt = 0;
   let landingRestX = 0;
+  let visible = pageVisible();
   let heroTop = 0;
   let landingTop = 0;
 
@@ -226,8 +228,8 @@ export function initLogoStage(
     }
     apply();
     // The float and the tilt both keep moving with no input, so this loop runs
-    // for as long as the page is open rather than parking on idle.
-    if (!opts.reducedMotion) raf = requestAnimationFrame(frame);
+    // for as long as the page is open — but only while the page is on screen.
+    if (!opts.reducedMotion && visible) raf = requestAnimationFrame(frame);
   };
 
   const onPointerMove = (e: PointerEvent): void => {
@@ -241,6 +243,11 @@ export function initLogoStage(
   };
 
   startedAt = performance.now();
+  const offVisibility = onPageVisibility((v) => {
+    visible = v;
+    if (v && !opts.reducedMotion && !raf) raf = requestAnimationFrame(frame);
+  });
+
   window.addEventListener('pointermove', onPointerMove, { passive: true });
   window.addEventListener('resize', measure);
   scroller.addEventListener('scroll', onScroll, { passive: true });
@@ -254,6 +261,7 @@ export function initLogoStage(
   return {
     measure,
     destroy(): void {
+      offVisibility();
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('resize', measure);
       scroller.removeEventListener('scroll', onScroll);

@@ -21,6 +21,7 @@
 
 import * as THREE from 'three';
 import { initBackgroundLayer, type BackgroundLayer } from '../three/background';
+import { onPageVisibility, pageVisible } from '../page-visibility';
 
 /** How much a pixel of scroll drifts the field, in sim uv per step. Tiny — it
  *  compounds every step, exactly as the press-and-hold pull does. */
@@ -139,6 +140,7 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
   };
 
   let raf = 0;
+  let visible = pageVisible();
   let last = performance.now();
   const frame = (): void => {
     raf = 0;
@@ -162,7 +164,7 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
     layer.update?.(dt);
     layer.render?.(renderer);
     drawMark();
-    raf = requestAnimationFrame(frame);
+    if (visible) raf = requestAnimationFrame(frame);
   };
 
   const onScroll = (): void => {
@@ -170,6 +172,14 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
     // scroll instead — without this it never appears at all for those users.
     if (opts.reducedMotion) drawMark();
   };
+
+  const offVisibility = onPageVisibility((v) => {
+    visible = v;
+    if (v && !opts.reducedMotion && !raf) {
+      last = performance.now(); // discard the idle gap rather than stepping it
+      raf = requestAnimationFrame(frame);
+    }
+  });
 
   window.addEventListener('resize', measure);
   scroller.addEventListener('scroll', onScroll, { passive: true });
@@ -191,6 +201,7 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
   return {
     measure,
     destroy(): void {
+      offVisibility();
       window.removeEventListener('resize', measure);
       scroller.removeEventListener('scroll', onScroll);
       if (raf) cancelAnimationFrame(raf);

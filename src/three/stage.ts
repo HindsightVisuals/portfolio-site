@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { onPageVisibility, pageVisible } from '../page-visibility';
 
 export interface StageLayer {
   update?(dt: number): void;
@@ -16,6 +17,14 @@ export interface StageHandle {
   onFrame(cb: (dt: number) => void): void;
   requestFrame(): void;
   start(): void;
+  /**
+   * Suspend the loop while something opaque covers the canvas — a 2D takeover.
+   * The world is invisible then, and on a case study page it would otherwise be
+   * the third renderer running simultaneously alongside the logo and the RD
+   * field. Independent of the visibility gate; the loop runs only when neither
+   * reason to idle applies.
+   */
+  setPaused(paused: boolean): void;
   destroy(): void;
 }
 
@@ -49,10 +58,36 @@ export function initStage(canvas: HTMLCanvasElement, opts: StageOpts): StageHand
   };
 
   let raf = 0;
+  let paused = false;
+  let visible = pageVisible();
+  let started = false;
+  /** The loop runs only when nothing is asking it to idle. */
+  const shouldRun = (): boolean => started && !paused && visible && !opts.reducedMotion;
+
   const loop = (): void => {
+    raf = 0;
+    // getDelta() is read even when stopping, so the clock does not accumulate
+    // the idle period into the next frame's dt. MAX_DT is the backstop.
     renderFrame(Math.min(clock.getDelta(), MAX_DT));
-    raf = requestAnimationFrame(loop);
+    if (shouldRun()) raf = requestAnimationFrame(loop);
   };
+
+  const sync = (): void => {
+    if (shouldRun()) {
+      if (!raf) {
+        clock.getDelta(); // discard the idle gap
+        raf = requestAnimationFrame(loop);
+      }
+    } else if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+  };
+
+  const offVisibility = onPageVisibility((v) => {
+    visible = v;
+    sync();
+  });
 
   const onResize = (): void => {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -72,11 +107,26 @@ export function initStage(canvas: HTMLCanvasElement, opts: StageOpts): StageHand
     },
     requestFrame,
     start(): void {
-      if (opts.reducedMotion) renderFrame(0);
-      else loop();
+      started = true;
+      // Always paint once, even if the page is currently hidden: a tab opened in
+      // the background would otherwise show nothing at all until it is focused.
+      // The visibility gate is about not running CONTINUOUSLY while unwatched,
+      // not about withholding the first frame.
+      renderFrame(0);
+      if (!opts.reducedMotion) sync();
+    },
+    setPaused(v: boolean): void {
+      if (v === paused) return;
+      paused = v;
+      // Paint one frame on resume even under reduced motion, so the world is
+      // current the moment the takeover uncovers it.
+      if (!v && opts.reducedMotion) renderFrame(0);
+      sync();
     },
     destroy(): void {
+      started = false;
       cancelAnimationFrame(raf);
+      offVisibility();
       window.removeEventListener('resize', onResize);
       renderer.dispose();
     },
