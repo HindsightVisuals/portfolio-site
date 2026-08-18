@@ -174,6 +174,12 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
   window.addEventListener('resize', measure);
   scroller.addEventListener('scroll', onScroll, { passive: true });
   measure();
+  // The COMMMS mark's canvas is sized from its laid-out type, so it has to be
+  // re-measured once the real webfont replaces the fallback.
+  void document.fonts?.ready.then(() => {
+    measure();
+    drawMark();
+  }).catch(() => {});
   if (!opts.reducedMotion) raf = requestAnimationFrame(frame);
   else {
     // No loop under reduced motion: one settled frame, then hold it.

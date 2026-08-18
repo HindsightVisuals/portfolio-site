@@ -245,6 +245,11 @@ export function initLogoStage(
   window.addEventListener('resize', measure);
   scroller.addEventListener('scroll', onScroll, { passive: true });
   measure();
+  // Re-measure once the display webfont lands: every offset here is derived
+  // from laid-out text, and the first measure happens while the fallback is
+  // still in place. Same reason world.ts redraws its tile labels on
+  // document.fonts.ready.
+  void document.fonts?.ready.then(measure).catch(() => {});
 
   return {
     measure,
