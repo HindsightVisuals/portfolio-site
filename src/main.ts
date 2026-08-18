@@ -23,6 +23,8 @@ import { buildAbout } from './page2d/about';
 import { mountReveal } from './page2d/reveal';
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
+import { initHoverPanel } from './work/hover-panel';
+import { initWorkHover } from './work/work-hover';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
@@ -70,13 +72,20 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     stage.addLayer(world);
     const distFromHome = (): number => Math.abs(wrapDelta(HOME_REST_Z, world.camera.position.z));
 
-    const director = initCameraDirector(world.camera, DESTINATIONS);
+    const director = initCameraDirector(world.camera, DESTINATIONS, { reducedMotion });
     // RD travel stretch: the background deforms along the axis of travel while
     // the camera is moving (scroll, flythroughs and settling all feed this).
     bg.setVelocityProvider(() => director.getVelocity());
     // Press-and-hold sucks the RD field toward the cursor. Null cursor (coarse
     // pointer) means no pull, which is the right behaviour on touch anyway.
     bg.setPullProvider(() => cursor?.getHoldProgress() ?? 0);
+    // WORK wall hover: tile colour, the cursor-anchored panel, and the camera
+    // lean toward a peeked neighbour, all behind one controller.
+    const workHover = initWorkHover({
+      world,
+      director,
+      panel: initHoverPanel({ reducedMotion }),
+    });
     if (debugWorld) director.jumpTo('work');
     world.setVelocitySource(() => director.getVelocity());
     stage.onFrame((dt) => director.update(dt));
@@ -243,6 +252,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       if (!p) return;
       if (takeover.isOpen()) {
         world.setTileHover(null);
+        workHover.setHovered(null);
         // The takeover covers the canvas; its own DOM drives hover from here.
         if (cursor) cursor.setWorldHover(false);
         else canvas.style.cursor = '';
@@ -251,7 +261,10 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       const ndcX = (p.x / window.innerWidth) * 2 - 1;
       const ndcY = -((p.y / window.innerHeight) * 2 - 1);
       const hit = world.pick(ndcX, ndcY);
-      world.setTileHover(hit?.kind === 'tile' ? hit.slug : null);
+      const hoveredSlug = hit?.kind === 'tile' ? hit.slug : null;
+      world.setTileHover(hoveredSlug);
+      workHover.setPointer(p.x, p.y);
+      workHover.setHovered(hoveredSlug);
       // With the custom cursor mounted the OS cursor is hidden, so the inline
       // 'pointer' write is meaningless — feed the square instead. The inline
       // write survives only as the coarse-pointer fallback.
@@ -312,6 +325,14 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const homeEls: HTMLElement[] = [fieldEl];
     const homeVisibility = bindHomeVisibility(homeEls, () => world.camera.position.z);
     stage.onFrame((dt) => homeVisibility.update(dt));
+
+    // Which tile is framed, for tile colour and the panel. The router keeps
+    // /work/[slug] current on every project arrival, so the URL is the source of
+    // truth — the same one activateTile() reads.
+    director.onArrive(() => {
+      workHover.setFocused(director.isFocused() ? slugForPath(location.pathname) : null);
+    });
+    director.onDepart(() => workHover.setFocused(null));
 
     // reduced motion has no frame loop: force a repaint after every cut
     director.onArrive(() => {

@@ -371,3 +371,54 @@ html.has-custom-cursor *:not(input):not(textarea):not([contenteditable]) {
     transition: none;
   }
 }
+
+/* --- WORK wall hover panel ---------------------------------------------
+ * Springs out of the cursor when a case study is framed. Position and
+ * transform-origin are written per show/move by src/work/hover-panel.ts;
+ * everything else is declared here so the placement maths can read the box back
+ * rather than duplicating its size. */
+.work-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 12; /* above .chrome (10), below .cursor-square (100) */
+  width: 450px;
+  padding: 24px 28px;
+  border: 1px solid var(--ink);
+  background: none;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.work-panel__mark {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.work-panel__title {
+  margin: 0 0 16px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.1;
+  text-transform: lowercase;
+}
+
+.work-panel__brief {
+  margin: 0;
+  max-width: 34ch;
+  font-family: var(--font-display);
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-panel {
+    will-change: auto;
+  }
+}

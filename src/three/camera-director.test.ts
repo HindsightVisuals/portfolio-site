@@ -229,4 +229,70 @@ describe('camera director', () => {
       expect(camera.position.z).toBeCloseTo(-46, 6);
     });
   });
+
+  describe('peek lean', () => {
+    const FOCUS = { x: 3.95, y: 2.65, z: -46 };
+
+    const landOnFocus = async (): Promise<void> => {
+      const flight = director.flyToFocus(FOCUS);
+      scrub(director, t0, 2.1);
+      await flight;
+    };
+
+    it('offsets the camera without disturbing the focus target', async () => {
+      await landOnFocus();
+
+      const t = gsap.globalTimeline.time();
+      director.peekTo(3.5, 0);
+      scrub(director, t, 1.6); // past PEEK_S plus the elastic settle
+
+      expect(camera.position.x).toBeCloseTo(FOCUS.x + 3.5, 1);
+      expect(camera.position.y).toBeCloseTo(FOCUS.y, 1);
+      // z is untouched by a peek — it is a lateral lean, not a flight
+      expect(camera.position.z).toBeCloseTo(FOCUS.z, 3);
+    });
+
+    it('returns exactly to the focus position when cleared', async () => {
+      await landOnFocus();
+      const focusedX = camera.position.x;
+
+      let t = gsap.globalTimeline.time();
+      director.peekTo(3.5, 0);
+      scrub(director, t, 1.6);
+
+      t = gsap.globalTimeline.time();
+      director.clearPeek();
+      scrub(director, t, 1.6);
+
+      expect(camera.position.x).toBeCloseTo(focusedX, 2);
+    });
+
+    it('a departure cancels a live peek rather than flying from a leaned camera', async () => {
+      await landOnFocus();
+
+      director.peekTo(3.5, 0);
+      director.update(1 / 60);
+
+      const t = gsap.globalTimeline.time();
+      const away = director.flyTo('home');
+      scrub(director, t, 2.1);
+      await away;
+
+      // Landed on the home axis, not 3.5 units off it.
+      expect(camera.position.x).toBeCloseTo(0, 2);
+    });
+
+    it('cuts instead of tweening under reduced motion', () => {
+      const c = makeCamera();
+      const d = initCameraDirector(asCamera(c), DESTINATIONS, { now: () => clock, reducedMotion: true });
+      d.peekTo(3.5, -2);
+      d.update(1 / 60);
+      expect(c.position.x).toBeCloseTo(3.5, 6);
+      expect(c.position.y).toBeCloseTo(-2, 6);
+      d.clearPeek();
+      d.update(1 / 60);
+      expect(c.position.x).toBeCloseTo(0, 6);
+      d.destroy();
+    });
+  });
 });

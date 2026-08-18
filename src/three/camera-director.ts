@@ -29,12 +29,19 @@ const SCROLL_GAIN = 0.06;        // wheel px -> velocity (units/s)
 const DAMPING_RATE = 2.2;        // exponential velocity decay per second
 const SNAP_BELOW = 2.0;          // |v| floor that begins settling if the wheel never goes quiet
 const FOCUS_RELEASE_S = 0.9;     // lateral ease-home duration when focus is broken by scroll
+/* Peek lean toward a hovered neighbour — "a little bit of elasticity" per the brief. */
+const PEEK_S = 0.9;
+const PEEK_EASE = 'elastic.out(1, 0.75)';
 
 type Mode = 'free' | 'settling' | 'flying';
 
 export interface CameraDirector {
   flyTo(id: DestId, opts?: { abbreviated?: boolean }): Promise<void>;
   flyToFocus(target: { x: number; y: number; z: number }, opts?: { abbreviated?: boolean }): Promise<void>;
+  /** Lean the camera off its base by (dx, dy) world units — a peek at a neighbour. */
+  peekTo(dx: number, dy: number): void;
+  /** Return the lean to zero. */
+  clearPeek(): void;
   jumpTo(id: DestId): void;
   jumpToFocus(target: { x: number; y: number; z: number }): void;
   feedScroll(pixels: number): void;
@@ -50,10 +57,11 @@ export interface CameraDirector {
 export function initCameraDirector(
   camera: THREE.PerspectiveCamera,
   destinations: Destination[],
-  opts?: { now?: () => number },
+  opts?: { now?: () => number; reducedMotion?: boolean },
 ): CameraDirector {
   const rests = destinations.map((d) => d.cameraZ);
   const now = opts?.now ?? (() => performance.now());
+  const reducedMotion = opts?.reducedMotion ?? false;
 
   const state = { z: destinations[0].cameraZ };
   const lateral = { x: 0, y: 0 }; // off-axis flight-target lateral offset (focus mode)
@@ -61,6 +69,11 @@ export function initCameraDirector(
   // filtered together with it — see magnet.ts for why that separation is what
   // makes zoom and pan land on the same frame.
   const magnet = { x: 0, y: 0 };
+  // Peek lean toward a hovered neighbour. A THIRD additive term, deliberately
+  // NOT folded into `lateral`: lateral is the focus target, and overwriting it
+  // would lose where the camera has to return to when the peek ends.
+  const peek = { x: 0, y: 0 };
+  let peekTween: gsap.core.Tween | null = null;
   let focusState: FocusState = 'free';
   let velocity = 0;
   let measuredVelocity = 0;
@@ -105,6 +118,15 @@ export function initCameraDirector(
     r?.();
   };
 
+  /** Drop any live peek instantly — used on departures, where a tween would
+   *  fight the flight for the same axis. */
+  const killPeek = (): void => {
+    peekTween?.kill();
+    peekTween = null;
+    peek.x = 0;
+    peek.y = 0;
+  };
+
   const settleTo = (targetZ: number, duration: number, ease: string): void => {
     mode = 'settling';
     velocity = 0;
@@ -132,6 +154,7 @@ export function initCameraDirector(
       const targetZ = wrappedTarget(dest.cameraZ, state.z);
       const duration = opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S;
       lateralTween?.kill();
+      killPeek();
       return new Promise((resolve) => {
         pendingFlyResolve = resolve;
         lateralTween = gsap.to(lateral, { x: 0, y: 0, duration, ease: FLY_EASE });
@@ -162,6 +185,7 @@ export function initCameraDirector(
       const targetZ = wrappedTarget(target.z, state.z);
       const duration = opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S;
       lateralTween?.kill();
+      killPeek();
       return new Promise((resolve) => {
         pendingFlyResolve = resolve;
         lateralTween = gsap.to(lateral, { x: target.x, y: target.y, duration, ease: FLY_EASE });
@@ -191,6 +215,7 @@ export function initCameraDirector(
       velocity = 0;
       focusState = 'free';
       lateralTween?.kill();
+      killPeek();
       lateralTween = null;
       lateral.x = 0;
       lateral.y = 0;
@@ -224,6 +249,7 @@ export function initCameraDirector(
       mode = 'free';
       velocity = 0;
       lateralTween?.kill();
+      killPeek();
       lateralTween = null;
       const targetZ = wrappedTarget(target.z, state.z);
       state.z = targetZ;
@@ -243,6 +269,7 @@ export function initCameraDirector(
       if (focusState === 'focused') {
         focusState = focusReducer(focusState, 'scroll');
         lateralTween?.kill();
+      killPeek();
         lateralTween = gsap.to(lateral, {
           x: 0,
           y: 0,
@@ -265,6 +292,26 @@ export function initCameraDirector(
       // event swallowed by the `mode === 'flying'` guard above must not count as
       // the gesture still being live, or the idle timer would never expire.
       lastScrollAt = now();
+    },
+
+    peekTo(dx: number, dy: number): void {
+      peekTween?.kill();
+      if (reducedMotion) {
+        peek.x = dx;
+        peek.y = dy;
+        return;
+      }
+      peekTween = gsap.to(peek, { x: dx, y: dy, duration: PEEK_S, ease: PEEK_EASE });
+    },
+
+    clearPeek(): void {
+      peekTween?.kill();
+      if (reducedMotion) {
+        peek.x = 0;
+        peek.y = 0;
+        return;
+      }
+      peekTween = gsap.to(peek, { x: 0, y: 0, duration: PEEK_S, ease: PEEK_EASE });
     },
 
     setPointer(nx: number, ny: number): void {
@@ -307,8 +354,8 @@ export function initCameraDirector(
       magnet.y = approachExp(magnet.y, target.y, dt);
 
       camera.position.z = state.z;
-      camera.position.x = lateral.x + magnet.x;
-      camera.position.y = lateral.y + magnet.y;
+      camera.position.x = lateral.x + peek.x + magnet.x;
+      camera.position.y = lateral.y + peek.y + magnet.y;
       if (dt > 0) measuredVelocity = (state.z - before) / dt;
     },
 
@@ -333,6 +380,8 @@ export function initCameraDirector(
     destroy(): void {
       killSettle();
       lateralTween?.kill();
+      peekTween?.kill();
+      killPeek();
       arriveCbs.clear();
       departCbs.clear();
     },
