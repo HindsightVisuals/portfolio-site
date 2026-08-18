@@ -4,6 +4,8 @@ import type { DestId } from '../routes';
 import type { Destination } from './world';
 import { focusReducer, type FocusState } from './focus';
 import { nearestWrapped, resolveSnapTargetLooped, sameSpot, wrapDelta, SPINE_PERIOD } from './loop';
+import { shouldSnapNow } from './snap';
+import { approachExp, magnetTarget } from './magnet';
 
 /** Nearest wrapped instance; exact half-period ties resolve FORWARD (deeper, -z) —
  * the loop's canonical travel direction (Home -> Work -> About -> Contact -> ...). */
@@ -18,15 +20,14 @@ const wrappedTarget = (anchorZ: number, fromZ: number): number => {
 const FLY_S = 2.0;
 const FLY_ABBREVIATED_S = 0.8;
 const FLY_EASE = 'power3.inOut';
-const SETTLE_S = 1.1;
+/** Settle duration. Short on purpose: with scroll-end detection driving the
+ *  snap (see shouldSnapNow), this runs the instant you stop scrolling, so it
+ *  has to read as a snap onto the page rather than a slow drift toward it. */
+const SETTLE_S = 0.55;
 const SETTLE_EASE = 'power3.out';
 const SCROLL_GAIN = 0.06;        // wheel px -> velocity (units/s)
 const DAMPING_RATE = 2.2;        // exponential velocity decay per second
-const SNAP_BELOW = 2.0;          // |v| threshold to begin settling
-const MAGNET_X = 1.2;            // pointer x range (normalized −1..1)
-const MAGNET_Y = 0.8;            // pointer y range (normalized −1..1)
-const MAGNET_EASE = 2.0;         // per-second approach rate
-const FOCUS_MAGNET_SCALE = 0.3;  // magnet strength while a focus flight is settled
+const SNAP_BELOW = 2.0;          // |v| floor that begins settling if the wheel never goes quiet
 const FOCUS_RELEASE_S = 0.9;     // lateral ease-home duration when focus is broken by scroll
 
 type Mode = 'free' | 'settling' | 'flying';
@@ -49,14 +50,24 @@ export interface CameraDirector {
 export function initCameraDirector(
   camera: THREE.PerspectiveCamera,
   destinations: Destination[],
+  opts?: { now?: () => number },
 ): CameraDirector {
   const rests = destinations.map((d) => d.cameraZ);
+  const now = opts?.now ?? (() => performance.now());
 
   const state = { z: destinations[0].cameraZ };
   const lateral = { x: 0, y: 0 }; // off-axis flight-target lateral offset (focus mode)
+  // Pointer magnet, held separately from `lateral` and ADDED to it rather than
+  // filtered together with it — see magnet.ts for why that separation is what
+  // makes zoom and pan land on the same frame.
+  const magnet = { x: 0, y: 0 };
   let focusState: FocusState = 'free';
   let velocity = 0;
   let measuredVelocity = 0;
+  // Timestamp of the last wheel event. -Infinity means "no scroll yet", which
+  // reads as infinitely idle — correct, since there is no gesture in progress
+  // to wait on.
+  let lastScrollAt = -Infinity;
   let mode: Mode = 'free';
   let settleTween: gsap.core.Tween | null = null;
   let lateralTween: gsap.core.Tween | null = null;
@@ -183,17 +194,22 @@ export function initCameraDirector(
       lateralTween = null;
       lateral.x = 0;
       lateral.y = 0;
+      // A cut lands with no residual magnet offset, so the camera is exactly on
+      // axis even under reduced motion, where no update() tick may follow.
+      magnet.x = 0;
+      magnet.y = 0;
       const targetZ = wrappedTarget(dest.cameraZ, state.z);
       state.z = targetZ;
+      camera.position.x = lateral.x;
+      camera.position.y = lateral.y;
       camera.position.z = state.z;
       emitArrive(targetZ);
     },
 
     /**
      * Cut-only equivalent of flyToFocus, for reduced motion: sets camera
-     * position (x, y, AND z — unlike jumpTo, which leaves x/y for update()'s
-     * per-frame magnet blend to ease toward 0) directly so the frame is
-     * correctly framed even with no update() tick following this call.
+     * position (x, y and z) directly, with the pointer magnet zeroed, so the
+     * frame is correct even with no update() tick following this call.
      * Mirrors flyToFocus's depart/arrive sequencing but instant, and — like
      * flyToFocus's onComplete — calls arriveCbs directly with the
      * already-known destId rather than emitArrive(z): a focus target's z is
@@ -213,6 +229,8 @@ export function initCameraDirector(
       state.z = targetZ;
       lateral.x = target.x;
       lateral.y = target.y;
+      magnet.x = 0;
+      magnet.y = 0;
       camera.position.x = target.x;
       camera.position.y = target.y;
       camera.position.z = state.z;
@@ -243,6 +261,10 @@ export function initCameraDirector(
       // scroll down (positive deltaY) travels deeper (negative z)
       velocity -= pixels * SCROLL_GAIN;
       if (velocity === 0) velocity = -1e-6; // exact cancellation must not disable settling
+      // Stamped last, and only once the scroll has actually been accepted: an
+      // event swallowed by the `mode === 'flying'` guard above must not count as
+      // the gesture still being live, or the idle timer would never expire.
+      lastScrollAt = now();
     },
 
     setPointer(nx: number, ny: number): void {
@@ -255,7 +277,11 @@ export function initCameraDirector(
       if (mode === 'free') {
         state.z = state.z + velocity * dt;
         velocity *= Math.exp(-DAMPING_RATE * dt);
-        if (Math.abs(velocity) < SNAP_BELOW && velocity !== 0) {
+        // Settle the moment the wheel goes quiet, rather than waiting for
+        // momentum to decay past SNAP_BELOW on its own (which took well over a
+        // second after a hard scroll). resolveSnapTargetLooped already picks the
+        // nearest rest biased toward the direction of travel.
+        if (shouldSnapNow(velocity, now() - lastScrollAt, SNAP_BELOW)) {
           const target = resolveSnapTargetLooped(state.z, velocity, rests);
           if (Math.abs(target - state.z) < 0.01) {
             velocity = 0;
@@ -264,14 +290,25 @@ export function initCameraDirector(
           }
         }
       }
+
+      // Camera position is BASE + MAGNET, and only the magnet is smoothed.
+      //
+      // The base (state.z, lateral.x/y) is written straight from its tweens, so
+      // a flight's zoom and pan share one duration and one ease and land on the
+      // same frame. Routing the base through the magnet's exponential filter —
+      // which is what this used to do — gave x/y a ~0.5s lag with a completely
+      // different curve from z's, and the move read as two gestures instead of
+      // one. See magnet.ts.
+      const target = magnetTarget(pointerX, pointerY, {
+        suspended: mode === 'flying',
+        focused: focusState === 'focused',
+      });
+      magnet.x = approachExp(magnet.x, target.x, dt);
+      magnet.y = approachExp(magnet.y, target.y, dt);
+
       camera.position.z = state.z;
-      const targetX = pointerX * MAGNET_X;
-      const targetY = -pointerY * MAGNET_Y;
-      const suspend = mode === 'flying' ? 0 : 1;
-      const magnetScale = focusState === 'focused' ? FOCUS_MAGNET_SCALE : 1;
-      const k = Math.min(dt * MAGNET_EASE, 1);
-      camera.position.x += ((lateral.x + targetX * suspend * magnetScale) - camera.position.x) * k;
-      camera.position.y += ((lateral.y + targetY * suspend * magnetScale) - camera.position.y) * k;
+      camera.position.x = lateral.x + magnet.x;
+      camera.position.y = lateral.y + magnet.y;
       if (dt > 0) measuredVelocity = (state.z - before) / dt;
     },
 
