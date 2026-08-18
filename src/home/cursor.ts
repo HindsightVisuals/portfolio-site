@@ -35,10 +35,12 @@ import {
   bandSlices,
   shouldMount,
   holdRamp,
+  holdShapeRamp,
   holdRelease,
   holdSize,
   holdAlpha,
-  holdEdgeBlur,
+  holdRadiusPct,
+  holdColorMix,
   CLICK_SUPPRESS_MS,
   type TrailPoint,
 } from './cursor-math';
@@ -49,6 +51,15 @@ const HOVER_SELECTOR =
 
 /** Green of the hover state and the trail. */
 const CURSOR_GREEN = '97, 232, 145'; // #61E891
+/** Resting ink of the square, as the same rgb triple so a hold can interpolate between them. */
+const CURSOR_INK = '20, 20, 20'; // #141414
+
+/** Linear rgb interpolation between the two triples above, as an `r, g, b` string. */
+function mixInk(mix: number): string {
+  const a = CURSOR_INK.split(',').map(Number);
+  const b = CURSOR_GREEN.split(',').map(Number);
+  return a.map((v, i) => Math.round(v + (b[i] - v) * mix)).join(', ');
+}
 /** Number of masked backdrop-filter nodes riding the trail. Drop to 1 if compositing costs frames. */
 const GLASS_NODES = 3;
 /** Where along the trail (0 = oldest) each glass node sits. Node size lives in base.css (.cursor-glass). */
@@ -118,17 +129,6 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     }
   }
 
-  // The press-and-hold circle. Its own element rather than a mutated square:
-  // the square carries CSS transitions for the hover swell, and driving size
-  // per frame through those transitions would fight them.
-  let holdEl: HTMLElement | null = null;
-  if (!reducedMotion) {
-    holdEl = document.createElement('div');
-    holdEl.className = 'cursor-hold';
-    holdEl.style.opacity = '0';
-    layer.appendChild(holdEl);
-  }
-
   const square = document.createElement('div');
   square.className = 'cursor-square';
   square.style.opacity = '0'; // revealed on first move, so it never flashes at 0,0
@@ -148,10 +148,16 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   let raf = 0;
 
   // Press-and-hold: ramping while the button is down, easing out after release.
+  // Two ramps over the same press — `holdValue` drives the RD pull (slow, 5.5s),
+  // `shapeValue` drives the cursor's own morph (fast, ~0.9s). See
+  // HOLD_SHAPE_RAMP_MS in cursor-math.ts.
   let holdSince: number | null = null;
   let releaseAt: number | null = null;
   let releaseFrom = 0;
+  let releaseShapeFrom = 0;
   let holdValue = 0;
+  let shapeValue = 0;
+  let shapeApplied = false;
   let pendingClickSuppressor: (() => void) | null = null;
 
   const sizeCanvases = (): void => {
@@ -262,37 +268,62 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     }
   };
 
-  /** Current hold progress, ramping while down and easing out after release. */
+  /** RD-pull progress, ramping while down and easing out after release. */
   const currentHold = (now: number): number => {
     if (holdSince !== null) return holdRamp(now - holdSince);
+    if (releaseAt !== null) return holdRelease(releaseFrom, now - releaseAt);
+    return 0;
+  };
+
+  /** Cursor shape-morph progress — the same press on its own faster ramp. */
+  const currentShape = (now: number): number => {
+    if (holdSince !== null) return holdShapeRamp(now - holdSince);
     if (releaseAt !== null) {
-      const v = holdRelease(releaseFrom, now - releaseAt);
-      if (v <= 0.001) {
-        releaseAt = null;
-        return 0;
-      }
+      const v = holdRelease(releaseShapeFrom, now - releaseAt);
+      // The release timer is cleared by whichever ramp outlives the other; both
+      // read it, so it is retired here only once BOTH have gone quiet.
+      if (v <= 0.001 && holdValue <= 0.001) releaseAt = null;
       return v;
     }
     return 0;
   };
 
+  /**
+   * The square IS the hold shape — it rounds its corners to a circle, then
+   * scales up and turns green. There is no second element: a separate circle
+   * would read as the cursor gaining a shape rather than becoming one.
+   *
+   * Inline writes here would otherwise fight `.cursor-square`'s 220ms hover
+   * transitions, so `--holding` suspends them for the duration, and every
+   * property written is removed again at the end so the hover CSS resumes
+   * cleanly rather than being permanently overridden by stale inline values.
+   */
   const updateHold = (): void => {
-    if (!holdEl) return;
-    if (holdValue <= 0.001) {
-      holdEl.style.opacity = '0';
-      if (seen) square.style.opacity = '1';
-      return;
+    if (reducedMotion) return;
+    const holding = shapeValue > 0.001;
+    if (holding !== shapeApplied) {
+      shapeApplied = holding;
+      square.classList.toggle('cursor-square--holding', holding);
+      if (!holding) {
+        square.style.removeProperty('width');
+        square.style.removeProperty('height');
+        square.style.removeProperty('border-radius');
+        square.style.removeProperty('border-color');
+        square.style.removeProperty('background');
+        if (seen) square.style.opacity = '1';
+      }
     }
-    const size = holdSize(holdValue);
-    holdEl.style.opacity = '1';
-    holdEl.style.width = `${size}px`;
-    holdEl.style.height = `${size}px`;
-    holdEl.style.background = `rgba(${CURSOR_GREEN}, ${holdAlpha(holdValue)})`;
-    holdEl.style.filter = `blur(${holdEdgeBlur(holdValue)}px)`;
-    holdEl.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`;
-    // The square dissolves as the circle takes over, so the cursor reads as
-    // becoming the circle rather than gaining a second shape.
-    square.style.opacity = `${1 - holdValue}`;
+    if (!holding) return;
+
+    const size = holdSize(shapeValue);
+    const mix = holdColorMix(shapeValue);
+    const rgb = mixInk(mix);
+    square.style.width = `${size}px`;
+    square.style.height = `${size}px`;
+    square.style.borderRadius = `${holdRadiusPct(shapeValue)}%`;
+    // Opaque stroke, translucent centre — no soft edge, no blur.
+    square.style.borderColor = `rgb(${rgb})`;
+    square.style.background = `rgba(${rgb}, ${holdAlpha(shapeValue)})`;
   };
 
   const frame = (): void => {
@@ -300,11 +331,12 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     const now = performance.now();
     points = pruneTrail(points, now);
     holdValue = currentHold(now);
+    shapeValue = currentShape(now);
     drawTrail(now);
     updateGlass(now);
     updateHold();
     // Park once there is nothing left to animate; pointermove restarts us.
-    if (points.length > 0 || holdSince !== null || holdValue > 0.001) {
+    if (points.length > 0 || holdSince !== null || holdValue > 0.001 || shapeValue > 0.001) {
       raf = requestAnimationFrame(frame);
     }
   };
@@ -351,10 +383,10 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   };
 
   const onPointerOver = (): void => {
-    // pointerover fires on every element transition, not just window re-entry,
-    // so it must not stomp the square's dissolve mid-hold — updateHold() owns
-    // the opacity while a press is live and restores it on release.
-    if (seen && holdValue <= 0.001) square.style.opacity = '1';
+    // pointerover fires on every element transition, not just window re-entry.
+    // Safe to write unconditionally now that a hold morphs the square in place
+    // rather than dissolving it — nothing else owns this opacity.
+    if (seen) square.style.opacity = '1';
   };
 
   const onResize = (): void => sizeCanvases();
@@ -394,6 +426,7 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     const now = performance.now();
     const heldMs = now - holdSince;
     releaseFrom = holdRamp(heldMs);
+    releaseShapeFrom = holdShapeRamp(heldMs);
     releaseAt = now;
     holdSince = null;
     if (heldMs >= CLICK_SUPPRESS_MS) suppressNextClick();

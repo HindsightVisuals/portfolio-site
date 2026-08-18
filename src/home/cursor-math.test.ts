@@ -9,17 +9,21 @@ import {
   CORE_MAX_BLUR_PX,
   TRAIL_BANDS,
   HOLD_RAMP_MS,
+  HOLD_SHAPE_RAMP_MS,
   HOLD_RELEASE_MS,
   HOLD_MIN_SIZE,
   HOLD_MAX_SIZE,
   HOLD_MIN_ALPHA,
   HOLD_MAX_ALPHA,
-  HOLD_MAX_EDGE_BLUR,
+  HOLD_ROUND_FRACTION,
+  HOLD_GROW_START,
   holdRamp,
+  holdShapeRamp,
   holdRelease,
   holdSize,
   holdAlpha,
-  holdEdgeBlur,
+  holdRadiusPct,
+  holdColorMix,
   pruneTrail,
   pointAge,
   trailAlpha,
@@ -307,32 +311,75 @@ describe('holdRelease', () => {
   });
 });
 
+describe('hold shape ramp', () => {
+  it('completes far sooner than the RD pull ramp — the cursor answers the press immediately', () => {
+    expect(HOLD_SHAPE_RAMP_MS).toBeLessThan(HOLD_RAMP_MS);
+    expect(holdShapeRamp(HOLD_SHAPE_RAMP_MS)).toBeCloseTo(1, 6);
+    // at the moment the shape has finished, the pull has barely begun
+    expect(holdRamp(HOLD_SHAPE_RAMP_MS)).toBeLessThan(0.1);
+  });
+
+  it('starts at zero and saturates', () => {
+    expect(holdShapeRamp(0)).toBeCloseTo(0, 6);
+    expect(holdShapeRamp(HOLD_SHAPE_RAMP_MS * 10)).toBeCloseTo(1, 6);
+  });
+});
+
 describe('hold visuals', () => {
   it('starts at the hover square size and alpha, so the morph is continuous', () => {
     expect(holdSize(0)).toBeCloseTo(HOLD_MIN_SIZE, 6);
     expect(holdAlpha(0)).toBeCloseTo(HOLD_MIN_ALPHA, 6);
   });
 
-  it('starts crisp and blurs only as it grows', () => {
-    expect(holdEdgeBlur(0)).toBeCloseTo(0, 6);
-    expect(holdEdgeBlur(1)).toBeCloseTo(HOLD_MAX_EDGE_BLUR, 6);
+  it('starts square and ends fully round', () => {
+    expect(holdRadiusPct(0)).toBeCloseTo(0, 6);
+    expect(holdRadiusPct(1)).toBeCloseTo(50, 6);
   });
 
-  it('grows, saturates and softens together across the hold', () => {
+  it('rounds the corners BEFORE it grows — the order Adam asked for', () => {
+    // by the end of the round-off stage the shape is a circle...
+    expect(holdRadiusPct(HOLD_ROUND_FRACTION)).toBeCloseTo(50, 6);
+    // ...while the box is still much nearer its start size than its end size
+    const grownByThen = (holdSize(HOLD_ROUND_FRACTION) - HOLD_MIN_SIZE) / (HOLD_MAX_SIZE - HOLD_MIN_SIZE);
+    expect(grownByThen).toBeLessThan(0.35);
+  });
+
+  it('stays a circle for the whole grow stage — no un-rounding as the box scales', () => {
+    for (let i = 0; i <= 10; i++) {
+      const p = HOLD_ROUND_FRACTION + (i / 10) * (1 - HOLD_ROUND_FRACTION);
+      expect(holdRadiusPct(p)).toBeCloseTo(50, 6);
+    }
+  });
+
+  it('greens as it swells, not before', () => {
+    expect(holdColorMix(0)).toBeCloseTo(0, 6);
+    expect(holdColorMix(HOLD_GROW_START)).toBeCloseTo(0, 6);
+    expect(holdColorMix(1)).toBeCloseTo(1, 6);
+  });
+
+  it('grows and saturates together across the hold', () => {
     let ps = -1;
     let pa = -1;
-    let pb = -1;
     for (let i = 0; i <= 20; i++) {
-      const p = i / 20;
+      const p = HOLD_GROW_START + (i / 20) * (1 - HOLD_GROW_START);
       const s = holdSize(p);
       const a = holdAlpha(p);
-      const b = holdEdgeBlur(p);
       expect(s).toBeGreaterThan(ps);
       expect(a).toBeGreaterThan(pa);
-      expect(b).toBeGreaterThan(pb);
       ps = s;
       pa = a;
-      pb = b;
+    }
+  });
+
+  it('never goes backwards anywhere on the ramp', () => {
+    let ps = -1;
+    let pr = -1;
+    for (let i = 0; i <= 40; i++) {
+      const p = i / 40;
+      expect(holdSize(p)).toBeGreaterThanOrEqual(ps);
+      expect(holdRadiusPct(p)).toBeGreaterThanOrEqual(pr);
+      ps = holdSize(p);
+      pr = holdRadiusPct(p);
     }
   });
 
@@ -340,7 +387,10 @@ describe('hold visuals', () => {
     expect(holdSize(5)).toBeCloseTo(HOLD_MAX_SIZE, 6);
     expect(holdSize(-5)).toBeCloseTo(HOLD_MIN_SIZE, 6);
     expect(holdAlpha(5)).toBeCloseTo(HOLD_MAX_ALPHA, 6);
-    expect(holdEdgeBlur(-5)).toBeCloseTo(0, 6);
+    expect(holdRadiusPct(5)).toBeCloseTo(50, 6);
+    expect(holdRadiusPct(-5)).toBeCloseTo(0, 6);
+    expect(holdColorMix(-5)).toBeCloseTo(0, 6);
+    expect(holdColorMix(5)).toBeCloseTo(1, 6);
   });
 });
 

@@ -46,18 +46,41 @@ export const GLASS_MAX_BLUR_PX = 5;
 /** Time to reach a full hold, in ms. Long on purpose — the pull is a slow
  * build, and the RD advection needs seconds of sim steps to accumulate. */
 export const HOLD_RAMP_MS = 5500;
+/**
+ * Time for the CURSOR's shape morph to complete, in ms — deliberately much
+ * shorter than HOLD_RAMP_MS.
+ *
+ * The two used to share one ramp, which meant the square took the RD's full
+ * 5.5s to finish becoming a circle. The RD pull wants a long build (its
+ * advection compounds over seconds of sim steps); the cursor wants to answer
+ * the press straight away. So they are separate ramps over the same press:
+ * shape lands early, the field keeps gathering underneath.
+ */
+export const HOLD_SHAPE_RAMP_MS = 900;
 /** Ease-out duration after release, in ms. */
 export const HOLD_RELEASE_MS = 320;
-/** Circle diameter at hold 0 — matches the hover square so the morph is continuous. */
+/** Diameter at shape-morph 0 — matches the hover square so the morph is continuous. */
 export const HOLD_MIN_SIZE = 32;
-/** Circle diameter at a full hold, in CSS px. */
+/** Diameter at a full hold, in CSS px. */
 export const HOLD_MAX_SIZE = 150;
-/** Green fill alpha at hold 0 — matches the hover square's fill. */
+/** Green fill alpha at shape-morph 0 — matches the hover square's fill. */
 export const HOLD_MIN_ALPHA = 0.35;
 /** Green fill alpha at a full hold. */
 export const HOLD_MAX_ALPHA = 0.85;
-/** Edge blur at a full hold, in CSS px. Zero at hold 0, so it starts crisp. */
-export const HOLD_MAX_EDGE_BLUR = 16;
+/**
+ * Fraction of the shape ramp spent rounding the corners off.
+ *
+ * The morph is ordered, not simultaneous: the square rounds to a circle FIRST,
+ * and only then scales up and greens. Keeping this well under 1 leaves most of
+ * the ramp for the grow, so the shape reads as "a circle getting bigger" rather
+ * than "a rounded rectangle inflating".
+ */
+export const HOLD_ROUND_FRACTION = 0.35;
+/**
+ * Where along the shape ramp the grow/colour stage starts. Slightly inside
+ * HOLD_ROUND_FRACTION so the two stages overlap rather than visibly stagger.
+ */
+export const HOLD_GROW_START = 0.15;
 /**
  * A press longer than this swallows its click, so you can hold on a reticle or
  * a WORK tile, watch the pull build, and release without navigating. Quick
@@ -71,9 +94,14 @@ const smoothstep = (t: number): number => {
   return x * x * (3 - 2 * x);
 };
 
-/** Hold progress from how long the button has been down. */
+/** Hold progress from how long the button has been down. Drives the RD pull. */
 export function holdRamp(heldMs: number): number {
   return smoothstep(heldMs / HOLD_RAMP_MS);
+}
+
+/** Shape-morph progress from how long the button has been down. Drives the cursor. */
+export function holdShapeRamp(heldMs: number): number {
+  return smoothstep(heldMs / HOLD_SHAPE_RAMP_MS);
 }
 
 /** Hold progress while easing back out, from the value held at release. */
@@ -82,19 +110,44 @@ export function holdRelease(fromValue: number, sinceReleaseMs: number): number {
   return clamp01(fromValue) * smoothstep(k);
 }
 
-/** Circle diameter for a hold progress, in CSS px. */
+/**
+ * Remaps a shape-morph progress onto the stage that runs from `start` to 1,
+ * so an ordered morph can be expressed as two overlapping stages of one ramp.
+ */
+const stage = (progress: number, start: number): number =>
+  clamp01((clamp01(progress) - start) / (1 - start));
+
+/**
+ * Corner radius as a PERCENTAGE of the box, for a shape-morph progress.
+ *
+ * Runs 0 -> 50% over the first HOLD_ROUND_FRACTION of the ramp and stays at 50
+ * thereafter: the corners round off first, then the finished circle grows.
+ * Percent rather than px because the box is scaling at the same time — a px
+ * radius would un-round itself as the box got bigger.
+ */
+export function holdRadiusPct(progress: number): number {
+  return 50 * smoothstep(clamp01(progress) / HOLD_ROUND_FRACTION);
+}
+
+/** Diameter for a shape-morph progress, in CSS px. Grows only after the round-off. */
 export function holdSize(progress: number): number {
-  return HOLD_MIN_SIZE + (HOLD_MAX_SIZE - HOLD_MIN_SIZE) * clamp01(progress);
+  return HOLD_MIN_SIZE + (HOLD_MAX_SIZE - HOLD_MIN_SIZE) * stage(progress, HOLD_GROW_START);
 }
 
-/** Green fill alpha for a hold progress. */
+/** Green fill alpha for a shape-morph progress. Tracks the grow stage. */
 export function holdAlpha(progress: number): number {
-  return HOLD_MIN_ALPHA + (HOLD_MAX_ALPHA - HOLD_MIN_ALPHA) * clamp01(progress);
+  return HOLD_MIN_ALPHA + (HOLD_MAX_ALPHA - HOLD_MIN_ALPHA) * stage(progress, HOLD_GROW_START);
 }
 
-/** Edge blur for a hold progress, in CSS px. */
-export function holdEdgeBlur(progress: number): number {
-  return HOLD_MAX_EDGE_BLUR * clamp01(progress);
+/**
+ * How far the stroke and fill have crossed from ink to green, 0..1.
+ *
+ * Shares the grow stage, so the cursor turns green as it swells rather than
+ * before it. At 0 the square is exactly its resting ink colour, so a press that
+ * starts from the rest state has nothing to jump over.
+ */
+export function holdColorMix(progress: number): number {
+  return stage(progress, HOLD_GROW_START);
 }
 
 export interface TrailPoint {

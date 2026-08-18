@@ -85,6 +85,11 @@ body {
 .corner-mark.bl { bottom: 48px; left: 48px; }
 .corner-mark.br { bottom: 48px; right: 48px; }
 
+/* A <button>, not a <span>: it returns you home. .chrome is pointer-events:
+ * none, so it opts itself back in, and the UA button chrome is reset away —
+ * this must look exactly like the wordmark always did. Being a real <button>
+ * also earns it the cursor's green hover swell for free (HOVER_SELECTOR in
+ * home/cursor.ts) and keyboard focus without any extra wiring. */
 .wordmark {
   position: absolute;
   left: 48px;
@@ -94,6 +99,13 @@ body {
   font-weight: 700;
   font-size: 22px;
   letter-spacing: -0.02em; /* Figma: -0.44px @ 22px */
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  line-height: inherit;
+  pointer-events: auto;
 }
 
 .site-nav {
@@ -274,8 +286,7 @@ body {
 
 .cursor-square,
 .cursor-trail,
-.cursor-glass,
-.cursor-hold {
+.cursor-glass {
   position: fixed;
   pointer-events: none;
   z-index: 100; /* above .takeover (20), the highest in the app */
@@ -302,26 +313,21 @@ body {
   will-change: transform;
 }
 
-/* Press-and-hold circle. Size, fill alpha and edge blur are all written per
- * frame by cursor.ts — no CSS transition here on purpose, or it would lag the
- * hold ramp it is meant to express. Same multiply blend as the rest of the
- * cursor: on this white ground a `color` or `screen` blend would render the
- * green as white. */
-.cursor-hold {
-  top: 0;
-  left: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  mix-blend-mode: multiply;
-  will-change: transform, width, height;
-}
-
 .cursor-square--hover {
   width: 32px;
   height: 32px;
   border-color: #61e891;
   background: rgba(97, 232, 145, 0.35);
+}
+
+/* Press-and-hold. The square itself rounds to a circle, then scales up and
+ * greens — size, radius and colour are all written per frame by cursor.ts, so
+ * the hover transitions above have to stand down for the duration or they would
+ * lag every frame's write by 220ms and smear the ramp. cursor.ts removes each
+ * inline property again when the hold ends, so the hover CSS resumes cleanly.
+ * No blur: opaque stroke, translucent centre. */
+.cursor-square--holding {
+  transition: none;
 }
 
 .cursor-trail {

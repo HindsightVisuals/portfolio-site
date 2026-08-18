@@ -276,11 +276,14 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       else if (hit.dest === 'about') activateAbout();
     });
 
-    // nav links fly (full-length flythrough)
-    for (const a of document.querySelectorAll<HTMLAnchorElement>('.site-nav a[data-nav]')) {
-      a.addEventListener('click', (e) => {
+    // Nav links AND the wordmark fly (full-length flythrough). The selector is
+    // any [data-nav] inside .chrome rather than just .site-nav anchors, so the
+    // wordmark's home button is picked up by the same wiring.
+    for (const el of document.querySelectorAll<HTMLElement>('.chrome [data-nav]')) {
+      el.addEventListener('click', (e) => {
         e.preventDefault();
-        router.navigate(a.dataset.nav as DestId);
+        if (takeover.isOpen()) return; // a takeover covers the chrome; its own navbar handles nav
+        router.navigate(el.dataset.nav as DestId);
       });
     }
 
