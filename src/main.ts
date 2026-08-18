@@ -24,6 +24,8 @@ import { mountReveal } from './page2d/reveal';
 import { initStrip, type Strip } from './page2d/strip';
 import { initLogoStage, type LogoStage } from './page2d/logo-stage';
 import { initRdSurface, type RdSurface } from './page2d/rd-surface';
+import { mountCurtain, type CurtainLive } from './page2d/curtain-live';
+import { initBehindPanel, type BehindPanel } from './page2d/behind-panel';
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
 import { initHoverPanel } from './work/hover-panel';
@@ -56,6 +58,11 @@ let activeLogo: LogoStage | null = null;
 // The case study page runs its own reaction-diffusion field on a second
 // renderer — page background plus the RD-filled COMMMS mark.
 let activeRd: RdSurface | null = null;
+
+// The curtain's warp/ripple loop and the "logo goes behind" panel's magnetism,
+// both bound to the live page and torn down with it.
+let activeCurtain: CurtainLive | null = null;
+let activeBehind: BehindPanel | null = null;
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -141,6 +148,10 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
           activeLogo = null;
           activeRd?.destroy();
           activeRd = null;
+          activeCurtain?.destroy();
+          activeCurtain = null;
+          activeBehind?.destroy();
+          activeBehind = null;
         }
       },
     });
@@ -223,6 +234,13 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       activeLogo = initLogoStage(page, withBase, { reducedMotion, slug });
       activeRd?.destroy();
       activeRd = initRdSurface(page, { reducedMotion });
+      activeCurtain?.destroy();
+      activeCurtain = mountCurtain(page, { reducedMotion });
+      activeBehind?.destroy();
+      activeBehind = initBehindPanel(page, {
+        reducedMotion,
+        setCursorLabel: (l) => cursor?.setLabel(l),
+      });
     };
 
     const openAbout = (): void => {

@@ -63,16 +63,70 @@ export function curtainY(x: number, t: number, pull = 0): number {
   return restY(x) + warp + HOVER_PULL * clamp01(pull);
 }
 
+
+/** A disturbance injected where the pointer cut through the wave. */
+export interface Ripple {
+  /** Crossing point, in view units. */
+  x: number;
+  /** Pointer speed at the crossing, px/frame — scales the amplitude. */
+  speed: number;
+  /** performance.now() at the crossing. */
+  born: number;
+}
+
+/** How long a ripple lives, ms. */
+export const RIPPLE_MS = 1200;
+/** Peak displacement of a full-speed ripple, in view units. */
+export const RIPPLE_MAX_AMP = 34;
+/** Pointer speed (px/frame) at which a ripple reaches full amplitude. */
+export const RIPPLE_FULL_SPEED = 55;
+/** Half-width of the disturbance at birth, in view units. */
+export const RIPPLE_WIDTH = 170;
+
+/**
+ * Summed displacement from every live ripple at .
+ *
+ * Each is a decaying oscillation under a Gaussian envelope that widens with
+ * age, so a crossing reads as a disturbance spreading outward along the wave
+ * and dying, rather than a bump that simply fades in place. Amplitude scales
+ * with how fast the pointer cut through (brief 7.9.3).
+ */
+export function rippleOffset(x: number, ripples: readonly Ripple[], now: number): number {
+  let sum = 0;
+  for (const r of ripples) {
+    const age = (now - r.born) / RIPPLE_MS;
+    if (age < 0 || age >= 1) continue;
+    const strength = Math.min(1, r.speed / RIPPLE_FULL_SPEED);
+    const amp = RIPPLE_MAX_AMP * strength * (1 - age) * (1 - age);
+    const d = Math.abs(x - r.x);
+    const spread = RIPPLE_WIDTH * (0.45 + age * 1.7);
+    const envelope = Math.exp(-(d * d) / (2 * spread * spread));
+    sum += amp * envelope * Math.cos((d / RIPPLE_WIDTH) * Math.PI * 1.5 - age * 8.5);
+  }
+  return sum;
+}
+
+/** Drop ripples that have outlived RIPPLE_MS. */
+export function pruneRipples(ripples: readonly Ripple[], now: number): Ripple[] {
+  return ripples.filter((r) => now - r.born < RIPPLE_MS);
+}
+
 /**
  * The filled path: down the right edge, across the bottom, up the left edge,
  * then back along the wave. Filled below the wave, so the region above it is
  * the window onto the 3D world.
  */
-export function curtainPath(t: number, pull = 0): string {
+export function curtainPath(
+  t: number,
+  pull = 0,
+  ripples: readonly Ripple[] = [],
+  now = 0,
+): string {
   const pts: string[] = [];
   for (let i = 0; i <= SAMPLES; i++) {
     const x = (i / SAMPLES) * CURTAIN_VIEW_W;
-    pts.push(`${x.toFixed(2)} ${curtainY(x, t, pull).toFixed(2)}`);
+    const y = curtainY(x, t, pull) + rippleOffset(x, ripples, now);
+    pts.push(`${x.toFixed(2)} ${y.toFixed(2)}`);
   }
   // Start bottom-right so the wave is traversed left-to-right on the way back.
   return `M${CURTAIN_VIEW_W} ${CURTAIN_VIEW_H} L0 ${CURTAIN_VIEW_H} L${pts[0]} ${pts

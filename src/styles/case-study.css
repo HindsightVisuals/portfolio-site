@@ -543,3 +543,43 @@
   left: 0;
   pointer-events: none;
 }
+
+/* Armed: the pointer is over the window above the wave, so a click will drop
+ * the curtain. curtain-live.ts also pulls the curve down elastically. */
+.cs-curtain--armed .cs-curtain-close {
+  cursor: pointer;
+}
+
+/* The panel's CTA. A real anchor so the "visit site" affordance is
+ * keyboard-reachable and announced — the cursor pill is decoration on top of
+ * it, not the control itself. It is visually hidden until focused, because the
+ * cursor already carries the label for pointer users. */
+.cs-behind-link {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.cs-behind-link:focus-visible {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 10px 16px;
+  clip: auto;
+  background: #61e891;
+  color: #141414;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  border-radius: 999px;
+}

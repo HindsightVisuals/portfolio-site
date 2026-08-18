@@ -430,3 +430,31 @@ html.has-custom-cursor *:not(input):not(textarea):not([contenteditable]) {
     will-change: auto;
   }
 }
+
+/* CTA pill carried by the cursor — the case study's "visit site" (brief 7.6).
+ * Same green and multiply blend as the hover state, so it reads as the cursor
+ * growing a label rather than a second object appearing. */
+.cursor-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  pointer-events: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #61e891;
+  color: #141414;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  mix-blend-mode: multiply;
+  transition: opacity 180ms ease;
+}
+
+/* The square steps aside while the pill is showing — two shapes on the pointer
+ * at once reads as a glitch. */
+.cursor-square--labelled {
+  opacity: 0;
+}

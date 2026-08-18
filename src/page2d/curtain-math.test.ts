@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RIPPLE_MS,
+  RIPPLE_FULL_SPEED,
+  pruneRipples,
+  rippleOffset,
   CURTAIN_VIEW_W,
   HOVER_PULL,
   WARP_AMPLITUDE,
@@ -93,5 +97,70 @@ describe('crossedCurtain', () => {
     expect(slow).not.toBeNull();
     expect(fast).not.toBeNull();
     expect(fast!.speed).toBeGreaterThan(slow!.speed);
+  });
+});
+
+describe('rippleOffset', () => {
+  const at = (born: number, x = 900, speed = RIPPLE_FULL_SPEED) => [{ x, speed, born }];
+
+  it('displaces the curve at the crossing point', () => {
+    expect(Math.abs(rippleOffset(900, at(0), 1))).toBeGreaterThan(1);
+  });
+
+  it('is silent far from the crossing', () => {
+    expect(Math.abs(rippleOffset(100, at(0), 1))).toBeLessThan(0.5);
+  });
+
+  it('decays to nothing by the end of its life', () => {
+    expect(rippleOffset(900, at(0), RIPPLE_MS)).toBe(0);
+    expect(rippleOffset(900, at(0), RIPPLE_MS * 2)).toBe(0);
+  });
+
+  it('gets weaker as it ages', () => {
+    const young = Math.abs(rippleOffset(900, at(0), 60));
+    const old = Math.abs(rippleOffset(900, at(0), RIPPLE_MS * 0.85));
+    expect(old).toBeLessThan(young);
+  });
+
+  it('scales with how fast the pointer cut through', () => {
+    const slow = Math.abs(rippleOffset(900, at(0, 900, 5), 40));
+    const fast = Math.abs(rippleOffset(900, at(0, 900, RIPPLE_FULL_SPEED), 40));
+    expect(fast).toBeGreaterThan(slow);
+  });
+
+  it('saturates rather than exploding on an absurd pointer speed', () => {
+    const full = Math.abs(rippleOffset(900, at(0, 900, RIPPLE_FULL_SPEED), 40));
+    const absurd = Math.abs(rippleOffset(900, at(0, 900, 100000), 40));
+    expect(absurd).toBeCloseTo(full, 6);
+  });
+
+  it('sums several ripples rather than replacing them', () => {
+    const one = rippleOffset(900, [{ x: 900, speed: RIPPLE_FULL_SPEED, born: 0 }], 40);
+    const two = rippleOffset(
+      900,
+      [
+        { x: 900, speed: RIPPLE_FULL_SPEED, born: 0 },
+        { x: 900, speed: RIPPLE_FULL_SPEED, born: 0 },
+      ],
+      40,
+    );
+    expect(two).toBeCloseTo(one * 2, 6);
+  });
+
+  it('is zero with no ripples at all', () => {
+    expect(rippleOffset(900, [], 1000)).toBe(0);
+  });
+});
+
+describe('pruneRipples', () => {
+  it('drops only the expired ones', () => {
+    const live = { x: 1, speed: 1, born: 900 };
+    const dead = { x: 2, speed: 1, born: 0 };
+    expect(pruneRipples([live, dead], 1500)).toEqual([live]);
+  });
+
+  it('keeps everything when nothing has expired', () => {
+    const rs = [{ x: 1, speed: 1, born: 1000 }];
+    expect(pruneRipples(rs, 1100)).toEqual(rs);
   });
 });

@@ -77,6 +77,12 @@ export interface Cursor {
   setWorldHover(hovering: boolean): void;
   /** 0..1 press-and-hold progress. Drives the RD pull in background.ts. */
   getHoldProgress(): number;
+  /**
+   * Show a CTA label inside the cursor — the case study's "visit site" pill.
+   * Null clears it. Fed to the existing cursor rather than drawn as a separate
+   * element elsewhere, so there is still exactly one cursor on the site.
+   */
+  setLabel(label: string | null): void;
   destroy(): void;
 }
 
@@ -128,6 +134,13 @@ export function initCursor(opts: CursorOpts): Cursor | null {
       glassNodes.push(g);
     }
   }
+
+  // The CTA pill. Its own element so the square's hold morph and this can never
+  // fight over the same inline styles.
+  const label = document.createElement('div');
+  label.className = 'cursor-label';
+  label.style.opacity = '0';
+  layer.appendChild(label);
 
   const square = document.createElement('div');
   square.className = 'cursor-square';
@@ -373,6 +386,7 @@ export function initCursor(opts: CursorOpts): Cursor | null {
       square.style.opacity = '1';
     }
     square.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`;
+    label.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -50%)`;
     updateDomHover();
     ensureFrame();
   };
@@ -452,6 +466,16 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     },
     getHoldProgress(): number {
       return holdValue;
+    },
+    setLabel(text: string | null): void {
+      if (text) {
+        label.textContent = text;
+        label.style.opacity = '1';
+        square.classList.add('cursor-square--labelled');
+      } else {
+        label.style.opacity = '0';
+        square.classList.remove('cursor-square--labelled');
+      }
     },
     destroy(): void {
       window.removeEventListener('pointermove', onPointerMove);
