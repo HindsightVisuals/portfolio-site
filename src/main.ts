@@ -23,6 +23,7 @@ import { buildAbout } from './page2d/about';
 import { mountReveal } from './page2d/reveal';
 import { initStrip, type Strip } from './page2d/strip';
 import { initLogoStage, type LogoStage } from './page2d/logo-stage';
+import { initRdSurface, type RdSurface } from './page2d/rd-surface';
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
 import { initHoverPanel } from './work/hover-panel';
@@ -51,6 +52,10 @@ let activeStrip: Strip | null = null;
 // The 3D logo frames itself against DOM rects inside the live takeover, so it
 // mounts after open() alongside the strip and is disposed on close.
 let activeLogo: LogoStage | null = null;
+
+// The case study page runs its own reaction-diffusion field on a second
+// renderer — page background plus the RD-filled COMMMS mark.
+let activeRd: RdSurface | null = null;
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -134,6 +139,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
           activeStrip = null;
           activeLogo?.destroy();
           activeLogo = null;
+          activeRd?.destroy();
+          activeRd = null;
         }
       },
     });
@@ -214,6 +221,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       activeStrip = initStrip(page);
       activeLogo?.destroy();
       activeLogo = initLogoStage(page, withBase, { reducedMotion, slug });
+      activeRd?.destroy();
+      activeRd = initRdSurface(page, { reducedMotion });
     };
 
     const openAbout = (): void => {

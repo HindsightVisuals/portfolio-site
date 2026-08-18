@@ -506,3 +506,40 @@
   z-index: 30;
   pointer-events: none;
 }
+
+/* --- live reaction-diffusion ---------------------------------------------
+ * Same translate-not-fixed treatment as the logo canvas: .takeover's
+ * will-change: transform makes it the containing block for fixed descendants,
+ * so a fixed child scrolls away with the content. rd-surface.ts translates it
+ * back by scrollTop each frame. */
+.cs-rd-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Subtle — Figma shows this as a barely-there texture on the ground, not a
+   * feature in its own right. */
+  opacity: 0.28;
+}
+
+/* The RD canvas is the first child of .cs-content, so every real section has to
+ * sit above it. */
+.cs-content > *:not(.cs-rd-canvas) {
+  position: relative;
+  z-index: 1;
+}
+
+/* The COMMMS mark: its own type is hidden and the RD-filled composite takes its
+ * place, so the pattern spreads only inside the letterforms (brief 7.8). */
+.cs-footer-mark {
+  position: relative;
+  color: transparent;
+}
+
+.cs-rd-mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}

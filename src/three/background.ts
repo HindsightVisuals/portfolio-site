@@ -91,6 +91,7 @@ uniform float uSeedR;     // radius in sim px
 uniform float uPullRate;  // per-step advection toward the cursor; 0 = off
 uniform float uPullRadius;
 uniform float uAspect;    // width/height, so the pull lens stays circular
+uniform vec2 uAdvect;     // per-step uv drift; scroll travel, 0 = off
 
 void main() {
   // Press-and-hold pull, applied INSIDE the feedback loop rather than to the
@@ -100,7 +101,11 @@ void main() {
   // deformation is real — it stays after release and heals organically the way
   // the erase brush does. Per-step displacement is tiny (radius * rate), so
   // the read never lands far enough out to matter at the texture edge.
-  vec2 uv = vUv;
+  // Scroll travel, applied the same way the pull is: inside the loop, so the
+  // pattern is genuinely carried rather than the finished image being slid
+  // about. Every Laplacian tap below reads from the advected uv, so the next
+  // step reacts from the moved state and the drift persists in the field.
+  vec2 uv = vUv + uAdvect;
   if (uPullRate > 0.0) {
     vec2 dd = uv - uMouse;
     float dist = length(vec2(dd.x * uAspect, dd.y));
@@ -148,6 +153,7 @@ uniform float uCenter;
 uniform float uShade;
 uniform float uOpacity;
 uniform float uDebug;
+uniform float uInvert;
 uniform vec2 uZoom;   // per-axis; x != y is the travel stretch
 uniform vec2 uOffset;
 
@@ -163,6 +169,9 @@ void main() {
   float mask = smoothstep(0.18, 0.22, B);
   float lum = mix(grad, uShade, mask * uOpacity);
   if (uDebug > 0.5) lum = 1.0 - texture2D(uState, vUv).g * 3.0; // raw sim, no zoom
+  // The case study page inverts the site palette, so the same sim has to read
+  // as a light pattern on a dark ground rather than the other way round.
+  if (uInvert > 0.5) lum = 1.0 - lum;
   gl_FragColor = vec4(vec3(lum), 1.0);
 }
 `;
@@ -170,6 +179,8 @@ void main() {
 export interface BackgroundOpts {
   reducedMotion: boolean;
   debug: boolean;
+  /** Render as a light pattern on a dark ground — the case study page. */
+  invert?: boolean;
 }
 
 export interface BackgroundLayer extends StageLayer {
@@ -179,6 +190,8 @@ export interface BackgroundLayer extends StageLayer {
   setVelocityProvider(fn: () => number): void;
   /** 0..1 press-and-hold progress driving the cursor-anchored pull. */
   setPullProvider(fn: () => number): void;
+  /** Per-step uv drift fed into the sim — the case study's scroll travel. */
+  setAdvectProvider(fn: () => { x: number; y: number }): void;
 }
 
 /** Screen UV → sim UV under the view shader's zoom + parallax offset.
@@ -294,6 +307,7 @@ export function initBackgroundLayer(
       uSeedR: { value: RESEED_RADIUS },
       uPullRate: { value: 0 },
       uPullRadius: { value: PULL_RADIUS },
+      uAdvect: { value: new THREE.Vector2(0, 0) },
       uAspect: { value: window.innerWidth / window.innerHeight },
     },
   });
@@ -310,6 +324,7 @@ export function initBackgroundLayer(
       uShade: { value: PATTERN_SHADE },
       uOpacity: { value: PATTERN_OPACITY },
       uDebug: { value: opts.debug ? 1 : 0 },
+      uInvert: { value: opts.invert ? 1 : 0 },
       uZoom: { value: new THREE.Vector2(BASE_OVERSCAN, BASE_OVERSCAN) },
       uOffset: { value: new THREE.Vector2(0, 0) },
     },
@@ -369,6 +384,7 @@ export function initBackgroundLayer(
 
   // Press-and-hold pull (set by main.ts from the cursor system)
   let pullProvider: (() => number) | null = null;
+  let advectProvider: (() => { x: number; y: number }) | null = null;
 
   // Mouse → sim UV for the erase brush, mapped through the same zoom/offset
   // as the view shader so the brush stays under the cursor.
@@ -411,6 +427,8 @@ export function initBackgroundLayer(
       // where the erase brush is. The brush itself fades out as the hold builds
       // — it exists to part the pattern around the cursor, and a hole there
       // would eat the very pattern the pull is gathering.
+      const advect = advectProvider?.() ?? { x: 0, y: 0 };
+      simMaterial.uniforms.uAdvect.value.set(advect.x, advect.y);
       const pull = pullProvider && cursorActive ? Math.max(0, Math.min(1, pullProvider())) : 0;
       simMaterial.uniforms.uPullRate.value = PULL_RATE_MAX * pull;
       simMaterial.uniforms.uBrushR.value = BRUSH_RADIUS * (1 - pull);
@@ -469,6 +487,9 @@ export function initBackgroundLayer(
     },
     setVelocityProvider(fn: () => number): void {
       velocityProvider = fn;
+    },
+    setAdvectProvider(fn: () => { x: number; y: number }): void {
+      advectProvider = fn;
     },
     setPullProvider(fn: () => number): void {
       pullProvider = fn;
