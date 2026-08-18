@@ -487,3 +487,22 @@
     padding-block: 32px;
   }
 }
+
+/* --- the 3D logo canvas ---------------------------------------------------
+ * Above every page section (brief 7.4) but BELOW .cs-behind-panel (z-index 31),
+ * which is the one element the logo passes behind. Pointer-transparent — it is
+ * a rendering surface, never a hit target. */
+.cs-logo-canvas {
+  /* Absolute + a per-frame translateY, NOT fixed. .takeover carries
+   * will-change: transform, which makes it the containing block for fixed
+   * descendants — a fixed child then scrolls away with the content instead of
+   * pinning to the viewport (measured: top drifted to -scrollTop). It has to
+   * stay INSIDE the takeover's stacking context, though, or .cs-behind-panel
+   * could never rise above it, so moving it to <body> is not an option.
+   * logo-stage.ts translates it back by scrollTop every frame. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  pointer-events: none;
+}

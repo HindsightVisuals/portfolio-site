@@ -15,13 +15,14 @@ import { initScrollNav, type ScrollNav } from './home/scroll-nav';
 import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
-import { DEST_ORDER, destForPath, slugForPath, type DestId } from './routes';
+import { DEST_ORDER, destForPath, slugForPath, withBase, type DestId } from './routes';
 import { initTakeover } from './page2d/takeover';
 import { buildNavbar } from './page2d/navbar';
 import { buildCaseStudy } from './page2d/case-study';
 import { buildAbout } from './page2d/about';
 import { mountReveal } from './page2d/reveal';
 import { initStrip, type Strip } from './page2d/strip';
+import { initLogoStage, type LogoStage } from './page2d/logo-stage';
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
 import { initHoverPanel } from './work/hover-panel';
@@ -46,6 +47,10 @@ let activeRevealCleanup: (() => void) | null = null;
 // The pinned horizontal strip measures against the live .takeover scroll root,
 // so like mountReveal it binds after open() and is torn down on close.
 let activeStrip: Strip | null = null;
+
+// The 3D logo frames itself against DOM rects inside the live takeover, so it
+// mounts after open() alongside the strip and is disposed on close.
+let activeLogo: LogoStage | null = null;
 
 // Lab mode check at the top
 if (new URLSearchParams(location.search).get('lab') === 'fly') {
@@ -127,6 +132,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
           activeRevealCleanup = null;
           activeStrip?.destroy();
           activeStrip = null;
+          activeLogo?.destroy();
+          activeLogo = null;
         }
       },
     });
@@ -205,6 +212,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       activeRevealCleanup = mountReveal(page, { reducedMotion });
       activeStrip?.destroy();
       activeStrip = initStrip(page);
+      activeLogo?.destroy();
+      activeLogo = initLogoStage(page, withBase, { reducedMotion, slug });
     };
 
     const openAbout = (): void => {

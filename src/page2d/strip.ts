@@ -11,6 +11,7 @@
  */
 
 import { stripScrollLength, stripTransform } from './strip-scroll';
+import { offsetWithin } from './scroll-offset';
 
 export interface Strip {
   /** Recompute after a resize or a font/content reflow. */
@@ -32,9 +33,8 @@ export function initStrip(article: HTMLElement): Strip | null {
     // scrollWidth, not getBoundingClientRect: the rail is already translated,
     // and its laid-out content width is what the travel is derived from.
     stripWidth = rail.scrollWidth;
-    // The section's offset within the scroll container, independent of where
-    // the container currently is.
-    sectionTop = section.offsetTop;
+    // Scroll-space offset, not offsetTop — see scroll-offset.ts.
+    sectionTop = offsetWithin(section, scroller);
     // The section must be tall enough to scroll through the whole travel, plus
     // one viewport for the sticky rail itself to occupy.
     const travel = stripScrollLength(stripWidth, scroller.clientWidth);
