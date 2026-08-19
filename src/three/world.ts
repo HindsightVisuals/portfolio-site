@@ -65,6 +65,13 @@ export function nextSlug(slug: string): string {
   return SLUGS[(i + 1) % SLUGS.length];
 }
 
+/** The previous tile's slug, wrapping from the 1st back to the 8th. */
+export function prevSlug(slug: string): string {
+  const i = tileIndexForSlug(slug);
+  if (i < 0) throw new Error(`unknown slug ${slug}`);
+  return SLUGS[(i - 1 + SLUGS.length) % SLUGS.length];
+}
+
 /**
  * True when `obj` and every ancestor up to the scene root has `.visible`
  * true. Raycaster does NOT consult Object3D.visible (only the renderer

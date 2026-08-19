@@ -244,7 +244,13 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         onNext: async (next) => {
           await takeover.close();
           await afterTakeoverHistoryUnwind();
+          // Fly to the neighbour and then open it, rather than stopping at the
+          // framed tile and making the user click again — Adam, 2026-08-18:
+          // "it should bring you straight to the next case study, not back out
+          // to the work thumbnails". The flight still plays, so the move
+          // between projects reads as travel rather than a cut.
           await router.navigateToProject(next, { abbreviated: true });
+          void openCaseStudy(next);
         },
       });
       void takeover.open(page);

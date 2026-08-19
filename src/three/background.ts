@@ -102,6 +102,8 @@ uniform float uPullRate;  // per-step advection toward the cursor; 0 = off
 uniform float uPullRadius;
 uniform float uAspect;    // width/height, so the pull lens stays circular
 uniform vec2 uAdvect;     // per-step uv drift; scroll travel, 0 = off
+uniform sampler2D uMask;  // 1 = reaction allowed, 0 = forbidden
+uniform float uUseMask;   // 0 = unmasked field (the homepage background)
 
 void main() {
   // Press-and-hold pull, applied INSIDE the feedback loop rather than to the
@@ -140,6 +142,17 @@ void main() {
   float nextA = A + (1.0 * lap.r - reaction + uFeed * (1.0 - A));
   float nextB = B + (0.5 * lap.g + reaction - (uKill + uFeed) * B);
 
+  // Confinement mask. Zeroing B outside the shape every step makes the
+  // boundary ABSORBING: the reaction can diffuse up to the edge and then dies,
+  // so the pattern is genuinely grown inside the shape rather than being a
+  // window cropped out of a larger field. A is pinned to 1 (fully fed) outside
+  // so nothing can seed there either.
+  if (uUseMask > 0.5) {
+    float allow = texture2D(uMask, vUv).r;
+    nextB *= allow;
+    nextA = mix(1.0, nextA, allow);
+  }
+
   // Mouse erase: suppress B near the cursor; the sim heals the gap organically.
   float d = length((vUv - uMouse) * uSimDims);
   float erase = 1.0 - smoothstep(uBrushR * 0.4, uBrushR, d);
@@ -166,6 +179,8 @@ uniform float uDebug;
 uniform float uInvert;
 uniform vec2 uZoom;   // per-axis; x != y is the travel stretch
 uniform vec2 uOffset;
+uniform sampler2D uMask;
+uniform float uUseMask;
 
 void main() {
   // grey -> white -> grey across x
@@ -182,6 +197,17 @@ void main() {
   // The case study page inverts the site palette, so the same sim has to read
   // as a light pattern on a dark ground rather than the other way round.
   if (uInvert > 0.5) lum = 1.0 - lum;
+  // Masked surfaces carry their shape in the alpha channel, so the letterforms
+  // ARE the output rather than something composited over it afterwards. They
+  // also get their own tone ramp: the page gradient above is built for a
+  // full-bleed background, and inside letterforms sitting on a near-black page
+  // it left the word all but invisible. A mid-grey body that the pattern
+  // lightens matches how the mark is drawn in Figma.
+  if (uUseMask > 0.5) {
+    float body = mix(0.30, 0.95, mask);
+    gl_FragColor = vec4(vec3(body), texture2D(uMask, vUv).r);
+    return;
+  }
   gl_FragColor = vec4(vec3(lum), 1.0);
 }
 `;
@@ -202,6 +228,15 @@ export interface BackgroundLayer extends StageLayer {
   setPullProvider(fn: () => number): void;
   /** Per-step uv drift fed into the sim — the case study's scroll travel. */
   setAdvectProvider(fn: () => { x: number; y: number }): void;
+  /**
+   * Confine the reaction to a shape. The texture's red channel is the mask:
+   * 1 where the pattern may grow, 0 where it may not. Passing null returns the
+   * field to an unbounded one.
+   *
+   * This is not a crop — the mask is applied inside the feedback loop, so the
+   * reaction genuinely dies at the boundary rather than continuing unseen.
+   */
+  setMask(mask: THREE.Texture | null): void;
 }
 
 /** Screen UV → sim UV under the view shader's zoom + parallax offset.
@@ -318,6 +353,8 @@ export function initBackgroundLayer(
       uPullRate: { value: 0 },
       uPullRadius: { value: PULL_RADIUS },
       uAdvect: { value: new THREE.Vector2(0, 0) },
+      uMask: { value: null },
+      uUseMask: { value: 0 },
       uAspect: { value: window.innerWidth / window.innerHeight },
     },
   });
@@ -335,6 +372,8 @@ export function initBackgroundLayer(
       uOpacity: { value: PATTERN_OPACITY },
       uDebug: { value: opts.debug ? 1 : 0 },
       uInvert: { value: opts.invert ? 1 : 0 },
+      uMask: { value: null },
+      uUseMask: { value: 0 },
       uZoom: { value: new THREE.Vector2(BASE_OVERSCAN, BASE_OVERSCAN) },
       uOffset: { value: new THREE.Vector2(0, 0) },
     },
@@ -500,6 +539,16 @@ export function initBackgroundLayer(
     },
     setAdvectProvider(fn: () => { x: number; y: number }): void {
       advectProvider = fn;
+    },
+    setMask(mask: THREE.Texture | null): void {
+      simMaterial.uniforms.uMask.value = mask;
+      simMaterial.uniforms.uUseMask.value = mask ? 1 : 0;
+      viewMaterial.uniforms.uMask.value = mask;
+      viewMaterial.uniforms.uUseMask.value = mask ? 1 : 0;
+      // The view now writes real alpha, so it has to blend rather than
+      // overwrite whatever is behind it.
+      viewMaterial.transparent = !!mask;
+      viewMaterial.needsUpdate = true;
     },
     setPullProvider(fn: () => number): void {
       pullProvider = fn;

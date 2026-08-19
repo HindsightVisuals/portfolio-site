@@ -1,7 +1,8 @@
 import '../styles/page2d.css';
 import '../styles/case-study.css';
 import { getProject, type Project } from '../content/projects';
-import { nextSlug } from '../three/world';
+import { nextSlug, prevSlug } from '../three/world';
+import { tileStillUrl } from '../work/tiles';
 import { revealSections } from './reveal';
 import { buildCurtain } from './curtain';
 
@@ -71,6 +72,44 @@ function projectTags(project: Project): HTMLDivElement {
   const field = (project.disciplines[0] ?? 'work').toUpperCase();
   const id = `ID/${project.slug.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
   return tagStrip(`PROJ. #${num}`, `CREATION : ${field}`, id);
+}
+
+/**
+ * A link to the previous or next project, carrying that project's own
+ * thumbnail. A <button> rather than a card with a click handler so it is
+ * keyboard-reachable and announces itself.
+ */
+function neighbourCard(
+  label: string,
+  slug: string,
+  onJump: (slug: string) => void,
+): HTMLButtonElement {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'cs-neighbour';
+  card.setAttribute('aria-label', `${label} project: ${getProject(slug).title}`);
+
+  const img = document.createElement('img');
+  img.className = 'cs-neighbour-img';
+  img.src = tileStillUrl(slug);
+  img.alt = '';
+  // Below the fold on every case study, so there is no reason to block on it.
+  img.loading = 'lazy';
+  img.decoding = 'async';
+
+  const meta = document.createElement('span');
+  meta.className = 'cs-neighbour-meta';
+  const kicker = document.createElement('span');
+  kicker.className = 'cs-neighbour-kicker';
+  kicker.textContent = label;
+  const title = document.createElement('span');
+  title.className = 'cs-neighbour-title';
+  title.textContent = getProject(slug).title;
+  meta.append(kicker, title);
+
+  card.append(img, meta);
+  card.addEventListener('click', () => onJump(slug));
+  return card;
 }
 
 /** Decorative 16/9 placeholder block — future media slots (F14+) render into these. */
@@ -245,10 +284,17 @@ export function buildCaseStudy(slug: string, opts: CaseStudyOpts): HTMLElement {
   // --- pinned horizontal strip -------------------------------------------
   content.append(buildStrip());
 
-  // --- image pair ---------------------------------------------------------
+  // --- previous / next project -------------------------------------------
+  // These two blocks used to be decorative placeholders. They now carry the
+  // neighbouring projects' own thumbnails and jump straight INTO that case
+  // study rather than dropping you back out to the work wall (Adam,
+  // 2026-08-18).
   const images = document.createElement('section');
   images.className = 'cs-images reveal';
-  for (let i = 0; i < 2; i++) images.append(mediaPlaceholder());
+  images.append(
+    neighbourCard('previous', prevSlug(project.slug), opts.onNext),
+    neighbourCard('next', nextSlug(project.slug), opts.onNext),
+  );
   content.append(images);
 
   // --- footer -------------------------------------------------------------

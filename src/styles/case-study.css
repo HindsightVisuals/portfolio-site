@@ -493,19 +493,12 @@
  * will-change: transform makes it the containing block for fixed descendants,
  * so a fixed child scrolls away with the content. rd-surface.ts translates it
  * back by scrollTop each frame. */
-/* The simulation still runs, but it is no longer painted across the page —
- * Adam, 2026-08-18: "kill the RD on the case study pages". The canvas stays in
- * the DOM as the source the footer mark composites from, hidden from view. */
-.cs-rd-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  opacity: 0;
-  pointer-events: none;
-}
 
-/* The COMMMS mark: its own type is hidden and the RD-filled composite takes its
- * place, so the pattern spreads only inside the letterforms (brief 7.8). */
+
+/* The COMMMS mark. Its own type is transparent and reserves the box; the
+ * simulation renders the letterforms itself, confined to them by a mask inside
+ * its feedback loop. The text stays in the DOM so the box is sized by real font
+ * metrics and the word remains selectable and readable to assistive tech. */
 .cs-footer-mark {
   position: relative;
   color: transparent;
@@ -556,4 +549,75 @@
   text-transform: uppercase;
   text-decoration: none;
   border-radius: 999px;
+}
+
+/* --- previous / next project ----------------------------------------------
+ * The pair of blocks above the footer. Each carries its project's own
+ * thumbnail and jumps straight into that case study. */
+.cs-neighbour {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 924 / 455;
+  padding: 0;
+  border: 1px solid var(--cs-line);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--cs-panel);
+  cursor: pointer;
+  color: var(--cs-ink);
+}
+
+.cs-neighbour-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Grey at rest, colour on hover — the same language as the WORK wall. */
+  filter: grayscale(1);
+  transition:
+    filter 250ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cs-neighbour:hover .cs-neighbour-img,
+.cs-neighbour:focus-visible .cs-neighbour-img {
+  filter: grayscale(0);
+  transform: scale(1.03);
+}
+
+.cs-neighbour-meta {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  /* Sits over photography, so it carries its own contrast rather than relying
+   * on the image behind it — the same lesson as the WORK hover panel. */
+  padding: 12px 16px;
+  border: 2px solid #000;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+
+.cs-neighbour-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.26px;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.cs-neighbour-title {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 1.6vw, 28px);
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.cs-neighbour:focus-visible {
+  outline: 2px solid var(--cs-ink);
+  outline-offset: 4px;
 }
