@@ -346,96 +346,146 @@
   aspect-ratio: 924 / 455;
 }
 
-/* --- footer --------------------------------------------------------------- */
+/* --- footer -------------------------------------------------------------
+ * Figma 62:381. A ruled grid, not a stack: every group sits inside a hairline
+ * box so the block reads as a spec sheet. Two bands — contact on black, site
+ * nav on #191919 — closed by a green meta strip.
+ *
+ * Figma draws this frame at 1.38x (1.38px rules, 12px tags against the hero's
+ * 9px). Rules are rendered at 1px here because a fractional hairline renders
+ * inconsistently across DPRs; the type sizes are kept and made fluid. */
 .cs-footer {
-  padding: 0 var(--cs-gutter) clamp(24px, 2vw, 40px);
+  --f-rule: #2f2f2f;
+  padding: 0;
 }
 
-/* The big wordmark. C3 masks a live RD field to these letterforms; as plain
- * type it is already the correct fallback. */
-.cs-footer-mark {
-  font-family: var(--font-wordmark);
-  font-weight: 700;
-  font-size: clamp(72px, 12.4vw, 238px);
-  line-height: 0.86;
-  letter-spacing: -0.02em;
-  color: #3a3a3a;
-  user-select: none;
+.cs-fband {
+  padding: clamp(20px, 1.9vw, 36px) clamp(20px, 1.9vw, 36px) clamp(18px, 1.7vw, 33px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(32px, 4vw, 76px);
+}
+
+.cs-fband--contact {
+  background: #000;
+}
+
+/* The nav band sits a shade off black, which is what separates the two. */
+.cs-fband--nav {
+  background: #191919;
+  gap: clamp(24px, 2.2vw, 41px);
+}
+
+/* The hairline box every group is drawn in. */
+.cs-frule {
+  border: 1px solid var(--f-rule);
 }
 
 .cs-footer-heading {
-  margin: 0 0 clamp(24px, 3vw, 48px);
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(38px, 6.4vw, 122px);
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: clamp(38px, 6.9vw, 132px);
   line-height: 1;
   letter-spacing: -0.02em;
+  color: var(--cs-ink);
 }
 
-.cs-footer-contact {
+.cs-fcontact-row {
   display: flex;
-  gap: clamp(32px, 5vw, 96px);
-  flex-wrap: wrap;
-  margin-bottom: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
 }
 
-.cs-footer-col {
+.cs-fcells {
+  display: flex;
+  gap: clamp(24px, 3.5vw, 66px);
+  align-items: stretch;
+  flex: 0 1 auto;
+}
+
+.cs-fcell {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  padding: 12px;
 }
 
-.cs-footer-link {
+.cs-fcell--wide {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Email, socials and site nav all share one type treatment: Loos Extended
+ * Bold, uppercase, 24px at 1920. */
+.cs-flink {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: clamp(14px, 1.25vw, 24px);
+  line-height: 1.05;
+  text-transform: uppercase;
   color: var(--cs-ink);
   text-decoration: none;
-  font-family: var(--font-mono);
-  font-size: clamp(14px, 1.1vw, 22px);
-  text-transform: uppercase;
-}
-
-.cs-footer-link--lg {
-  font-size: clamp(16px, 1.5vw, 30px);
-}
-
-.cs-footer-link:hover {
-  text-decoration: underline;
-}
-
-.cs-footer-availability {
-  margin: 0 0 32px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: #9a9a9a;
-}
-
-.cs-footer-next {
-  border: 1px solid var(--cs-line);
-  border-radius: 2px;
+  text-align: left;
+  border: 0;
   background: none;
-  color: var(--cs-ink);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 12px 18px;
+  padding: 0;
   cursor: pointer;
-  margin-bottom: clamp(32px, 4vw, 64px);
 }
 
-.cs-footer-next:hover {
-  background: rgba(255, 255, 255, 0.06);
+.cs-flink:hover,
+.cs-flink:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
-.cs-footer-strip {
+.cs-fmark {
+  flex: 0 0 auto;
+  width: clamp(72px, 8.6vw, 165px);
+  height: auto;
+  opacity: 0.85;
+}
+
+/* Its own box, with a lighter rule than the rest of the grid. */
+.cs-favailability {
+  margin: 0;
+  border: 1px solid #565656;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: clamp(11px, 0.73vw, 14px);
+  color: var(--cs-ink);
+}
+
+.cs-fstrip {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  padding-top: 16px;
   font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: #9a9a9a;
+  font-size: clamp(11px, 0.73vw, 14px);
+  letter-spacing: 0.14em;
+  /* The one spot of colour on the page — the site's accent green. */
+  color: #61e891;
+}
+
+@media (max-width: 900px) {
+  .cs-fcontact-row,
+  .cs-fcells {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cs-fstrip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .cs-fmark {
+    align-self: flex-end;
+  }
 }
 
 /* --- media placeholders on the dark ground -------------------------------- */
@@ -488,20 +538,22 @@
   pointer-events: none;
 }
 
-/* --- live reaction-diffusion ---------------------------------------------
- * Same translate-not-fixed treatment as the logo canvas: .takeover's
- * will-change: transform makes it the containing block for fixed descendants,
- * so a fixed child scrolls away with the content. rd-surface.ts translates it
- * back by scrollTop each frame. */
-
-
-/* The COMMMS mark. Its own type is transparent and reserves the box; the
- * simulation renders the letterforms itself, confined to them by a mask inside
- * its feedback loop. The text stays in the DOM so the box is sized by real font
- * metrics and the word remains selectable and readable to assistive tech. */
+/* --- the COMMMS mark ------------------------------------------------------
+ * Its own type is TRANSPARENT and only reserves the box; the reaction-diffusion
+ * field renders the letterforms itself, confined to them by a mask inside its
+ * feedback loop (see rd-surface.ts). The text stays in the DOM so the box is
+ * sized by real font metrics and the word is still selectable and readable to
+ * assistive tech. */
 .cs-footer-mark {
   position: relative;
+  margin: 0 clamp(20px, 1.9vw, 36px);
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: clamp(72px, 12.4vw, 238px);
+  line-height: 0.86;
+  letter-spacing: -0.02em;
   color: transparent;
+  user-select: none;
 }
 
 .cs-rd-mark {

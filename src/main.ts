@@ -241,6 +241,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         // The curtain is the close affordance now (brief 7.9) — same
         // takeover.close() the navbar cloth notch used to call.
         onClose: () => void takeover.close(),
+        // Footer site nav — same close-then-navigate path the navbar uses.
+        onNav: (dest) => void closeTakeoverThenNavigate(dest),
         onNext: async (next) => {
           await takeover.close();
           await afterTakeoverHistoryUnwind();
