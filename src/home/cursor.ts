@@ -48,13 +48,15 @@ const HOVER_SELECTOR =
 
 /** Green of the hover state and the trail. */
 const CURSOR_GREEN = '97, 232, 145'; // #61E891
-/** Resting ink of the square, as the same rgb triple so a hold can interpolate between them. */
+/** Resting ink of the square on a LIGHT ground. */
 const CURSOR_INK = '20, 20, 20'; // #141414
+/** Resting ink on a DARK ground — the case study pages, the dark thumbnails. */
+const CURSOR_INK_DARK = '255, 255, 255';
 
-/** Linear rgb interpolation between the two triples above, as an `r, g, b` string. */
-function mixInk(mix: number): string {
-  const a = CURSOR_INK.split(',').map(Number);
-  const b = CURSOR_GREEN.split(',').map(Number);
+/** Linear rgb interpolation between two `r, g, b` triples. */
+function mixRgb(from: string, to: string, mix: number): string {
+  const a = from.split(',').map(Number);
+  const b = to.split(',').map(Number);
   return a.map((v, i) => Math.round(v + (b[i] - v) * mix)).join(', ');
 }
 /**
@@ -76,6 +78,16 @@ export interface Cursor {
    * element elsewhere, so there is still exactly one cursor on the site.
    */
   setLabel(label: string | null): void;
+  /**
+   * Draw against a dark ground: white ink instead of black, green unchanged.
+   *
+   * Told, not inferred. The site tried a `difference` blend for this and it
+   * failed twice — invisible over mid-tones, and hue-inverted over colourful
+   * thumbnails. The app already knows exactly what is under the pointer (a
+   * takeover page, or a tile whose measured luminance is in the manifest), so
+   * it says so.
+   */
+  setOnDark(dark: boolean): void;
   destroy(): void;
 }
 
@@ -138,6 +150,7 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   let points: TrailPoint[] = [];
   let raf = 0;
   let visible = pageVisible();
+  let onDark = false;
 
   // Press-and-hold: ramping while the button is down, easing out after release.
   // Two ramps over the same press — `holdValue` drives the RD pull (slow, 5.5s),
@@ -273,7 +286,7 @@ export function initCursor(opts: CursorOpts): Cursor | null {
 
     const size = holdSize(shapeValue);
     const mix = holdColorMix(shapeValue);
-    const rgb = mixInk(mix);
+    const rgb = mixRgb(onDark ? CURSOR_INK_DARK : CURSOR_INK, CURSOR_GREEN, mix);
     square.style.width = `${size}px`;
     square.style.height = `${size}px`;
     square.style.borderRadius = `${holdRadiusPct(shapeValue)}%`;
@@ -418,6 +431,14 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     },
     getHoldProgress(): number {
       return holdValue;
+    },
+    setOnDark(dark: boolean): void {
+      if (dark === onDark) return;
+      onDark = dark;
+      layer.classList.toggle('cursor-layer--dark', dark);
+      // The hold morph writes colour inline, so it has to be re-derived rather
+      // than left on the old ground's ink.
+      if (shapeValue > 0.001) updateHold();
     },
     setLabel(text: string | null): void {
       if (text) {

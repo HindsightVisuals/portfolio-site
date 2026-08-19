@@ -324,15 +324,27 @@ body {
  * Spec: docs/superpowers/specs/2026-08-14-f15-cursor-system-design.md
  * Values here are tune-by-eye starting points.
  *
- * The wrapper is `display: contents` ON PURPOSE. A positioned wrapper with a
- * z-index would form a stacking context, and mix-blend-mode blends against the
- * backdrop *within* its stacking context — the cursor would then multiply
- * against an empty layer instead of the page. Generating no box keeps each
- * child in the root stacking context, where the WebGL canvas, chrome and
- * takeover pages are its real backdrop. Do not give this element position,
- * z-index, opacity, filter or transform. */
+ * The wrapper is `display: contents` ON PURPOSE. Generating no box keeps each
+ * child in the ROOT stacking context, so their z-index of 100 is measured
+ * against the page rather than against the wrapper — otherwise the wrapper
+ * itself would have to out-rank .takeover (20) for the cursor to stay on top.
+ * (It originally mattered for mix-blend-mode too; the cursor no longer blends,
+ * but the stacking reason stands.) Do not give this element position, z-index,
+ * opacity, filter or transform. */
 .cursor-layer {
   display: contents;
+
+  /* Ink flips with the ground; the accent green never does. */
+  --cursor-ink: #141414;
+  --cursor-fill: rgba(20, 20, 20, 0.35);
+}
+
+/* Set by Cursor.setOnDark() over the case study pages and the dark WORK
+ * thumbnails. display: contents generates no box, but the custom properties
+ * still inherit to the children, which is all this needs. */
+.cursor-layer--dark {
+  --cursor-ink: #ffffff;
+  --cursor-fill: rgba(255, 255, 255, 0.35);
 }
 
 .cursor-square,
@@ -347,15 +359,13 @@ body {
   left: 0;
   width: 12px;
   height: 12px;
-  border: 2px solid var(--ink);
-  background: rgba(20, 20, 20, 0.35);
-  /* difference, not multiply. Under multiply the resting square was pure black
-   * ink, which vanished completely on the case study pages and on the dark
-   * WORK thumbnails (Adam, 2026-08-18). difference inverts against whatever is
-   * behind it, so the square is dark on white and white on black with no
-   * per-page state to manage. The green hover state opts OUT below — inverting
-   * a saturated green gives a muddy pink. */
-  mix-blend-mode: difference;
+  border: 2px solid var(--cursor-ink);
+  background: var(--cursor-fill);
+  /* NO blend mode. Two attempts failed here: multiply left the black square
+   * invisible on the case study pages, and difference inverted HUE as well as
+   * luminance, so it went muddy over colourful thumbnails and vanished over
+   * mid-tones. The colour is now simply told to the cursor by the app, which
+   * knows what is underneath (see Cursor.setOnDark). */
   transition:
     width 220ms cubic-bezier(0.4, 0, 0.2, 1),
     height 220ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -364,14 +374,13 @@ body {
   will-change: transform;
 }
 
+/* Green on both grounds — it is bright and saturated enough to read on either,
+ * which is the whole point of an accent colour. */
 .cursor-square--hover {
   width: 32px;
   height: 32px;
   border-color: #61e891;
   background: rgba(97, 232, 145, 0.35);
-  /* Normal blend: the green is bright and saturated enough to read on any
-   * ground on its own, and difference would turn it pink. */
-  mix-blend-mode: normal;
 }
 
 /* Press-and-hold. The square itself rounds to a circle, then scales up and
@@ -386,7 +395,6 @@ body {
 
 .cursor-trail {
   inset: 0;
-  mix-blend-mode: multiply;
 }
 
 /* Hide the OS cursor everywhere the custom one is mounted. !important is
@@ -479,7 +487,6 @@ html.has-custom-cursor *:not(input):not(textarea):not([contenteditable]) {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
-  mix-blend-mode: multiply;
   transition: opacity 180ms ease;
 }
 

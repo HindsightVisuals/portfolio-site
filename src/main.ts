@@ -41,6 +41,7 @@ const loadPageMods = (): Promise<TakeoverPageMods> => {
 };
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
+import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
 
@@ -157,6 +158,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         // see the scroll handler below, which owns the pause from then on.
         if (mode === 'world') stage.setPaused(false);
         if (mode === 'world') {
+          // Back to the light world; the wall hover takes over from here.
+          cursor?.setOnDark(false);
           activeRevealCleanup?.();
           activeRevealCleanup = null;
           activeStrip?.destroy();
@@ -256,6 +259,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         },
       });
       void takeover.open(page);
+      cursor?.setOnDark(true); // the case study page inverts the palette
       activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
       activeRevealCleanup = m.mountReveal(page, { reducedMotion });
       activeStrip?.destroy();
@@ -354,6 +358,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       const ndcY = -((p.y / window.innerHeight) * 2 - 1);
       const hit = world.pick(ndcX, ndcY);
       const hoveredSlug = hit?.kind === 'tile' ? hit.slug : null;
+      // A black cursor disappears on Naboso, Spy Hop and Animal; tell it to go
+      // white over those rather than hoping a blend mode sorts it out.
+      cursor?.setOnDark(hoveredSlug !== null && isDarkTile(hoveredSlug));
       world.setTileHover(hoveredSlug);
       workHover.setPointer(p.x, p.y);
       workHover.setHovered(hoveredSlug);

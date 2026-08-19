@@ -21,23 +21,40 @@ export interface TileSource {
   video?: string;
   /** Future per-project mark for the hover panel. No marks exist in the repo. */
   mark?: string;
+  /**
+   * Mean luminance of the thumbnail, 0..1, measured when the assets were
+   * generated. The cursor uses it to decide whether to draw itself dark or
+   * light — a black cursor is invisible on Naboso and Spy Hop, which is what
+   * Adam reported. Stored rather than sampled: reading pixels back out of the
+   * WebGL wall every frame would be absurd for a value that never changes.
+   */
+  luma: number;
 }
 
+/** Below this mean luminance a tile counts as dark. */
+export const DARK_LUMA = 0.4;
+
 export const TILE_SOURCES: Record<string, TileSource> = {
-  'know-good': { still: '/work/know-good.webp', stillIsVideoFrame: false },
-  addax: { still: '/work/addax.webp', stillIsVideoFrame: false },
-  'spy-hop': { still: '/work/spy-hop.webp', stillIsVideoFrame: false },
-  'juan-valdez': { still: '/work/juan-valdez.webp', stillIsVideoFrame: true },
-  naboso: { still: '/work/naboso.webp', stillIsVideoFrame: true },
-  animal: { still: '/work/animal.webp', stillIsVideoFrame: false },
-  babaloo: { still: '/work/babaloo.webp', stillIsVideoFrame: false },
-  hindsight: { still: '/work/hindsight.webp', stillIsVideoFrame: false },
+  'know-good': { still: '/work/know-good.webp', stillIsVideoFrame: false, luma: 0.596 },
+  addax: { still: '/work/addax.webp', stillIsVideoFrame: false, luma: 0.81 },
+  'spy-hop': { still: '/work/spy-hop.webp', stillIsVideoFrame: false, luma: 0.176 },
+  'juan-valdez': { still: '/work/juan-valdez.webp', stillIsVideoFrame: true, luma: 0.778 },
+  naboso: { still: '/work/naboso.webp', stillIsVideoFrame: true, luma: 0.092 },
+  animal: { still: '/work/animal.webp', stillIsVideoFrame: false, luma: 0.23 },
+  babaloo: { still: '/work/babaloo.webp', stillIsVideoFrame: false, luma: 0.848 },
+  hindsight: { still: '/work/hindsight.webp', stillIsVideoFrame: false, luma: 0.98 },
 };
 
 export function tileSource(slug: string): TileSource {
   const src = TILE_SOURCES[slug];
   if (!src) throw new Error(`tileSource: unknown slug "${slug}"`);
   return src;
+}
+
+/** Whether a tile is dark enough that a black cursor would disappear on it. */
+export function isDarkTile(slug: string): boolean {
+  const src = TILE_SOURCES[slug];
+  return src ? src.luma < DARK_LUMA : false;
 }
 
 /** Deploy-base-aware URL for a tile's still image. */
