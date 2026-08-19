@@ -136,7 +136,11 @@ describe('coreBlur', () => {
     expect(coreBlur(1)).toBeCloseTo(CORE_MAX_BLUR_PX, 6);
   });
 
-  it('increases continuously — no buckets, no banding', () => {
+  it('is off — Adam asked for the blur to go (2026-08-18)', () => {
+    for (let i = 0; i <= 10; i++) expect(coreBlur(i / 10)).toBe(0);
+  });
+
+  it.skip('increases continuously — no buckets, no banding', () => {
     let prev = -1;
     for (let i = 0; i <= 50; i++) {
       const v = coreBlur(i / 50);
@@ -145,7 +149,7 @@ describe('coreBlur', () => {
     }
   });
 
-  it('is eased so the head stays defined longer than a linear ramp would', () => {
+  it.skip('is eased so the head stays defined longer than a linear ramp would', () => {
     // at half age an eased ramp must be below the linear midpoint
     expect(coreBlur(0.5)).toBeLessThan(CORE_MAX_BLUR_PX * 0.5);
   });
@@ -312,11 +316,15 @@ describe('holdRelease', () => {
 });
 
 describe('hold shape ramp', () => {
-  it('completes far sooner than the RD pull ramp — the cursor answers the press immediately', () => {
+  it('still completes before the RD pull, but the two now overlap', () => {
+    // Retuned 2026-08-18: the circle expands slower (900 -> 2200ms) and the
+    // pull ramps faster (5500 -> 2800ms), so they run together rather than the
+    // shape finishing while the pull has barely started.
     expect(HOLD_SHAPE_RAMP_MS).toBeLessThan(HOLD_RAMP_MS);
     expect(holdShapeRamp(HOLD_SHAPE_RAMP_MS)).toBeCloseTo(1, 6);
-    // at the moment the shape has finished, the pull has barely begun
-    expect(holdRamp(HOLD_SHAPE_RAMP_MS)).toBeLessThan(0.1);
+    // The pull is well under way by the time the shape lands — that overlap is
+    // the point, not a regression.
+    expect(holdRamp(HOLD_SHAPE_RAMP_MS)).toBeGreaterThan(0.5);
   });
 
   it('starts at zero and saturates', () => {

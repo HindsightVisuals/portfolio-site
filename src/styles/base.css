@@ -285,8 +285,7 @@ body {
 }
 
 .cursor-square,
-.cursor-trail,
-.cursor-glass {
+.cursor-trail {
   position: fixed;
   pointer-events: none;
   z-index: 100; /* above .takeover (20), the highest in the app */
@@ -299,12 +298,13 @@ body {
   height: 12px;
   border: 2px solid var(--ink);
   background: rgba(20, 20, 20, 0.35);
-  /* multiply in BOTH states, not just hover: black-on-white under multiply is
-   * identical to normal blending, so rest looks unchanged, and keeping it
-   * constant avoids a blend-mode snap mid-transition (blend is not
-   * interpolable). On this light ground, screen() would render the green as
-   * pure white — see the spec's blend-mode decision. */
-  mix-blend-mode: multiply;
+  /* difference, not multiply. Under multiply the resting square was pure black
+   * ink, which vanished completely on the case study pages and on the dark
+   * WORK thumbnails (Adam, 2026-08-18). difference inverts against whatever is
+   * behind it, so the square is dark on white and white on black with no
+   * per-page state to manage. The green hover state opts OUT below — inverting
+   * a saturated green gives a muddy pink. */
+  mix-blend-mode: difference;
   transition:
     width 220ms cubic-bezier(0.4, 0, 0.2, 1),
     height 220ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -318,6 +318,9 @@ body {
   height: 32px;
   border-color: #61e891;
   background: rgba(97, 232, 145, 0.35);
+  /* Normal blend: the green is bright and saturated enough to read on any
+   * ground on its own, and difference would turn it pink. */
+  mix-blend-mode: normal;
 }
 
 /* Press-and-hold. The square itself rounds to a circle, then scales up and
@@ -333,28 +336,6 @@ body {
 .cursor-trail {
   inset: 0;
   mix-blend-mode: multiply;
-}
-
-/* The wide halo. One GPU blur pass over the whole layer is far cheaper than a
- * 20px+ canvas filter per age band per frame, which is why the trail is split
- * into a bleed canvas and a core canvas rather than drawn once. Raise this to
- * make the trail bleed further; the core stays legible underneath. */
-.cursor-trail--bleed {
-  filter: blur(18px);
-}
-
-/* Frosted-glass node riding the dying end of the trail. CSS cannot
- * displacement-map a backdrop, so this is blur, not refraction; the radial mask
- * feathers it so there is no visible disc edge. backdrop-filter is written per
- * frame by cursor.ts. */
-.cursor-glass {
-  top: 0;
-  left: 0;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  -webkit-mask-image: radial-gradient(closest-side, #000 15%, transparent 100%);
-  mask-image: radial-gradient(closest-side, #000 15%, transparent 100%);
 }
 
 /* Hide the OS cursor everywhere the custom one is mounted. !important is
@@ -384,16 +365,14 @@ html.has-custom-cursor *:not(input):not(textarea):not([contenteditable]) {
   z-index: 12; /* above .chrome (10), below .cursor-square (100) */
   width: 450px;
   padding: 24px 28px;
-  border: 1px solid #fff;
-  background: none;
+  /* Per the Figma modal (24:1101). The previous `difference` blend inverted
+   * HUE as well as luminance, so over a colourful thumbnail the type came out
+   * blue and purple and was unreadable — legible on light and dark is not the
+   * same problem as legible on COLOURFUL. A 2px black stroke with a 50% black
+   * fill and white type reads on anything, with no blending at all. */
+  border: 2px solid #000;
+  background: rgba(0, 0, 0, 0.5);
   color: #fff;
-  /* The panel always sits over a focused thumbnail, and those run from
-   * near-black (spy-hop, animal, naboso) to near-white (hindsight, addax). The
-   * mock draws it white, which is right over the dark ones and invisible over
-   * the light ones. `difference` keeps the mock's white-on-dark look and
-   * inverts to dark over pale imagery, so it reads on every tile. Same
-   * blend-mode language the cursor already uses. */
-  mix-blend-mode: difference;
   pointer-events: none;
   will-change: transform, opacity;
 }

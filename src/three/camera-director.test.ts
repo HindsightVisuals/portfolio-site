@@ -15,7 +15,7 @@
  *    move rather than the wall clock's.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import gsap from 'gsap';
 import { initCameraDirector, type CameraDirector } from './camera-director';
 import type { Destination } from './world';
@@ -35,6 +35,14 @@ function makeCamera(): { position: { x: number; y: number; z: number } } {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asCamera = (c: ReturnType<typeof makeCamera>): any => c;
 
+/**
+ * Comfortably past the end of any flight (longest is FLY_S = 2.0s).
+ * Deliberately generous: gsap.to() wakes the ticker, so the captured base time
+ * drifts by however long the test body took to reach the flight. These
+ * assertions are all about the landed state, so overshooting costs nothing.
+ */
+const FLIGHT_SETTLED_S = 8;
+
 /** Advance wall-clock-free: scrub gsap to an absolute time, then tick update(). */
 function scrub(director: CameraDirector, base: number, to: number, dt = 1 / 60): void {
   gsap.globalTimeline.time(base + to);
@@ -42,6 +50,17 @@ function scrub(director: CameraDirector, base: number, to: number, dt = 1 / 60):
 }
 
 describe('camera director', () => {
+  // gsap's ticker runs on real time even in node, so the global timeline drifted
+  // between beforeEach and the assertions — a test that took 100ms of wall clock
+  // scrubbed to 100ms short of its tween's end. Sleeping the ticker means the
+  // timeline moves ONLY when a scrub moves it, which is the whole premise here.
+  beforeAll(() => {
+    gsap.ticker.sleep();
+  });
+  afterAll(() => {
+    gsap.ticker.wake();
+  });
+
   let camera: ReturnType<typeof makeCamera>;
   let director: CameraDirector;
   let clock: number;
@@ -68,7 +87,7 @@ describe('camera director', () => {
       // Scrubbed a touch beyond rather than exactly onto it: the global timeline
       // carries time accrued by earlier tests, so landing precisely on the tween
       // end is not reliable when the whole suite runs.
-      scrub(director, t0, 2.1);
+      scrub(director, t0, FLIGHT_SETTLED_S);
       await flight;
 
       expect(camera.position.z).toBeCloseTo(target.z, 3);
@@ -79,7 +98,7 @@ describe('camera director', () => {
     it('leaves no lateral tail creeping in after the zoom has stopped', async () => {
       const target = { x: 3.95, y: -2.65, z: -26 - 20 };
       const flight = director.flyToFocus(target);
-      scrub(director, t0, 2.1);
+      scrub(director, t0, FLIGHT_SETTLED_S);
       await flight;
 
       const landedX = camera.position.x;
@@ -88,7 +107,7 @@ describe('camera director', () => {
       // Several frames later, with the pointer still centred, nothing has moved.
       // This is the regression: the old lag filter kept easing x/y toward the
       // target for roughly a second after z had already arrived.
-      for (let i = 0; i < 10; i++) scrub(director, t0, 2.1);
+      for (let i = 0; i < 10; i++) scrub(director, t0, FLIGHT_SETTLED_S);
       expect(camera.position.x).toBeCloseTo(landedX, 6);
       expect(camera.position.y).toBeCloseTo(landedY, 6);
     });
@@ -100,7 +119,7 @@ describe('camera director', () => {
 
       const t = gsap.globalTimeline.time();
       const flight = director.flyTo('home');
-      scrub(director, t, 2.1);
+      scrub(director, t, FLIGHT_SETTLED_S);
       await flight;
 
       expect(camera.position.x).toBeCloseTo(0, 3);
@@ -120,7 +139,7 @@ describe('camera director', () => {
       scrub(director, t0, 1.0); // same tween time, another frame of magnet easing
       expect(camera.position.x).toBeCloseTo(midX, 6);
 
-      scrub(director, t0, 2.1);
+      scrub(director, t0, FLIGHT_SETTLED_S);
       await flight;
 
       // On the landing frame the flight has completed, so the magnet is
@@ -134,7 +153,7 @@ describe('camera director', () => {
   describe('the magnet still works at rest', () => {
     it('eases the camera toward the pointer once a flight has ended', async () => {
       const flight = director.flyTo('work');
-      scrub(director, t0, 2.1);
+      scrub(director, t0, FLIGHT_SETTLED_S);
       await flight;
       expect(camera.position.x).toBeCloseTo(0, 3);
 
@@ -147,7 +166,7 @@ describe('camera director', () => {
     it('grows in from zero after arrival rather than popping', async () => {
       director.setPointer(1, 0);
       const flight = director.flyTo('work');
-      scrub(director, t0, 2.1);
+      scrub(director, t0, FLIGHT_SETTLED_S);
       await flight;
 
       const atArrival = camera.position.x;
@@ -235,7 +254,7 @@ describe('camera director', () => {
 
     const landOnFocus = async (): Promise<void> => {
       const flight = director.flyToFocus(FOCUS);
-      scrub(director, t0, 2.1);
+      scrub(director, t0, FLIGHT_SETTLED_S);
       await flight;
     };
 
@@ -275,7 +294,7 @@ describe('camera director', () => {
 
       const t = gsap.globalTimeline.time();
       const away = director.flyTo('home');
-      scrub(director, t, 2.1);
+      scrub(director, t, FLIGHT_SETTLED_S);
       await away;
 
       // Landed on the home axis, not 3.5 units off it.

@@ -152,11 +152,10 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         // own mode. (scrollNav is null under reduced motion — no wheel nav.)
         inputMode = mode;
         scrollNav?.setMode(mode);
-        // The takeover is opaque, so the world behind it is wasted work. On a
-        // case study that matters twice over: without this, the world stage,
-        // the logo stage and the RD field all render at once and only two of
-        // them are visible.
-        stage.setPaused(mode === 'takeover');
+        // A takeover with no window onto the world can pause it immediately
+        // (About). A case study keeps it alive until its curtain scrolls off —
+        // see the scroll handler below, which owns the pause from then on.
+        if (mode === 'world') stage.setPaused(false);
         if (mode === 'world') {
           activeRevealCleanup?.();
           activeRevealCleanup = null;
@@ -220,9 +219,10 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     const makeTakeoverNavbar = (m: TakeoverPageMods): HTMLElement =>
       m.buildNavbar({
         reducedMotion,
-        onCloth: () => void takeover.close(),
+        // No onCloth: the v1 cloth-V tab is gone from takeover pages entirely.
+        // The curtain replaced it on case studies, and Escape covers the rest.
         onWordmark: () => void closeTakeoverThenNavigate('home'),
-        onContact: () => void closeTakeoverThenNavigate('contact'),
+        onNav: (dest) => void closeTakeoverThenNavigate(dest),
       });
 
     // open() appends the page synchronously (before its swipe tween — verified
@@ -255,6 +255,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       activeLogo?.destroy();
       activeLogo = m.initLogoStage(page, withBase, { reducedMotion, slug });
       activeRd?.destroy();
+      // The page-background RD is gone (Adam, 2026-08-18: "kill the RD on the
+      // case study pages"). The surface now exists solely for the footer
+      // logotype, and idles unless that mark is on screen.
       activeRd = m.initRdSurface(page, { reducedMotion });
       activeCurtain?.destroy();
       activeCurtain = m.mountCurtain(page, { reducedMotion });
@@ -311,9 +314,14 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         const nav = t.querySelector<HTMLElement>('.nav2d');
         const scrolled = t.scrollTop > NOTCH_SCROLL_THRESHOLD_PX;
         nav?.classList.toggle('nav2d--scrolled', scrolled);
-        // The case study's curtain is the same idea at full width: its window
-        // onto the live canvas shuts once the page starts scrolling.
-        t.querySelector('.cs-curtain')?.classList.toggle('cs-curtain--closed', scrolled);
+        // Stop the 3D world once the curtain — the only window onto it — has
+        // scrolled out of frame. Nothing of the world is visible past that
+        // point, and on a 4K display it is the most expensive thing running.
+        const curtain = t.querySelector<HTMLElement>('.cs-curtain');
+        if (curtain) {
+          const gone = curtain.getBoundingClientRect().bottom <= 0;
+          stage.setPaused(gone);
+        }
       },
       true,
     );

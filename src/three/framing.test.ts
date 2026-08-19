@@ -2,14 +2,38 @@ import { describe, expect, it } from 'vitest';
 import { distanceForFraming, effectiveMarginPx, worldPerPx } from './framing';
 
 describe('effectiveMarginPx', () => {
-  it('returns 248 when 248*2 does not exceed 55% of smaller viewport dimension', () => {
-    // 2560x1440: smaller=1440, 248*2=496, 55% of 1440=792, 496 < 792 -> 248
-    expect(effectiveMarginPx(2560, 1440)).toBe(248);
+  // Retuned 2026-08-18: a fixed 248px margin looked right on 4K but left the
+  // focused tile ~25% too small at 1080p, because the same inset eats far more
+  // of a shorter viewport. Now lerped between two measured anchors.
+  it('keeps the 4K margin that already looked right', () => {
+    expect(effectiveMarginPx(3840, 2160)).toBeCloseTo(248, 6);
   });
 
-  it('returns computed margin when 248*2 exceeds 55% of smaller viewport dimension', () => {
-    // 800x600: smaller=600, 248*2=496, 55% of 600=330, 496 > 330 -> Math.max(32, 0.12*600) = 72
-    expect(effectiveMarginPx(800, 600)).toBe(72);
+  it('tightens to 175 at 1080p, which is the ~25% larger tile Adam asked for', () => {
+    expect(effectiveMarginPx(1920, 1080)).toBeCloseTo(175, 6);
+  });
+
+  it('interpolates between the two anchors rather than stepping', () => {
+    const m = effectiveMarginPx(2560, 1440);
+    expect(m).toBeGreaterThan(175);
+    expect(m).toBeLessThan(248);
+  });
+
+  it('never widens past the 4K anchor on an enormous viewport', () => {
+    expect(effectiveMarginPx(7680, 4320)).toBeCloseTo(248, 6);
+  });
+
+  it('falls back to a proportional margin well below the 1080 anchor', () => {
+    // 800x600 -> 0.17 * 600 = 102, which is tighter than the 175 floor.
+    expect(effectiveMarginPx(800, 600)).toBeCloseTo(102, 6);
+  });
+
+  it('keeps a usable margin on a very small viewport', () => {
+    expect(effectiveMarginPx(320, 180)).toBe(32);
+  });
+
+  it('is driven by the SHORTER edge, so orientation does not flip it', () => {
+    expect(effectiveMarginPx(1080, 1920)).toBeCloseTo(effectiveMarginPx(1920, 1080), 6);
   });
 });
 

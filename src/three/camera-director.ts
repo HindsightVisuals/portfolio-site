@@ -118,11 +118,20 @@ export function initCameraDirector(
     r?.();
   };
 
-  /** Drop any live peek instantly — used on departures, where a tween would
-   *  fight the flight for the same axis. */
-  const killPeek = (): void => {
+  /**
+   * Retire the peek WITHOUT moving the camera.
+   *
+   * Zeroing it outright snapped the view back to the focused tile before the
+   * new flight began, so clicking a peeked neighbour visibly recentred and then
+   * flew — Adam, 2026-08-18. Folding the offset into `lateral` leaves the
+   * camera exactly where it is and lets the flight tween continue from there,
+   * which is what "animate from the peek position" means.
+   */
+  const foldPeek = (): void => {
     peekTween?.kill();
     peekTween = null;
+    lateral.x += peek.x;
+    lateral.y += peek.y;
     peek.x = 0;
     peek.y = 0;
   };
@@ -154,7 +163,7 @@ export function initCameraDirector(
       const targetZ = wrappedTarget(dest.cameraZ, state.z);
       const duration = opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S;
       lateralTween?.kill();
-      killPeek();
+      foldPeek();
       return new Promise((resolve) => {
         pendingFlyResolve = resolve;
         lateralTween = gsap.to(lateral, { x: 0, y: 0, duration, ease: FLY_EASE });
@@ -185,7 +194,7 @@ export function initCameraDirector(
       const targetZ = wrappedTarget(target.z, state.z);
       const duration = opts?.abbreviated ? FLY_ABBREVIATED_S : FLY_S;
       lateralTween?.kill();
-      killPeek();
+      foldPeek();
       return new Promise((resolve) => {
         pendingFlyResolve = resolve;
         lateralTween = gsap.to(lateral, { x: target.x, y: target.y, duration, ease: FLY_EASE });
@@ -215,7 +224,7 @@ export function initCameraDirector(
       velocity = 0;
       focusState = 'free';
       lateralTween?.kill();
-      killPeek();
+      foldPeek();
       lateralTween = null;
       lateral.x = 0;
       lateral.y = 0;
@@ -249,7 +258,7 @@ export function initCameraDirector(
       mode = 'free';
       velocity = 0;
       lateralTween?.kill();
-      killPeek();
+      foldPeek();
       lateralTween = null;
       const targetZ = wrappedTarget(target.z, state.z);
       state.z = targetZ;
@@ -269,7 +278,7 @@ export function initCameraDirector(
       if (focusState === 'focused') {
         focusState = focusReducer(focusState, 'scroll');
         lateralTween?.kill();
-      killPeek();
+      foldPeek();
         lateralTween = gsap.to(lateral, {
           x: 0,
           y: 0,
@@ -381,7 +390,7 @@ export function initCameraDirector(
       killSettle();
       lateralTween?.kill();
       peekTween?.kill();
-      killPeek();
+      foldPeek();
       arriveCbs.clear();
       departCbs.clear();
     },

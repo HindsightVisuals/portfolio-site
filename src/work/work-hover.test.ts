@@ -1,18 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initWorkHover, type WorkHover } from './work-hover';
-import type { WorldLayer } from '../three/world';
+import { TILE_STROKE_FOCUS_PX, TILE_STROKE_PX, type WorldLayer } from '../three/world';
 import type { CameraDirector } from '../three/camera-director';
 import type { HoverPanel } from './hover-panel';
 
-/** Records the colour calls; everything else on WorldLayer is irrelevant here. */
+/** Records the colour and stroke calls; the rest of WorldLayer is irrelevant. */
 function fakeWorld() {
   const calls: Array<[string, boolean]> = [];
+  const strokes: Array<[string, number]> = [];
   const world = {
     setTileColor: (slug: string, on: boolean) => {
       calls.push([slug, on]);
     },
+    setTileStroke: (slug: string, px: number) => {
+      strokes.push([slug, px]);
+    },
   } as unknown as WorldLayer;
-  return { world, calls };
+  return { world, calls, strokes };
 }
 
 function fakeDirector() {
@@ -89,6 +93,26 @@ describe('WorkHover', () => {
       w.calls.length = 0;
       hover.setHovered('addax');
       expect(w.calls).toEqual([]);
+    });
+  });
+
+  describe('stroke', () => {
+    it('thickens the border on the tile that gains focus', () => {
+      hover.setFocused('spy-hop');
+      expect(w.strokes).toContainEqual(['spy-hop', TILE_STROKE_FOCUS_PX]);
+    });
+
+    it('relaxes the border on the tile that loses it', () => {
+      hover.setFocused('spy-hop');
+      w.strokes.length = 0;
+      hover.setFocused('animal');
+      expect(w.strokes).toContainEqual(['spy-hop', TILE_STROKE_PX]);
+      expect(w.strokes).toContainEqual(['animal', TILE_STROKE_FOCUS_PX]);
+    });
+
+    it('leaves borders alone on plain hover — the frame marks commitment, not proximity', () => {
+      hover.setHovered('addax');
+      expect(w.strokes).toEqual([]);
     });
   });
 

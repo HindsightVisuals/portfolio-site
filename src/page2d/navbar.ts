@@ -17,7 +17,8 @@ export interface NavbarOpts {
    *  its curtain instead, so it must not also carry a second close affordance. */
   onCloth?: () => void;
   onWordmark(): void;
-  onContact(): void;
+  /** Fired by the Work and About links. */
+  onNav(dest: 'work' | 'about'): void;
 }
 
 /** Quadratic-curve `d` for the cloth-V — control point at `depth * 2` puts
@@ -87,13 +88,20 @@ export function buildNavbar(opts: NavbarOpts): HTMLElement {
   // CLOTH_REST_PX — but the click below still fires either way.
   clothTab.addEventListener('click', () => opts.onCloth?.());
 
-  const contact = document.createElement('button');
-  contact.type = 'button';
-  contact.className = 'nav2d-contact';
-  contact.textContent = 'contact';
-  /* TODO(F11): RD contact morph */
-  contact.addEventListener('click', () => opts.onContact());
+  // The main nav, matching the homepage chrome (Adam, 2026-08-18: "kill the
+  // contact, and just put the main nav there. Work and about.").
+  const nav = document.createElement('nav');
+  nav.className = 'nav2d-links';
+  nav.setAttribute('aria-label', 'Site');
+  for (const dest of ['work', 'about'] as const) {
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'nav2d-link';
+    link.textContent = dest;
+    link.addEventListener('click', () => opts.onNav(dest));
+    nav.append(link);
+  }
 
-  header.append(wordmark, ...(opts.onCloth ? [clothTab] : []), contact);
+  header.append(wordmark, ...(opts.onCloth ? [clothTab] : []), nav);
   return header;
 }

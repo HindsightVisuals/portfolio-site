@@ -63,7 +63,12 @@ export function initHoverPanel(opts: HoverPanelOpts): HoverPanel {
       window.innerWidth,
       window.innerHeight,
     );
-    el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+    // gsap.set, NOT a raw style write. gsap animates `scale` by rewriting the
+    // whole transform, so an inline translate3d here was wiped the moment the
+    // spring started — which is why the panel appeared to grow from the middle
+    // of the thumbnail instead of out of the cursor, in both directions.
+    // Handing x/y to gsap keeps them in the transform it already owns.
+    gsap.set(el, { x: p.x, y: p.y });
     el.style.transformOrigin = `${p.originX} ${p.originY}`;
   };
 

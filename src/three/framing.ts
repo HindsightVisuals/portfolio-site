@@ -1,7 +1,22 @@
+/**
+ * Framing margin around a focused tile, in px.
+ *
+ * Two measured anchors, lerped between: 248px reads well on a 4K display
+ * (Adam: "on my large 4k they look great"), but the same fixed margin eats far
+ * more of a 1080p viewport, leaving the tile about 25% too small there. 175px
+ * at 1080 restores the proportion. Below 1080 it keeps shrinking proportionally
+ * so the tile does not collapse on small screens.
+ */
 export function effectiveMarginPx(vpW: number, vpH: number): number {
   const smaller = Math.min(vpW, vpH);
-  const FULL = 248;
-  return FULL * 2 > smaller * 0.55 ? Math.max(32, 0.12 * smaller) : FULL;
+  const AT_1080 = 175;
+  const AT_2160 = 248;
+  const t = (smaller - 1080) / (2160 - 1080);
+  const lerped = AT_1080 + (AT_2160 - AT_1080) * Math.min(Math.max(t, 0), 1);
+  // Proportional floor for viewports well below the 1080 anchor. 0.17 rather
+  // than a rounder number so it does NOT bind at 1080 itself, where the
+  // measured 175 should win outright.
+  return Math.min(lerped, Math.max(32, 0.17 * smaller));
 }
 
 export function distanceForFraming(

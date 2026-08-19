@@ -65,6 +65,16 @@ const STRETCH_SMOOTH_RATE = 6;
  * runs faster on a high-refresh display — a pre-existing property of the loop.)
  */
 const PULL_RATE_MAX = 0.0009;
+/**
+ * Shapes how the pull rate grows across the hold (Adam, 2026-08-18: "double as
+ * intense, and have it peak at almost 4x as much at the end of its ramp").
+ *
+ * Deliberately super-linear: 2x the old rate through the middle of the ramp,
+ * reaching 4x at a full hold. Remember this compounds — the rate is applied per
+ * sim step, 6 steps a frame — so 4x the rate is far more than 4x the final
+ * deformation. This is the first dial to turn down if it gets violent.
+ */
+const pullCurve = (pull: number): number => 2 * pull * (1 + pull);
 /** Radius of the pull lens, in aspect-corrected sim UV. */
 const PULL_RADIUS = 0.38;
 
@@ -430,7 +440,7 @@ export function initBackgroundLayer(
       const advect = advectProvider?.() ?? { x: 0, y: 0 };
       simMaterial.uniforms.uAdvect.value.set(advect.x, advect.y);
       const pull = pullProvider && cursorActive ? Math.max(0, Math.min(1, pullProvider())) : 0;
-      simMaterial.uniforms.uPullRate.value = PULL_RATE_MAX * pull;
+      simMaterial.uniforms.uPullRate.value = PULL_RATE_MAX * pullCurve(pull);
       simMaterial.uniforms.uBrushR.value = BRUSH_RADIUS * (1 - pull);
 
       simClock += 1 / 60;

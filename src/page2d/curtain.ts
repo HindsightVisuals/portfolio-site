@@ -36,14 +36,9 @@ export function buildCurtain(opts: CurtainOpts): HTMLElement {
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', curtainPath(0, 0));
   path.classList.add('cs-curtain-path');
-  // Shuts the window once the page scrolls — without it, content rising behind
-  // the curtain would show through the transparent strip above the wave.
-  const fill = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  fill.setAttribute('width', String(CURTAIN_VIEW_W));
-  fill.setAttribute('height', String(CURTAIN_VIEW_H));
-  fill.classList.add('cs-curtain-fill');
-
-  svg.append(fill, path);
+  // No fill rect any more: the curtain scrolls away with the page rather than
+  // sticking, so there is nothing to shut.
+  svg.append(path);
   wrap.append(svg);
 
   // The clickable region is the area ABOVE the wave — the window onto the 3D

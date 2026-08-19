@@ -52,7 +52,9 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
   const content = article.querySelector<HTMLElement>('.cs-content');
   const markEl = article.querySelector<HTMLElement>('[data-rd-mask]');
   const scroller = article.closest<HTMLElement>('.takeover');
-  if (!content || !scroller) return null;
+  // Without a mark there is nothing left for this surface to do — the page
+  // background it used to paint has been removed.
+  if (!content || !scroller || !markEl) return null;
 
   // --- the live field -------------------------------------------------------
   const canvas = document.createElement('canvas');
@@ -94,14 +96,17 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
   }
 
   const measure = (): void => {
-    const w = scroller.clientWidth;
-    const h = scroller.clientHeight;
+    // Sized to the MARK, not the viewport. This surface no longer paints the
+    // page background, so rendering a full-screen field to sample a strip of
+    // letterforms from was pure waste — on a 4K display, most of the cost.
+    const r = markEl.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width));
+    const h = Math.max(1, Math.round(r.height));
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(w, h, true);
     layer.resize?.(w, h);
-    if (markCanvas && markEl) {
+    if (markCanvas) {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const r = markEl.getBoundingClientRect();
       markCanvas.width = Math.max(1, Math.round(r.width * dpr));
       markCanvas.height = Math.max(1, Math.round(r.height * dpr));
       markCanvas.style.width = `${r.width}px`;
@@ -161,9 +166,14 @@ export function initRdSurface(article: HTMLElement, opts: RdSurfaceOpts): RdSurf
     // this is a translate rather than position: fixed.
     canvas.style.transform = `translate3d(0, ${top}px, 0)`;
 
-    layer.update?.(dt);
-    layer.render?.(renderer);
-    drawMark();
+    // Only step and render while the mark is actually on screen. The sim is the
+    // most expensive thing on the page and the footer is off screen for almost
+    // all of a case study.
+    if (markVisible) {
+      layer.update?.(dt);
+      layer.render?.(renderer);
+      drawMark();
+    }
     if (visible) raf = requestAnimationFrame(frame);
   };
 

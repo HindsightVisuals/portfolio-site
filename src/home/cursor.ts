@@ -23,14 +23,10 @@
 import {
   TRAIL_BANDS,
   TRAIL_SUBDIVISIONS,
-  BLEED_WIDTH_MULT,
-  BLEED_ALPHA_MULT,
   pruneTrail,
   pointAge,
   trailAlpha,
   trailWidth,
-  coreBlur,
-  glassStrength,
   smoothTrail,
   bandSlices,
   shouldMount,
@@ -61,10 +57,6 @@ function mixInk(mix: number): string {
   const b = CURSOR_GREEN.split(',').map(Number);
   return a.map((v, i) => Math.round(v + (b[i] - v) * mix)).join(', ');
 }
-/** Number of masked backdrop-filter nodes riding the trail. Drop to 1 if compositing costs frames. */
-const GLASS_NODES = 3;
-/** Where along the trail (0 = oldest) each glass node sits. Node size lives in base.css (.cursor-glass). */
-const GLASS_POSITIONS = [0, 0.15, 0.3];
 /**
  * Above this many raw samples the input is already dense enough that spline
  * subdivision only adds geometry cost — a 1000Hz mouse delivers ~250 samples per
@@ -106,34 +98,19 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   layer.className = 'cursor-layer';
   layer.setAttribute('aria-hidden', 'true');
 
-  let bleed: HTMLCanvasElement | null = null;
+  // ONE canvas. The bleed layer (a full-viewport CSS blur) and the frosted
+  // glass nodes (backdrop-filter blur) are both gone — Adam, 2026-08-18: "kill
+  // the blur on the mouse effect". They were also the bulk of the cursor's
+  // cost: two full-viewport canvases plus three backdrop-filtered nodes,
+  // recomposited every frame.
   let core: HTMLCanvasElement | null = null;
-  let bleedCtx: CanvasRenderingContext2D | null = null;
   let coreCtx: CanvasRenderingContext2D | null = null;
-  const glassNodes: HTMLElement[] = [];
 
   if (!reducedMotion) {
-    // Two layers: the bleed carries a big CSS blur (one GPU pass, cheap) and
-    // supplies the wide halo; the core carries a per-band canvas blur ramp for
-    // age-varying softness. Doing the whole bleed with canvas filters instead
-    // would mean a 20px+ blur per band, every frame.
-    bleed = document.createElement('canvas');
-    bleed.className = 'cursor-trail cursor-trail--bleed';
-    layer.appendChild(bleed);
-    bleedCtx = bleed.getContext('2d');
-
     core = document.createElement('canvas');
     core.className = 'cursor-trail cursor-trail--core';
     layer.appendChild(core);
     coreCtx = core.getContext('2d');
-
-    for (let i = 0; i < GLASS_NODES; i++) {
-      const g = document.createElement('div');
-      g.className = 'cursor-glass';
-      g.style.opacity = '0';
-      layer.appendChild(g);
-      glassNodes.push(g);
-    }
   }
 
   // The CTA pill. Its own element so the square's hold morph and this can never
@@ -176,18 +153,17 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   let pendingClickSuppressor: (() => void) | null = null;
 
   const sizeCanvases = (): void => {
-    const dpr = window.devicePixelRatio || 1;
-    for (const [cv, cx] of [
-      [bleed, bleedCtx],
-      [core, coreCtx],
-    ] as Array<[HTMLCanvasElement | null, CanvasRenderingContext2D | null]>) {
-      if (!cv || !cx) continue;
-      cv.width = Math.round(window.innerWidth * dpr);
-      cv.height = Math.round(window.innerHeight * dpr);
-      cv.style.width = `${window.innerWidth}px`;
-      cv.style.height = `${window.innerHeight}px`;
-      cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+    // CLAMPED to 2. This was raw devicePixelRatio while every other surface on
+    // the site clamped — on a 4K display it sized a full-viewport canvas at
+    // native resolution and redrew it every frame, which is the single biggest
+    // reason the site fell to ~8fps there.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (!core || !coreCtx) return;
+    core.width = Math.round(window.innerWidth * dpr);
+    core.height = Math.round(window.innerHeight * dpr);
+    core.style.width = `${window.innerWidth}px`;
+    core.style.height = `${window.innerHeight}px`;
+    coreCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
   sizeCanvases();
 
@@ -219,9 +195,8 @@ export function initCursor(opts: CursorOpts): Cursor | null {
   };
 
   const drawTrail = (now: number): void => {
-    if (!core || !coreCtx || !bleed || !bleedCtx) return;
+    if (!core || !coreCtx) return;
     coreCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    bleedCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     if (points.length < 2) return;
 
     const sub =
@@ -229,13 +204,11 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     const sm = smoothTrail(points, sub);
     const slices = bandSlices(sm.length, TRAIL_BANDS);
 
-    for (const cx of [coreCtx, bleedCtx]) {
-      // butt caps, not round: adjacent bands share an endpoint, so butt ends
-      // meet exactly instead of overlapping into a brighter bead at every join.
-      cx.lineCap = 'butt';
-      cx.lineJoin = 'round';
-      cx.strokeStyle = `rgb(${CURSOR_GREEN})`;
-    }
+    // butt caps, not round: adjacent bands share an endpoint, so butt ends meet
+    // exactly instead of overlapping into a brighter bead at every join.
+    coreCtx.lineCap = 'butt';
+    coreCtx.lineJoin = 'round';
+    coreCtx.strokeStyle = `rgb(${CURSOR_GREEN})`;
 
     for (const [a, b] of slices) {
       const age = pointAge(sm[Math.floor((a + b) / 2)], now);
@@ -243,44 +216,12 @@ export function initCursor(opts: CursorOpts): Cursor | null {
       if (alpha <= 0.001) continue;
       const width = trailWidth(age);
 
-      const blur = coreBlur(age);
-      coreCtx.filter = blur < 0.05 ? 'none' : `blur(${blur}px)`;
       coreCtx.globalAlpha = alpha;
       coreCtx.lineWidth = width;
       strokeBand(coreCtx, sm, a, b);
-
-      bleedCtx.globalAlpha = alpha * BLEED_ALPHA_MULT;
-      bleedCtx.lineWidth = width * BLEED_WIDTH_MULT;
-      strokeBand(bleedCtx, sm, a, b);
     }
 
-    coreCtx.filter = 'none';
     coreCtx.globalAlpha = 1;
-    bleedCtx.globalAlpha = 1;
-  };
-
-  const updateGlass = (now: number): void => {
-    if (!glassNodes.length) return;
-    for (let k = 0; k < glassNodes.length; k++) {
-      const node = glassNodes[k];
-      if (points.length < 2) {
-        node.style.opacity = '0';
-        continue;
-      }
-      const idx = Math.min(
-        points.length - 1,
-        Math.floor(GLASS_POSITIONS[k] * (points.length - 1)),
-      );
-      const p = points[idx];
-      const strength = glassStrength(pointAge(p, now));
-      if (strength <= 0.01) {
-        node.style.opacity = '0';
-        continue;
-      }
-      node.style.opacity = '1';
-      node.style.backdropFilter = `blur(${strength}px)`;
-      node.style.transform = `translate3d(${p.x}px, ${p.y}px, 0) translate(-50%, -50%)`;
-    }
   };
 
   /** RD-pull progress, ramping while down and easing out after release. */
@@ -348,7 +289,6 @@ export function initCursor(opts: CursorOpts): Cursor | null {
     holdValue = currentHold(now);
     shapeValue = currentShape(now);
     drawTrail(now);
-    updateGlass(now);
     updateHold();
     // Park once there is nothing left to animate; pointermove restarts us.
     if (visible && (points.length > 0 || holdSince !== null || holdValue > 0.001 || shapeValue > 0.001)) {

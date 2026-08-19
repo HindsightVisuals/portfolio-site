@@ -36,6 +36,10 @@ export const TILE_W = 7;
 export const TILE_H = 4.4;
 export const TILE_GAP = 0.9;
 export const HOVER_SCALE = 1.02;
+/** Tile border at rest, in px (Adam, 2026-08-18). */
+export const TILE_STROKE_PX = 2;
+/** Tile border once a case study is focused — the frame thickens as you commit. */
+export const TILE_STROKE_FOCUS_PX = 5;
 const HOVER_DURATION = 0.25;
 const HOVER_EASE = 'power2.out';
 
@@ -114,6 +118,7 @@ export interface WorldLayer extends StageLayer {
   pick(ndcX: number, ndcY: number): PickResult | null;
   setTileHover(slug: string | null): void;
   setTileColor(slug: string, on: boolean): void;
+  setTileStroke(slug: string, px: number): void;
   destroy(): void;
 }
 
@@ -196,6 +201,14 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
   const tileHandles: TileMaterialHandle[] = [];
   // gsap needs an object to interpolate; each tile's saturation rides one.
   const satProxies = SLUGS.map(() => ({ v: 0 }));
+  const strokeProxies = SLUGS.map(() => ({ v: TILE_STROKE_PX }));
+  /**
+   * On-screen height of one tile, in px — the stroke is specified in px but the
+   * shader works in UV, so it needs to know how big the tile currently is.
+   * Recomputed on resize; a focused tile is framed to roughly the viewport
+   * height less its margins, which is the case the stroke width is tuned for.
+   */
+  let tilePxHeight = window.innerHeight;
   for (const dest of DESTINATIONS) {
     if (dest.id === 'home') continue; // the DOM homepage IS home — no plane
 
@@ -205,7 +218,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
       for (let i = 0; i < SLUGS.length; i++) {
         const tex = loader.load(tileStillUrl(SLUGS[i]));
         tex.anisotropy = 4;
-        const handle = makeTileMaterial(tex);
+        const handle = makeTileMaterial(tex, TILE_W / TILE_H);
         const geo = new THREE.PlaneGeometry(TILE_W, TILE_H);
         const tile = new THREE.Mesh(geo, handle.material);
         const { x, y } = tileLocalPosition(i);
@@ -213,6 +226,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
         tile.userData.slug = SLUGS[i];
         group.add(tile);
         disposables.push(tex, handle, geo);
+        handle.setStrokePx(TILE_STROKE_PX, window.innerHeight);
         tileHandles.push(handle);
         pickables.push(tile);
         tileMeshes.push(tile);
@@ -311,6 +325,25 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
      * rest; the pointer and the focused case study are the only two things that
      * put colour on it, and WorkHover arbitrates between them.
      */
+    /**
+     * Border weight, in px. 2 at rest, thickening as a tile becomes the focused
+     * case study so the frame reads as committed rather than hovered.
+     */
+    setTileStroke(slug: string, px: number): void {
+      const i = tileIndexForSlug(slug);
+      if (i < 0) return;
+      const proxy = strokeProxies[i];
+      const handle = tileHandles[i];
+      if (!handle) return;
+      gsap.killTweensOf(proxy);
+      const apply = (): void => handle.setStrokePx(proxy.v, tilePxHeight);
+      if (opts.reducedMotion) {
+        proxy.v = px;
+        apply();
+        return;
+      }
+      gsap.to(proxy, { v: px, duration: HOVER_DURATION, ease: HOVER_EASE, onUpdate: apply });
+    },
     setTileColor(slug: string, on: boolean): void {
       const i = tileIndexForSlug(slug);
       if (i < 0) return;
@@ -359,11 +392,16 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
     resize(width: number, height: number): void {
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      tilePxHeight = height;
+      for (let i = 0; i < tileHandles.length; i++) {
+        tileHandles[i].setStrokePx(strokeProxies[i].v, tilePxHeight);
+      }
     },
     destroy(): void {
       atmosphere.destroy();
       for (const mesh of tileMeshes) gsap.killTweensOf(mesh.scale);
       for (const p of satProxies) gsap.killTweensOf(p);
+      for (const p of strokeProxies) gsap.killTweensOf(p);
       for (const d of disposables) d.dispose();
       homeMock.traverse((o) => {
         if (o instanceof THREE.Mesh) {

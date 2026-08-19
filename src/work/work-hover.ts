@@ -7,7 +7,15 @@
  * already runs rather than casting a second ray of its own.
  */
 
-import { CAMERA_FOV, TILE_H, TILE_W, tileIndexForSlug, tileLocalPosition } from '../three/world';
+import {
+  CAMERA_FOV,
+  TILE_H,
+  TILE_STROKE_FOCUS_PX,
+  TILE_STROKE_PX,
+  TILE_W,
+  tileIndexForSlug,
+  tileLocalPosition,
+} from '../three/world';
 import type { WorldLayer } from '../three/world';
 import type { CameraDirector } from '../three/camera-director';
 import { distanceForFraming, effectiveMarginPx, worldPerPx } from '../three/framing';
@@ -114,8 +122,13 @@ export function initWorkHover({
       if (slug === focused) return;
       // Release the outgoing tile unless the pointer is still sitting on it.
       if (focused !== null && focused !== hovered) world.setTileColor(focused, false);
+      // The border thickens on the focused tile and relaxes on the one leaving.
+      if (focused !== null) world.setTileStroke(focused, TILE_STROKE_PX);
       focused = slug;
-      if (focused !== null) world.setTileColor(focused, true);
+      if (focused !== null) {
+        world.setTileColor(focused, true);
+        world.setTileStroke(focused, TILE_STROKE_FOCUS_PX);
+      }
       applyPeek();
       applyPanel();
     },

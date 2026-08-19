@@ -18,10 +18,15 @@ export const TRAIL_HEAD_WIDTH = 10;
 export const TRAIL_TAIL_WIDTH = 2;
 
 /**
- * Peak per-band blur on the core trail, in CSS px. Replaces the original
- * three-bucket quantisation, which was visible as banding.
+ * Peak per-band blur on the core trail, in CSS px.
+ *
+ * ZERO on purpose (Adam, 2026-08-18: "kill the blur on the mouse effect").
+ * Kept as a constant rather than deleted because coreBlur() still shapes the
+ * ramp and the value is the one dial that brings the softness back. It was also
+ * the most expensive thing on the page: a canvas 2D blur filter per age band,
+ * per frame, over a full-viewport canvas — at 4K that alone can cost the frame.
  */
-export const CORE_MAX_BLUR_PX = 7;
+export const CORE_MAX_BLUR_PX = 0;
 /**
  * How many age bands the trail is drawn in. Each band is ONE stroke() call, so
  * a self-overlapping path composites once and cannot build up alpha at the
@@ -31,9 +36,10 @@ export const CORE_MAX_BLUR_PX = 7;
 export const TRAIL_BANDS = 12;
 /** Catmull-Rom subdivisions per input segment. Turns the polyline into a curve. */
 export const TRAIL_SUBDIVISIONS = 6;
-/** The bleed layer's stroke width, as a multiple of the core width. */
+/** The bleed layer's stroke width, as a multiple of the core width. Unused
+ *  while the bleed canvas is gone — see cursor.ts. */
 export const BLEED_WIDTH_MULT = 3.5;
-/** The bleed layer's alpha, as a multiple of the core alpha. */
+/** The bleed layer's alpha, as a multiple of the core alpha. Unused, as above. */
 export const BLEED_ALPHA_MULT = 0.75;
 
 /** Age at which the glass frost is strongest — late, so it peaks as the green dies. */
@@ -45,7 +51,7 @@ export const GLASS_MAX_BLUR_PX = 5;
 
 /** Time to reach a full hold, in ms. Long on purpose — the pull is a slow
  * build, and the RD advection needs seconds of sim steps to accumulate. */
-export const HOLD_RAMP_MS = 5500;
+export const HOLD_RAMP_MS = 2800;
 /**
  * Time for the CURSOR's shape morph to complete, in ms — deliberately much
  * shorter than HOLD_RAMP_MS.
@@ -56,7 +62,7 @@ export const HOLD_RAMP_MS = 5500;
  * the press straight away. So they are separate ramps over the same press:
  * shape lands early, the field keeps gathering underneath.
  */
-export const HOLD_SHAPE_RAMP_MS = 900;
+export const HOLD_SHAPE_RAMP_MS = 2200;
 /** Ease-out duration after release, in ms. */
 export const HOLD_RELEASE_MS = 320;
 /** Diameter at shape-morph 0 — matches the hover square so the morph is continuous. */
