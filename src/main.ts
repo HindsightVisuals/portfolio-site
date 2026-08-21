@@ -43,6 +43,9 @@ import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
 import { initFerro, type FerroController } from './ferro/ferro';
 import type { Rect } from './ferro/ferro-placement';
+import { countWords, wordStrength } from './ferro/ferro-influence';
+import { FERRO_DEFAULTS } from './ferro/ferro-field';
+import { submitInquiry } from './contact/submit';
 import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
@@ -328,6 +331,28 @@ if (lab === 'ferro') {
       ferro.show();
     };
 
+    /**
+     * The payoff: the transmission the visitor built by typing is absorbed
+     * in one gulp. Strength jumps, then settles back to rest.
+     *
+     * Reduced motion gets the state change with no spike — the confirmation
+     * is the information, the lurch is the decoration (spec §8).
+     */
+    const SPIKE_TO = 2.6;
+    const spikeState = { v: SPIKE_TO };
+    const spikeFerro = (): void => {
+      if (!ferro || reducedMotion) return;
+      spikeState.v = SPIKE_TO;
+      ferro.setStrength(SPIKE_TO);
+      gsap.killTweensOf(spikeState); // two tweens fighting over one value is a documented failure mode here
+      gsap.to(spikeState, {
+        v: FERRO_DEFAULTS.strength,
+        duration: 1.1,
+        ease: 'power3.out',
+        onUpdate: () => ferro?.setStrength(spikeState.v),
+      });
+    };
+
     const openContact = async (): Promise<void> => {
       const m = await loadPageMods();
       if (takeover.isOpen()) return;
@@ -344,6 +369,26 @@ if (lab === 'ferro') {
       // already open, so the blob is never in the corner when we get here. The
       // corner → beat-4 travel (spec §3) arrives with Plan 3's transition.
       placeFerroForContact(page, { travel: false });
+
+      // Figma 85:1418: "this ferro would change/be affected via displacement
+      // for each word typed in the send a signal modal, matching our
+      // 'building a transmission as you type' model." Word COMPLETION, not
+      // keystrokes — countWords ignores a trailing partial word, so the
+      // field only moves once a word is finished.
+      page.form.onProjectInput((text) => {
+        ferro?.setStrength(wordStrength(countWords(text)));
+      });
+
+      page.form.onSubmit((inquiry) => {
+        const result = submitInquiry(inquiry);
+        if (!result.ok && result.reason === 'invalid') return; // the form paints its own errors
+        if (result.ok) {
+          spikeFerro();
+          page.form.showConfirmation('sent');
+        } else {
+          page.form.showConfirmation('transport-failed');
+        }
+      });
     };
 
     const openAbout = async (): Promise<void> => {

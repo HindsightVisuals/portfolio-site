@@ -239,3 +239,57 @@
   letter-spacing: 2.52px;
   cursor: pointer;
 }
+
+/* --- fallback address + confirmation (Task 8) -----------------------------
+ * `mailto:` can't confirm delivery (contact/submit.ts's "THE SEAM" doc
+ * comment), so the real address has to be readable on the page at all
+ * times — not only after a submit — for the visitor whose browser has no
+ * mail client and does nothing when they click send. */
+.contact-submit-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.contact-fallback {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--contact-label-ink);
+}
+
+.contact-mailto-link {
+  color: var(--contact-chip-ink);
+}
+
+/* Confirmation replaces the fields visually once the form carries a
+ * data-confirmation outcome — the controls themselves are left in the DOM
+ * with their values untouched (contact-form.ts never clears them), only
+ * hidden, so "everything you typed is still in this form" is literally
+ * true underneath. */
+.contact-form[data-confirmation] .contact-row,
+.contact-form[data-confirmation] .contact-field--project,
+.contact-form[data-confirmation] .contact-chip-section,
+.contact-form[data-confirmation] .contact-submit-row {
+  display: none;
+}
+
+.contact-confirmation-heading {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.15;
+  text-transform: lowercase;
+}
+
+.contact-confirmation-text {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--contact-label-ink);
+  max-width: 420px;
+}
+
+.contact-confirmation .contact-mailto-link {
+  color: #fff;
+}

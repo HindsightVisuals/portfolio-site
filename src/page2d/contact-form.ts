@@ -15,7 +15,7 @@
  * plumbing only: no unit tests cover it, by design (see the brief).
  */
 
-import { BUDGETS, SERVICES, FIELD_MAX, PROJECT_MAX } from '../contact/inquiry';
+import { BUDGETS, SERVICES, FIELD_MAX, PROJECT_MAX, CONTACT_EMAIL } from '../contact/inquiry';
 import type { Inquiry } from '../contact/inquiry';
 import { emptyInquiry, validate } from '../contact/form-model';
 import type { FieldId, Errors } from '../contact/form-model';
@@ -26,11 +26,12 @@ export interface ContactForm {
   onProjectInput(cb: (text: string) => void): void;
   onSubmit(cb: (inquiry: Inquiry) => void): void;
   /**
-   * STUB. `mailto:` cannot confirm delivery, so the actual copy and
-   * behaviour for each outcome is deliberately deferred to a later task
-   * rather than invented here — this only exists so callers (the submit
-   * wiring landing in a later task) have a stable method to call. It
-   * currently just tags the form with the outcome; it renders no copy.
+   * `mailto:` is fire-and-forget — it can only confirm the URL was handed to
+   * the browser, never that a message was delivered. Both outcomes below are
+   * worded to match that (spec §8): neither claims delivery, and the form's
+   * values are left untouched (see `submitInquiry` in `contact/submit.ts`
+   * for why clearing would be actively harmful on the one failure mode this
+   * code cannot detect).
    */
   showConfirmation(kind: 'sent' | 'transport-failed'): void;
   destroy(): void;
@@ -69,6 +70,22 @@ const REQUIRED: Record<FieldId, boolean> = {
 };
 
 const CHIP_HEADING = 'what services are you interested in?';
+
+/**
+ * `mailto:` is the only transport (see `contact/submit.ts`'s "THE SEAM" doc
+ * comment) and it cannot confirm delivery, so this address has to stay
+ * visible on the page as the actual fallback — both permanently, next to the
+ * send button, and repeated inside `showConfirmation`'s copy. `CONTACT_EMAIL`
+ * is the same constant `mailto.ts` builds the `mailto:` URL from — one source
+ * of truth for the address, not a second copy of the string.
+ */
+function buildMailtoLink(): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.href = `mailto:${CONTACT_EMAIL}`;
+  link.className = 'contact-mailto-link';
+  link.textContent = CONTACT_EMAIL;
+  return link;
+}
 
 type TextControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
@@ -281,7 +298,35 @@ export function buildContactForm(opts: ContactFormOpts): ContactForm {
   submit.className = 'contact-submit';
   submit.textContent = 'Send Message';
 
-  el.append(row1, row2, projectField.wrapper, chipSection, submit);
+  // Permanent fallback (spec §8): a visitor with no mail client sees the
+  // browser do nothing when `mailto:` fails silently, so the address has to
+  // be readable here regardless of whether showConfirmation ever runs.
+  const fallback = document.createElement('p');
+  fallback.className = 'contact-fallback';
+  fallback.append('Prefer email? Write to ', buildMailtoLink(), ' directly.');
+
+  const submitRow = document.createElement('div');
+  submitRow.className = 'contact-submit-row';
+  submitRow.append(submit, fallback);
+
+  // --- confirmation (Step 4) ---
+  // Built once, hidden until showConfirmation() runs; the fields stay in the
+  // DOM underneath with their values intact (see the ContactForm doc
+  // comment above — no branch here ever calls el.reset() or clears a
+  // control).
+  const confirmationHeading = document.createElement('h2');
+  confirmationHeading.className = 'contact-confirmation-heading';
+
+  const confirmationText = document.createElement('p');
+  confirmationText.className = 'contact-confirmation-text';
+
+  const confirmation = document.createElement('div');
+  confirmation.className = 'contact-confirmation';
+  confirmation.setAttribute('role', 'status');
+  confirmation.hidden = true;
+  confirmation.append(confirmationHeading, confirmationText);
+
+  el.append(row1, row2, projectField.wrapper, chipSection, submitRow, confirmation);
 
   const read = (): Inquiry => {
     const services: string[] = [];
@@ -370,9 +415,23 @@ export function buildContactForm(opts: ContactFormOpts): ContactForm {
       submitCbs.add(cb);
     },
     showConfirmation(kind) {
-      // STUB — see the ContactForm.showConfirmation doc comment above. Do
-      // not add visible copy here; a later task owns that wording.
+      // `el.dataset.confirmation` is what contact.css hooks to swap the
+      // fields out for the confirmation block below — see the `[data-
+      // confirmation]` rules there. Nothing here touches a control's
+      // `.value`, so the visitor's typed message survives underneath.
       el.dataset.confirmation = kind;
+      if (kind === 'sent') {
+        confirmationHeading.textContent = 'your mail client should have opened';
+        confirmationText.replaceChildren(
+          "If it didn't, write to ",
+          buildMailtoLink(),
+          ' directly — everything you typed is still in this form.',
+        );
+      } else {
+        confirmationHeading.textContent = "we couldn't open your mail client";
+        confirmationText.replaceChildren('Write to ', buildMailtoLink(), ' directly — everything you typed is still in this form.');
+      }
+      confirmation.hidden = false;
     },
     destroy() {
       for (const fn of cleanups) fn();
