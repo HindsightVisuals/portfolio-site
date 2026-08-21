@@ -18,6 +18,13 @@ const KILL = 0.062;
 const EDGE_GREY = 0.949; // ≈ #f2f2f2, matches Figma gradient stops
 const CENTER_WHITE = 1.0;
 const PATTERN_SHADE = 0.91; // ≈ 9% darker than white
+/* Masked-surface tone ramp. These are FOREGROUND values and have nothing to do
+ * with the near-invisible EDGE/CENTER/PATTERN ramp above, which exists to make
+ * the full-bleed background disappear. A masked surface is a thing you are
+ * meant to see; reusing the background's ramp for one produces ~6% contrast on
+ * a white page. Defaults match the shipped case study footer mark. */
+const MASK_GROUND = 0.3;
+const MASK_INK = 0.95;
 /** Global pattern visibility: scales the pattern-vs-gradient contrast (1 = full). */
 const PATTERN_OPACITY = 0.5;
 /** Mouse erase brush radius, in sim-grid pixels. Pattern parts around the
@@ -104,6 +111,7 @@ uniform float uAspect;    // width/height, so the pull lens stays circular
 uniform vec2 uAdvect;     // per-step uv drift; scroll travel, 0 = off
 uniform sampler2D uMask;  // 1 = reaction allowed, 0 = forbidden
 uniform float uUseMask;   // 0 = unmasked field (the homepage background)
+uniform float uMaskMix;   // 0 = mask has no hold, 1 = full confinement
 
 void main() {
   // Press-and-hold pull, applied INSIDE the feedback loop rather than to the
@@ -147,8 +155,14 @@ void main() {
   // so the pattern is genuinely grown inside the shape rather than being a
   // window cropped out of a larger field. A is pinned to 1 (fully fed) outside
   // so nothing can seed there either.
+  //
+  // uMaskMix ramps that hold on and off. At 0 the mask has no grip and the
+  // field is unbounded; at 1 it is fully confined. Because the boundary is
+  // absorbing rather than a crop, ramping the mix IS the morph: raise it and
+  // the pattern dies back into the shape, lower it and the reaction grows
+  // back out of it. Neither direction is animated by hand.
   if (uUseMask > 0.5) {
-    float allow = texture2D(uMask, vUv).r;
+    float allow = mix(1.0, texture2D(uMask, vUv).r, uMaskMix);
     nextB *= allow;
     nextA = mix(1.0, nextA, allow);
   }
@@ -181,6 +195,9 @@ uniform vec2 uZoom;   // per-axis; x != y is the travel stretch
 uniform vec2 uOffset;
 uniform sampler2D uMask;
 uniform float uUseMask;
+uniform float uMaskMix;
+uniform float uMaskGround;  // masked-branch tone where there is no pattern
+uniform float uMaskInk;     // …and where there is
 
 void main() {
   // grey -> white -> grey across x
@@ -203,9 +220,13 @@ void main() {
   // full-bleed background, and inside letterforms sitting on a near-black page
   // it left the word all but invisible. A mid-grey body that the pattern
   // lightens matches how the mark is drawn in Figma.
+  // Tone blends by uMaskMix so a morph crossfades instead of popping — but
+  // ALPHA NEVER DOES. Ramping alpha from 1 meant the whole rect went partly
+  // opaque mid-morph, painting a translucent box around the letterforms.
+  // The shape is always exactly the mask.
   if (uUseMask > 0.5) {
-    float body = mix(0.30, 0.95, mask);
-    gl_FragColor = vec4(vec3(body), texture2D(uMask, vUv).r);
+    float body = mix(uMaskGround, uMaskInk, mask);
+    gl_FragColor = vec4(vec3(mix(lum, body, uMaskMix)), texture2D(uMask, vUv).r);
     return;
   }
   gl_FragColor = vec4(vec3(lum), 1.0);
@@ -217,6 +238,19 @@ export interface BackgroundOpts {
   debug: boolean;
   /** Render as a light pattern on a dark ground — the case study page. */
   invert?: boolean;
+  /**
+   * Size the sim grid and the aspect correction from the render surface rather
+   * than the window.
+   *
+   * The full-bleed background IS the window, so it leaves this off. Anything
+   * drawn into a small element must turn it on, or it runs a window-shaped
+   * simulation sampled into an element-shaped box: the pattern's feature scale
+   * comes out wrong for the element and `uAspect` ovals the pull lens.
+   *
+   * Opt-in rather than automatic so the shipped case study footer mark, which
+   * was tuned against the window-sized behaviour, does not change underfoot.
+   */
+  fitToCanvas?: boolean;
 }
 
 export interface BackgroundLayer extends StageLayer {
@@ -237,6 +271,43 @@ export interface BackgroundLayer extends StageLayer {
    * reaction genuinely dies at the boundary rather than continuing unseen.
    */
   setMask(mask: THREE.Texture | null): void;
+  /**
+   * How much grip the mask has, 0..1. Defaults to 1, so setMask() alone
+   * confines fully and existing callers are unaffected.
+   *
+   * Ramping this IS the morph. The mask boundary is absorbing, so raising the
+   * mix makes the field die back into the shape and lowering it lets the
+   * reaction grow back out — organic in both directions, with no keyframes.
+   * Non-finite values are ignored rather than written.
+   */
+  setMaskMix(mix: number): void;
+  /**
+   * Flip between dark-pattern-on-light and light-pattern-on-dark at runtime.
+   *
+   * Applies to the UNMASKED field only. The masked branch of the view shader
+   * never reads `lum`, so this is a no-op on a fully-masked surface — use
+   * setMaskTone to move a masked surface between grounds.
+   */
+  setInvert(on: boolean): void;
+  /**
+   * Tone ramp for a MASKED surface: `ground` where the field is empty, `ink`
+   * where the pattern is, both 0..1 luminance. Defaults to the case study
+   * footer's values.
+   *
+   * A masked surface needs its own ramp because the background's exists to be
+   * invisible — inheriting it puts a foreground control at ~6% contrast on a
+   * white page, which is exactly how the first contact mark shipped.
+   */
+  setMaskTone(ground: number, ink: number): void;
+  /**
+   * Inject B in a circle at a sim uv — the same mechanism the spontaneous
+   * reseed uses, aimed by a caller. Active for one sim step, then the pattern
+   * propagates outward on its own.
+   *
+   * Applied by the next update(), so it does nothing under reduced motion,
+   * where the sim never steps.
+   */
+  splatAt(u: number, v: number, radius?: number): void;
 }
 
 /** Screen UV → sim UV under the view shader's zoom + parallax offset.
@@ -331,7 +402,12 @@ export function initBackgroundLayer(
     seed: makeSeedTexture(w, h),
   });
 
-  let { w: simW, h: simH } = computeSimDims(window.innerWidth, window.innerHeight);
+  // The surface the sim is shaped by. Tracks the window unless the layer is
+  // fitted to its canvas, in which case resize() supplies the element's box.
+  let surfaceW = window.innerWidth;
+  let surfaceH = window.innerHeight;
+
+  let { w: simW, h: simH } = computeSimDims(surfaceW, surfaceH);
   let { read, write, seed } = buildSimTargets(simW, simH);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -355,6 +431,7 @@ export function initBackgroundLayer(
       uAdvect: { value: new THREE.Vector2(0, 0) },
       uMask: { value: null },
       uUseMask: { value: 0 },
+      uMaskMix: { value: 1 },
       uAspect: { value: window.innerWidth / window.innerHeight },
     },
   });
@@ -372,8 +449,12 @@ export function initBackgroundLayer(
       uOpacity: { value: PATTERN_OPACITY },
       uDebug: { value: opts.debug ? 1 : 0 },
       uInvert: { value: opts.invert ? 1 : 0 },
+      // Defaults are the values the case study footer mark was tuned with.
+      uMaskGround: { value: MASK_GROUND },
+      uMaskInk: { value: MASK_INK },
       uMask: { value: null },
       uUseMask: { value: 0 },
+      uMaskMix: { value: 1 },
       uZoom: { value: new THREE.Vector2(BASE_OVERSCAN, BASE_OVERSCAN) },
       uOffset: { value: new THREE.Vector2(0, 0) },
     },
@@ -394,7 +475,7 @@ export function initBackgroundLayer(
   for (let i = 0; i < BURN_IN_STEPS; i++) step();
 
   const rebuildSimIfNeeded = (): void => {
-    const dims = computeSimDims(window.innerWidth, window.innerHeight);
+    const dims = computeSimDims(surfaceW, surfaceH);
     if (dims.w !== simW || dims.h !== simH) {
       simW = dims.w;
       simH = dims.h;
@@ -484,6 +565,9 @@ export function initBackgroundLayer(
 
       simClock += 1 / 60;
       if (simClock >= nextSeedAt) {
+        // Pin the radius too: splatAt() borrows this uniform, and without this
+        // its radius would persist into every spontaneous reseed thereafter.
+        simMaterial.uniforms.uSeedR.value = RESEED_RADIUS;
         simMaterial.uniforms.uSeedPos.value.set(Math.random(), Math.random());
         nextSeedAt = simClock + RESEED_BASE_S + Math.random() * RESEED_JITTER_S;
       }
@@ -511,10 +595,21 @@ export function initBackgroundLayer(
       r.setRenderTarget(null);
       r.render(viewScene, camera);
     },
-    resize(): void {
+    resize(width?: number, height?: number): void {
+      if (opts.fitToCanvas) {
+        // A zero-sized box happens while an element is still laying out or is
+        // display:none; taking it would divide by zero and blank the surface.
+        if (width && height && width > 0 && height > 0) {
+          surfaceW = width;
+          surfaceH = height;
+        }
+      } else {
+        surfaceW = window.innerWidth;
+        surfaceH = window.innerHeight;
+      }
       // Aspect is applied immediately, not debounced: it only keeps the pull
       // lens circular, and a stale value would visibly oval it mid-hold.
-      simMaterial.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+      simMaterial.uniforms.uAspect.value = surfaceW / surfaceH;
       // debounce internally exactly as before, but only rebuild the sim grid —
       // renderer sizing is the stage's job now
       if (resizeTimeout !== undefined) window.clearTimeout(resizeTimeout);
@@ -549,6 +644,25 @@ export function initBackgroundLayer(
       // overwrite whatever is behind it.
       viewMaterial.transparent = !!mask;
       viewMaterial.needsUpdate = true;
+    },
+    setMaskMix(mix: number): void {
+      if (!Number.isFinite(mix)) return;
+      const v = Math.min(1, Math.max(0, mix));
+      simMaterial.uniforms.uMaskMix.value = v;
+      viewMaterial.uniforms.uMaskMix.value = v;
+    },
+    setInvert(on: boolean): void {
+      viewMaterial.uniforms.uInvert.value = on ? 1 : 0;
+    },
+    setMaskTone(ground: number, ink: number): void {
+      if (!Number.isFinite(ground) || !Number.isFinite(ink)) return;
+      viewMaterial.uniforms.uMaskGround.value = ground;
+      viewMaterial.uniforms.uMaskInk.value = ink;
+    },
+    splatAt(u: number, v: number, radius: number = RESEED_RADIUS): void {
+      if (!Number.isFinite(u) || !Number.isFinite(v) || !Number.isFinite(radius)) return;
+      simMaterial.uniforms.uSeedR.value = radius;
+      simMaterial.uniforms.uSeedPos.value.set(u, v);
     },
     setPullProvider(fn: () => number): void {
       pullProvider = fn;
