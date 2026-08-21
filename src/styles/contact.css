@@ -293,3 +293,21 @@
 .contact-confirmation .contact-mailto-link {
   color: #fff;
 }
+
+/* Adam, 2026-08-21: stack — blob above, form below, one column, page scrolls.
+ * The blob follows automatically: main.ts measures [data-ferro-frame] and hands
+ * that rect to placeAt(), so the layout owns the blob's position and this
+ * breakpoint needs no JS at all. */
+@media (max-width: 1200px) {
+  .contact-layout { flex-direction: column; }
+  .contact-modal { flex: 1 1 auto; width: 100%; }
+  /* The blob keeps a shorter frame so it is still the first thing met, without
+   * pushing the whole form below the fold. */
+  .contact-ferro-frame {
+    width: 100%;
+    max-width: 713px;
+    height: 42vh;
+    min-height: 260px;
+    margin: 0 auto;
+  }
+}

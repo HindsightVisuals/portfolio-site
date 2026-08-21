@@ -331,6 +331,16 @@ if (lab === 'ferro') {
       ferro.show();
     };
 
+    // Task 9: below 1200px the contact layout stacks and the ferro frame's
+    // pixel box moves with it. ferro.ts re-applies its OLD stored rect on
+    // resize, which is stale the instant CSS reflows the frame — re-measure
+    // the live frame instead. Registered once (not per open); a no-op when no
+    // contact page is mounted.
+    window.addEventListener('resize', () => {
+      const page = document.querySelector<HTMLElement>('.contact-page');
+      if (page) placeFerroForContact(page, { travel: false });
+    });
+
     /**
      * The payoff: the transmission the visitor built by typing is absorbed
      * in one gulp. Strength jumps, then settles back to rest.
