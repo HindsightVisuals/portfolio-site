@@ -41,6 +41,7 @@ const loadPageMods = (): Promise<TakeoverPageMods> => {
 };
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
+import { initContactMark, type ContactMark } from './home/contact-mark';
 import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
@@ -79,7 +80,10 @@ let activeCurtain: CurtainLive | null = null;
 let activeBehind: BehindPanel | null = null;
 
 // Lab mode check at the top
-if (new URLSearchParams(location.search).get('lab') === 'fly') {
+const lab = new URLSearchParams(location.search).get('lab');
+if (lab === 'ferro') {
+  void import('./lab/ferro').then((m) => m.initFerroLab());
+} else if (lab === 'fly') {
   void import('./lab/fly').then((m) => m.initFlyLab());
 } else {
   // Normal site boot
@@ -99,6 +103,9 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // F15: null on coarse pointers, where the whole system is gated off and the
     // OS cursor is left alone. Every consumer below treats null as normal.
     const cursor = initCursor({ reducedMotion });
+    // Mounted further down, once router/takeover exist; declared here so the
+    // ground-flip call sites below can reach it.
+    let contactMark: ContactMark | null = null;
     const bg = initBackgroundLayer(stage.renderer, { reducedMotion, debug }, () => {
       if (reducedMotion) stage.requestFrame();
     });
@@ -160,6 +167,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         if (mode === 'world') {
           // Back to the light world; the wall hover takes over from here.
           cursor?.setOnDark(false);
+          contactMark?.setInvert(false);
           activeRevealCleanup?.();
           activeRevealCleanup = null;
           activeStrip?.destroy();
@@ -260,6 +268,7 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       });
       void takeover.open(page);
       cursor?.setOnDark(true); // the case study page inverts the palette
+      contactMark?.setInvert(true); // …and the mark rides above it
       activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
       activeRevealCleanup = m.mountReveal(page, { reducedMotion });
       activeStrip?.destroy();
@@ -278,6 +287,19 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         reducedMotion,
         setCursorLabel: (l) => cursor?.setLabel(l),
       });
+    };
+
+    const openContact = async (): Promise<void> => {
+      const m = await loadPageMods();
+      if (takeover.isOpen()) return;
+      const page = m.buildContact({
+        reducedMotion,
+        navbar: makeTakeoverNavbar(m),
+        deferReveal: true,
+      });
+      void takeover.open(page);
+      activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
+      activeRevealCleanup = m.mountReveal(page, { reducedMotion });
     };
 
     const openAbout = async (): Promise<void> => {
@@ -307,6 +329,29 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       if (director.isFocused() && slug === slugForPath(location.pathname)) void openCaseStudy(slug);
       else navToProject(slug);
     };
+    // The contact mark is a summon, not a journey: it opens over wherever you
+    // already are, and closing puts you back there. Deliberately NOT the
+    // two-step activateTile/activateAbout convention — those frame a screen you
+    // can already see, and a second click opens it. The mark is reachable from
+    // places where contact is not on screen at all, so a first click that only
+    // flew the camera would read as a dead press.
+    //
+    // It also does NOT fly the camera underneath, and that is a history
+    // constraint as much as a design one. router.navigate() does not push;
+    // the router pushes in onArrive, when the ~2s flight lands. Firing a
+    // flight and then opening would push /contact ON TOP of the takeover's own
+    // marker entry, so takeover.close()'s topIsTakeover() guard would be false,
+    // the marker would be orphaned, and the back button would go dead after
+    // close. Summon and travel stay separate: the mark overlays, while scroll /
+    // deep link / About CTA / footer still travel to contact as a place.
+    const activateContact = async (): Promise<void> => {
+      if (takeover.isOpen()) {
+        await takeover.close();
+        await afterTakeoverHistoryUnwind();
+      }
+      void openContact();
+    };
+
     const activateAbout = (): void => {
       if (takeover.isOpen()) return;
       if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) void openAbout();
@@ -464,6 +509,11 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       slugs: SLUGS,
       onTile: activateTile,
       onAbout: activateAbout,
+    });
+
+    contactMark = initContactMark(document.body, {
+      reducedMotion,
+      onActivate: () => void activateContact(),
     });
 
     const bootDest = destForPath(location.pathname) ?? 'home';

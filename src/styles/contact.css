@@ -1,0 +1,130 @@
+/* --- contact page (F12) ---------------------------------------------------
+ * Pass 1 layout. Deliberately conventional: it borrows the About page's
+ * 96px/48px section rhythm and the case study's mono tag chips rather than
+ * introducing a look of its own, because the real design comes from Figma
+ * (Design System 55:249). This exists so the page reads as part of the site
+ * instead of as unstyled browser defaults — nothing here is art direction.
+ *
+ * All content sits inside `.takeover-body`, which paints the ground; the
+ * sections below paint nothing but their own rules. */
+
+.contact-page section {
+  padding: 96px 48px;
+}
+
+/* The page has to fill the takeover even when the content is short, or the
+ * ground stops partway down and the 3D world shows through beneath it — which
+ * is exactly what it did.
+ *
+ * `.takeover-body`'s own `min-height: calc(100% - 64px)` cannot do this alone:
+ * a percentage min-height resolves against the parent's height, and the
+ * article's height is auto. `.takeover` IS definite (fixed, inset 0), so the
+ * article can take 100% from it and hand the remainder down. */
+.contact-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.contact-page .takeover-body {
+  flex: 1;
+}
+
+.contact-hero {
+  border-bottom: 1px solid #eaeaea;
+}
+
+.contact-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(38px, 6.9vw, 132px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.contact-availability {
+  margin: 24px 0 0;
+  max-width: 64ch;
+  font-family: var(--font-mono);
+  font-size: clamp(13px, 0.9vw, 16px);
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+/* Two chips per strip, so they need a gap — without one they render as a
+ * single run-on word ("PRIMARYEMAIL"). */
+.contact-tags {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.contact-tag {
+  border: 1px solid #d4d4d4;
+  border-radius: 2px;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.26px;
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.contact-direct {
+  border-bottom: 1px solid #eaeaea;
+}
+
+/* Never the UA's blue underline — these are display type on this page. */
+.contact-email {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(20px, 2.4vw, 44px);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  transition: border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.contact-email:hover,
+.contact-email:focus-visible {
+  border-bottom-color: var(--ink);
+}
+
+.contact-social-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contact-link {
+  font-family: var(--font-mono);
+  font-size: clamp(13px, 0.9vw, 16px);
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid #d4d4d4;
+  transition: border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.contact-link:hover,
+.contact-link:focus-visible {
+  border-bottom-color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .contact-page section {
+    padding: 56px 24px;
+  }
+
+  .contact-social-list {
+    gap: 20px;
+  }
+}
