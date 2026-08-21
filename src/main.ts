@@ -307,12 +307,44 @@ if (lab === 'ferro') {
       });
     };
 
-    // openContact() is gone with the summon that was its only caller. The
-    // Pass-1 contact takeover it opened is a placeholder that beat 4 replaces
-    // wholesale (architecture spec §7.2), so Plan 2 builds its successor rather
-    // than inheriting it. `buildContact` still ships from the page2d chunk.
-    // Contact-as-a-place is unaffected: it is a camera destination in the
-    // world, which the footer, the nav and a /contact deep link all still fly to.
+    /**
+     * The blob's beat-4 home is read off the layout, not recomputed from the spec's
+     * numbers — so the reflow in Task 9 moves the blob with no extra wiring.
+     *
+     * Not instant: if a case study was already open, the blob is in the corner and
+     * this is the travel described in spec §3. placeAt tweens it. Arriving from the
+     * world it is hidden, so show() after placing avoids a visible slide from a
+     * stale rect.
+     */
+    const placeFerroForContact = (page: HTMLElement, opts: { travel: boolean }): void => {
+      // Literal, not an imported constant: contact.ts exports FERRO_FRAME_SELECTOR,
+      // but a static import from main.ts would drag contact.ts (and its stylesheet)
+      // into the eager bundle — route modules stay in the lazy loadPageMods() chunk.
+      const frame = page.querySelector<HTMLElement>('[data-ferro-frame]');
+      if (!frame || !ferro) return;
+      const r = frame.getBoundingClientRect();
+      void ferro.placeAt({ x: r.x, y: r.y, w: r.width, h: r.height }, { instant: !opts.travel });
+      ferro.setGlow(false); // beat 4's blob is the subject, not a corner accent
+      ferro.show();
+    };
+
+    const openContact = async (): Promise<void> => {
+      const m = await loadPageMods();
+      if (takeover.isOpen()) return;
+      const page = m.buildContact({
+        reducedMotion,
+        navbar: makeTakeoverNavbar(m),
+        deferReveal: true,
+      });
+      void takeover.open(page);
+      cursor?.setOnDark(true); // beat 4 is a black page
+      activeRevealCleanup?.();
+      activeRevealCleanup = m.mountReveal(page, { reducedMotion });
+      // Always instant in Plan 2 — openContact() returns early if a takeover is
+      // already open, so the blob is never in the corner when we get here. The
+      // corner → beat-4 travel (spec §3) arrives with Plan 3's transition.
+      placeFerroForContact(page, { travel: false });
+    };
 
     const openAbout = async (): Promise<void> => {
       const m = await loadPageMods();
@@ -349,10 +381,12 @@ if (lab === 'ferro') {
     // own history marker and kill the back button. See
     // docs/superpowers/specs/2026-08-21-contact-flow-architecture.md §7.
     //
-    // Until Plan 3 builds the nav emblem that triggers that transition, there
-    // is no contact PAGE — see the openContact note above. Contact as a place
-    // in the world is untouched: the footer, the nav and a /contact deep link
-    // all still fly the camera to its screen, so the scroll loop still closes.
+    // Until Plan 3 builds the nav emblem that triggers that transition, /contact
+    // is entered by the router flying the camera to the contact screen and
+    // opening the page on arrival (see the director.onArrive handler below) —
+    // openContact() above is that page. Contact as a place in the world is
+    // otherwise untouched: the footer, the nav and a /contact deep link all
+    // still fly the camera to its screen, so the scroll loop still closes.
 
     const activateAbout = (): void => {
       if (takeover.isOpen()) return;
@@ -496,6 +530,16 @@ if (lab === 'ferro') {
         homeVisibility.update(0);
         stage.requestFrame();
       }
+    });
+
+    // /contact opens beat 4 on arrival, not before. By the time onArrive fires
+    // the router has already pushed /contact, so the takeover's own history
+    // marker lands ON TOP of /contact and takeover.close()'s topIsTakeover()
+    // guard holds — the back button works. This also covers the deep-link
+    // boot: initRouter calls go(initial, true) for a deep link, which arrives
+    // and triggers this same handler.
+    director.onArrive((id) => {
+      if (id === 'contact' && !takeover.isOpen()) void openContact();
     });
 
     // First render must follow initRouter: under reduced motion the router's
