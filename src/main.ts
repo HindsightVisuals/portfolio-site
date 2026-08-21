@@ -626,6 +626,15 @@ if (lab === 'ferro') {
     ferro = initFerro({ reducedMotion });
 
     const bootDest = destForPath(location.pathname) ?? 'home';
+
+    // Reduced motion CUTS instead of flying: initRouter's boot navigation calls
+    // director.jumpTo(), which emits arrive synchronously — before the onArrive
+    // handler above was registered. A /contact deep link would therefore never
+    // open its page for reduced-motion users. Normal motion is unaffected: the
+    // ~2s flight lands long after registration, and the page must wait for it
+    // rather than opening instantly, which is why this is gated.
+    if (reducedMotion && bootDest === 'contact' && !takeover.isOpen()) void openContact();
+
     // intro is a single-shot writer racing bindHomeVisibility; kill it the moment
     // the camera leaves home so only one writer touches tagline/reticle opacity
     let introInterrupted = false;
