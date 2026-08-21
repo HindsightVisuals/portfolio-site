@@ -42,6 +42,8 @@ const loadPageMods = (): Promise<TakeoverPageMods> => {
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
 import { initContactMark, type ContactMark } from './home/contact-mark';
+import { initFerro, type FerroController } from './ferro/ferro';
+import type { Rect } from './ferro/ferro-placement';
 import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
@@ -106,6 +108,17 @@ if (lab === 'ferro') {
     // Mounted further down, once router/takeover exist; declared here so the
     // ground-flip call sites below can reach it.
     let contactMark: ContactMark | null = null;
+    let ferro: FerroController | null = null;
+
+    /**
+     * The blob's home on a 2D page. From *Work - Contact Ferro Placement*
+     * (`87:2240`): 227x218 at x1693,y862 in a 1920x1080 frame — i.e. flush to
+     * the bottom-right margin, sized ~11.8% of viewport width.
+     */
+    const cornerRect = (): Rect => {
+      const w = Math.round(window.innerWidth * 0.118);
+      return { x: window.innerWidth - w - 48, y: window.innerHeight - w - 48, w, h: w };
+    };
     const bg = initBackgroundLayer(stage.renderer, { reducedMotion, debug }, () => {
       if (reducedMotion) stage.requestFrame();
     });
@@ -160,6 +173,15 @@ if (lab === 'ferro') {
         // own mode. (scrollNav is null under reduced motion — no wheel nav.)
         inputMode = mode;
         scrollNav?.setMode(mode);
+        // The ferrofluid rides 2D pages only — the home world has the synth nav
+        // for that job (architecture spec §1).
+        if (mode === 'takeover') {
+          void ferro?.placeAt(cornerRect(), { instant: true });
+          ferro?.setGlow(true);
+          ferro?.show();
+        } else {
+          ferro?.hide();
+        }
         // A takeover with no window onto the world can pause it immediately
         // (About). A case study keeps it alive until its curtain scrolls off —
         // see the scroll handler below, which owns the pause from then on.
@@ -515,6 +537,9 @@ if (lab === 'ferro') {
       reducedMotion,
       onActivate: () => void activateContact(),
     });
+
+    // One stage, mounted once, hidden until a 2D page asks for it.
+    ferro = initFerro({ reducedMotion });
 
     const bootDest = destForPath(location.pathname) ?? 'home';
     // intro is a single-shot writer racing bindHomeVisibility; kill it the moment
