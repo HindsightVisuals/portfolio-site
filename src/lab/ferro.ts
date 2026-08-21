@@ -155,7 +155,7 @@ function spherifiedCube(radius: number, segments: number): THREE.BufferGeometry 
 }
 
 export function initFerroLab(): void {
-  for (const sel of ['.tagline', '.reticle-field', '.chrome', '.screen-proxies', '.contact-mark']) {
+  for (const sel of ['.tagline', '.reticle-field', '.chrome', '.screen-proxies']) {
     document.querySelector<HTMLElement>(sel)?.style.setProperty('display', 'none');
   }
 

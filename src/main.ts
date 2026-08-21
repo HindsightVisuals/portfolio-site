@@ -41,7 +41,6 @@ const loadPageMods = (): Promise<TakeoverPageMods> => {
 };
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
-import { initContactMark, type ContactMark } from './home/contact-mark';
 import { initFerro, type FerroController } from './ferro/ferro';
 import type { Rect } from './ferro/ferro-placement';
 import { isDarkTile } from './work/tiles';
@@ -107,7 +106,6 @@ if (lab === 'ferro') {
     const cursor = initCursor({ reducedMotion });
     // Mounted further down, once router/takeover exist; declared here so the
     // ground-flip call sites below can reach it.
-    let contactMark: ContactMark | null = null;
     let ferro: FerroController | null = null;
 
     /**
@@ -189,7 +187,6 @@ if (lab === 'ferro') {
         if (mode === 'world') {
           // Back to the light world; the wall hover takes over from here.
           cursor?.setOnDark(false);
-          contactMark?.setInvert(false);
           activeRevealCleanup?.();
           activeRevealCleanup = null;
           activeStrip?.destroy();
@@ -290,7 +287,6 @@ if (lab === 'ferro') {
       });
       void takeover.open(page);
       cursor?.setOnDark(true); // the case study page inverts the palette
-      contactMark?.setInvert(true); // …and the mark rides above it
       activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
       activeRevealCleanup = m.mountReveal(page, { reducedMotion });
       activeStrip?.destroy();
@@ -311,18 +307,12 @@ if (lab === 'ferro') {
       });
     };
 
-    const openContact = async (): Promise<void> => {
-      const m = await loadPageMods();
-      if (takeover.isOpen()) return;
-      const page = m.buildContact({
-        reducedMotion,
-        navbar: makeTakeoverNavbar(m),
-        deferReveal: true,
-      });
-      void takeover.open(page);
-      activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
-      activeRevealCleanup = m.mountReveal(page, { reducedMotion });
-    };
+    // openContact() is gone with the summon that was its only caller. The
+    // Pass-1 contact takeover it opened is a placeholder that beat 4 replaces
+    // wholesale (architecture spec §7.2), so Plan 2 builds its successor rather
+    // than inheriting it. `buildContact` still ships from the page2d chunk.
+    // Contact-as-a-place is unaffected: it is a camera destination in the
+    // world, which the footer, the nav and a /contact deep link all still fly to.
 
     const openAbout = async (): Promise<void> => {
       const m = await loadPageMods();
@@ -351,28 +341,18 @@ if (lab === 'ferro') {
       if (director.isFocused() && slug === slugForPath(location.pathname)) void openCaseStudy(slug);
       else navToProject(slug);
     };
-    // The contact mark is a summon, not a journey: it opens over wherever you
-    // already are, and closing puts you back there. Deliberately NOT the
-    // two-step activateTile/activateAbout convention — those frame a screen you
-    // can already see, and a second click opens it. The mark is reachable from
-    // places where contact is not on screen at all, so a first click that only
-    // flew the camera would read as a dead press.
+    // The contact SUMMON is gone with the RD mark. Contact is a real routed
+    // page now, entered through the beat 2-4 transition, so the ordering bug
+    // that forced the summon to leave the URL alone no longer applies: the
+    // route is pushed at the START of the transition rather than by onArrive
+    // ~2s later, which is what used to land /contact on top of the takeover's
+    // own history marker and kill the back button. See
+    // docs/superpowers/specs/2026-08-21-contact-flow-architecture.md §7.
     //
-    // It also does NOT fly the camera underneath, and that is a history
-    // constraint as much as a design one. router.navigate() does not push;
-    // the router pushes in onArrive, when the ~2s flight lands. Firing a
-    // flight and then opening would push /contact ON TOP of the takeover's own
-    // marker entry, so takeover.close()'s topIsTakeover() guard would be false,
-    // the marker would be orphaned, and the back button would go dead after
-    // close. Summon and travel stay separate: the mark overlays, while scroll /
-    // deep link / About CTA / footer still travel to contact as a place.
-    const activateContact = async (): Promise<void> => {
-      if (takeover.isOpen()) {
-        await takeover.close();
-        await afterTakeoverHistoryUnwind();
-      }
-      void openContact();
-    };
+    // Until Plan 3 builds the nav emblem that triggers that transition, there
+    // is no contact PAGE — see the openContact note above. Contact as a place
+    // in the world is untouched: the footer, the nav and a /contact deep link
+    // all still fly the camera to its screen, so the scroll loop still closes.
 
     const activateAbout = (): void => {
       if (takeover.isOpen()) return;
@@ -541,11 +521,6 @@ if (lab === 'ferro') {
       slugs: SLUGS,
       onTile: activateTile,
       onAbout: activateAbout,
-    });
-
-    contactMark = initContactMark(document.body, {
-      reducedMotion,
-      onActivate: () => void activateContact(),
     });
 
     // One stage, mounted once, hidden until a 2D page asks for it.
