@@ -320,10 +320,18 @@ export function buildContactForm(opts: ContactFormOpts): ContactForm {
   const confirmationText = document.createElement('p');
   confirmationText.className = 'contact-confirmation-text';
 
+  // Not `hidden` from mount: a screen reader only picks up a `role="status"`
+  // region's mutations if the region was already present in the accessibility
+  // tree when the mutation happens. Flipping `hidden` and populating the text
+  // in the same call (the old code did both inside showConfirmation) risks
+  // the content landing before the region is un-hidden, so the announcement
+  // can be missed. Visibility is CSS-driven instead, via the form's own
+  // `[data-confirmation]` attribute (see contact.css) — the live region
+  // itself exists, empty, from the start.
   const confirmation = document.createElement('div');
   confirmation.className = 'contact-confirmation';
   confirmation.setAttribute('role', 'status');
-  confirmation.hidden = true;
+  confirmation.setAttribute('aria-live', 'polite');
   confirmation.append(confirmationHeading, confirmationText);
 
   el.append(row1, row2, projectField.wrapper, chipSection, submitRow, confirmation);
@@ -431,7 +439,6 @@ export function buildContactForm(opts: ContactFormOpts): ContactForm {
         confirmationHeading.textContent = "we couldn't open your mail client";
         confirmationText.replaceChildren('Write to ', buildMailtoLink(), ' directly — everything you typed is still in this form.');
       }
-      confirmation.hidden = false;
     },
     destroy() {
       for (const fn of cleanups) fn();

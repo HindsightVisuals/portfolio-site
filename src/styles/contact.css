@@ -25,10 +25,33 @@
   padding: var(--contact-gap);
 }
 
-.contact-aside { flex: 1; display: flex; flex-direction: column; }
+/* min-width: 0 overrides the flex-item default of `min-width: auto`, which
+ * otherwise floors this column at the ferro frame's 713px content width —
+ * plus the 785px modal, gap and padding that pushes past ~1727px and forces
+ * a horizontal scrollbar on 1440/1536/1600 laptop viewports (the 1200px
+ * stack breakpoint doesn't kick in until well below that). See fix-2. */
+.contact-aside { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* Sized from Figma's Frame 72. Deliberately empty — see contact.ts. */
-.contact-ferro-frame { width: 713px; height: 684px; margin: 206px 0 0 193px; }
+/* Sized from Figma's Frame 72 at >=1920 (the Figma design width) — see
+ * contact.ts. Width and left margin are fluid below that so the side-by-side
+ * layout (not the <=1200px stack) survives 1440/1536/1600 without overflow;
+ * height and top margin are unaffected because they never drove the overflow.
+ *
+ * --contact-ferro-inset scales linearly with viewport width and is clamped at
+ * the Figma value of 193px, so `100vw * 193 / 1920` lands on exactly 193px
+ * at the 1920px design width (not an approximation like a round `vw` number
+ * would). The frame's own width is then `100% MINUS that same inset`, not an
+ * independent `min(713px, 100%)` — sizing width and margin from the same
+ * container % but different formulas let the frame's right edge run past the
+ * aside's box and visually overlap `.contact-modal` at 1280-1600px even
+ * though the document itself had no horizontal scrollbar. Deriving width
+ * from the inset keeps `inset + width` pinned to the container's own width. */
+.contact-ferro-frame {
+  --contact-ferro-inset: clamp(0px, calc(100vw * 193 / 1920), 193px);
+  width: min(713px, calc(100% - var(--contact-ferro-inset)));
+  height: 684px;
+  margin: 206px 0 0 var(--contact-ferro-inset);
+}
 
 .contact-modal {
   position: relative;
@@ -271,6 +294,14 @@
 .contact-form[data-confirmation] .contact-field--project,
 .contact-form[data-confirmation] .contact-chip-section,
 .contact-form[data-confirmation] .contact-submit-row {
+  display: none;
+}
+
+/* The confirmation block is a role="status" live region present (empty) from
+ * mount — see contact-form.ts — so its visibility is CSS-driven off the same
+ * [data-confirmation] attribute rather than a JS-toggled `hidden`, which would
+ * pull it out of the accessibility tree at the exact moment its text changes. */
+.contact-form:not([data-confirmation]) .contact-confirmation {
   display: none;
 }
 

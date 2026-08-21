@@ -1,4 +1,5 @@
 import type { Rect } from './ferro-placement';
+import { FERRO_DEFAULTS } from './ferro-field';
 
 /**
  * Ferro influence — the external inputs that couple to the blob.
@@ -40,7 +41,8 @@ export function wordStrength(
   words: number,
   opts: { base?: number; max?: number; halfLife?: number } = {},
 ): number {
-  const base = opts.base ?? 1.05;
+  // 1.05 duplicated FERRO_DEFAULTS.strength — same tuned value, now one source.
+  const base = opts.base ?? FERRO_DEFAULTS.strength;
   const max = opts.max ?? 1.8;
   const halfLife = opts.halfLife ?? 25;
   const n = Number.isFinite(words) ? Math.max(0, words) : 0;

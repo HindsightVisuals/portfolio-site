@@ -371,14 +371,17 @@ if (lab === 'ferro') {
         navbar: makeTakeoverNavbar(m),
         deferReveal: true,
       });
-      void takeover.open(page);
+      const opened = takeover.open(page);
       cursor?.setOnDark(true); // beat 4 is a black page
       activeRevealCleanup?.();
       activeRevealCleanup = m.mountReveal(page, { reducedMotion });
-      // Always instant in Plan 2 — openContact() returns early if a takeover is
-      // already open, so the blob is never in the corner when we get here. The
-      // corner → beat-4 travel (spec §3) arrives with Plan 3's transition.
-      placeFerroForContact(page, { travel: false });
+      // onModeChange already stamped the corner rect at open-start (the blob
+      // genuinely IS in the corner here), so this is the corner → beat-4
+      // travel described in spec §3 — NOT a snap. But under normal motion
+      // runOpen sets the `.takeover` container to `y: 100%` synchronously and
+      // only tweens it back to 0 across an await, so a rect read right now
+      // would be one viewport too low. Measure once the open has landed.
+      void opened.then(() => placeFerroForContact(page, { travel: true }));
 
       // Figma 85:1418: "this ferro would change/be affected via displacement
       // for each word typed in the send a signal modal, matching our

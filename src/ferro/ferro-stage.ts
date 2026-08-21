@@ -115,6 +115,10 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
   const envRT = pmrem.fromEquirectangular(src);
   scene.environment = envRT.texture;
   src.dispose();
+  // The generator's own GL resources aren't needed past this call — the
+  // baked environment texture (envRT) is retained separately for the
+  // session and disposed in destroy() below.
+  pmrem.dispose();
 
   let vw = 1;
   let vh = 1;
@@ -162,8 +166,13 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
 
   const onResize = (): void => {
     measure();
-    // A parked stage still has to repaint, or a resize leaves a stale frame.
-    if (!raf) step(0);
+    // A parked-but-ACTIVE stage still has to repaint, or a resize leaves a
+    // stale frame (e.g. the <=1200px contact stack, where the frame's CSS
+    // box changes size but nothing else re-triggers a render). An inactive
+    // stage — the common case, since the blob has no home on the homepage —
+    // has nothing worth painting; skipping the 84,500-triangle repaint there
+    // avoids a resize cost the homepage was paying for a hidden canvas.
+    if (!raf && active) step(0);
   };
   window.addEventListener('resize', onResize);
 
@@ -195,7 +204,7 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
       if (raf) cancelAnimationFrame(raf);
       callbacks.length = 0;
       envRT.dispose();
-      pmrem.dispose();
+      // pmrem itself is already disposed right after fromEquirectangular() above.
       renderer.dispose();
       canvas.remove();
     },

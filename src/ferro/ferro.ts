@@ -62,6 +62,10 @@ export function initFerro(opts: FerroOpts): FerroController | null {
   let currentRect: Rect | null = null;
   let pointer: { x: number; y: number } | null = null;
   let shown = false;
+  // placeAt's resolve is scheduled on a bare delayedCall, uncoupled from the
+  // position/scale tweens apply() kills above — a re-place before it fires
+  // (or destroy()) left the old one to resolve on its own timer regardless.
+  let placeSettle: gsap.core.Tween | null = null;
 
   // The Blender Empty. Drift translates it on Z; the pointer steers x/y.
   const offset = { x: 0, y: 0, z: 10 };
@@ -122,9 +126,11 @@ export function initFerro(opts: FerroOpts): FerroController | null {
       currentRect = { ...rect };
       const instant = placeOpts?.instant ?? false;
       apply(currentRect, instant);
+      placeSettle?.kill(); // a re-place or destroy() must not leave a stale resolve pending
+      placeSettle = null;
       if (instant || opts.reducedMotion) return Promise.resolve();
       return new Promise((resolve) => {
-        gsap.delayedCall(TRAVEL_DURATION, resolve);
+        placeSettle = gsap.delayedCall(TRAVEL_DURATION, resolve);
       });
     },
     show(): void {
@@ -137,6 +143,14 @@ export function initFerro(opts: FerroOpts): FerroController | null {
     hide(): void {
       if (!shown) return;
       shown = false;
+      // Fix-3: strength is raised per typed word (and spiked on submit) and
+      // never otherwise reset. Left alone, the next placeAt() (a fresh /contact
+      // visit, or the corner blob on the next page) renders at whatever
+      // strength this session left behind — inflated past BOUNDING_RADIUS,
+      // which is sized from the resting default. `setStrength`'s `shown`
+      // guard (above) stops a still-ticking spike tween from writing a stale
+      // value back in after this reset.
+      object.setStrength(FERRO_DEFAULTS.strength);
       stage.canvas.classList.add('ferro-stage--hidden');
       stage.setActive(false); // parks the loop — nothing renders off screen
     },
@@ -147,12 +161,23 @@ export function initFerro(opts: FerroOpts): FerroController | null {
       pointer = p;
     },
     setStrength(v) {
+      // Guarded on `shown`: the send-spike settle tween in main.ts lives
+      // outside this controller and keeps ticking after hide() fires (gsap's
+      // own ticker, independent of the parked render loop). Without this
+      // guard its trailing onUpdate calls — or a stale word-count callback —
+      // can sneak a value back onto the uniform between hide() resetting it
+      // and the next show(), which is exactly the leak fix-3 reports: the
+      // corner blob on the NEXT page overflows its rect because it renders
+      // at a strength BOUNDING_RADIUS was never sized for.
+      if (!shown) return;
       object.setStrength(v);
       if (opts.reducedMotion) stage.requestFrame();
     },
     destroy(): void {
       window.removeEventListener('resize', onResize);
       gsap.killTweensOf([object.mesh.position, object.mesh.scale]);
+      placeSettle?.kill();
+      placeSettle = null;
       stage.scene.remove(object.mesh);
       object.dispose();
       stage.destroy();
