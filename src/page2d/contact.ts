@@ -1,13 +1,16 @@
 /**
- * The contact page (F12).
+ * The contact page (F12) — beat 4.
  *
- * PASS 1 SHELL. This is the destination the contact mark opens — heading,
- * availability line, direct email and socials. The form, the optional
- * project-scoping depth, the transmission readout and the submit payoff are
- * Pass 2; see docs/superpowers/specs/2026-08-19-contact-design.md.
+ * Black ground, a ferro blob on the left, a `send a signal` modal on the
+ * right. Built as a takeover page, following buildAbout exactly: <article> +
+ * the shared navbar + a `.takeover-body` wrapper — `.takeover` itself paints
+ * no background (see src/styles/page2d.css:21-23), so anything placed
+ * outside `.takeover-body` would let the live 3D world canvas show through.
+ * That matters more here than on any other page: beat 4 is solid black.
  *
- * Built as a takeover page, following buildAbout exactly: <article> + the
- * shared navbar + a .takeover-body, sections hidden until revealed.
+ * This task builds the page shell only — the aside's marginalia and the
+ * modal's title/intro. The form (Task 6) and the ferro blob's live
+ * positioning (Task 7) land in later tasks.
  */
 
 import '../styles/page2d.css';
@@ -20,32 +23,21 @@ export interface ContactOpts {
   deferReveal?: boolean;
 }
 
-/** Adam's real address — the low-friction path, and the one recruiters use. */
-const EMAIL = 'adam.tarr.studio@gmail.com';
+/**
+ * Selector for the empty blob-frame box in `.contact-aside`. The ferro blob
+ * itself is not a child of this page — it renders on a separate
+ * viewport-sized WebGL canvas mounted at document.body level. This div
+ * exists only so a later task can call `getBoundingClientRect()` on it and
+ * position the blob to match.
+ */
+export const FERRO_FRAME_SELECTOR = '[data-ferro-frame]';
 
-/** Carried verbatim from the case study footer so the two never drift. */
-const AVAILABILITY =
-  'Available for select freelance  ·  open to senior in-house roles  ·  reply within 2 business days.';
-
-// Placeholder destinations — the real handles are still outstanding, same as
-// the case study footer. Do not ship to production with bare domains.
-const SOCIALS: Array<[string, string]> = [
-  ['linkedin', 'https://www.linkedin.com/'],
-  ['instagram', 'https://www.instagram.com/'],
-  ['youtube', 'https://www.youtube.com/'],
-];
-
-function tagStrip(left: string, right: string): HTMLElement {
-  const strip = document.createElement('div');
-  strip.className = 'contact-tags';
-  for (const text of [left, right]) {
-    const tag = document.createElement('span');
-    tag.className = 'contact-tag';
-    tag.textContent = text;
-    strip.append(tag);
-  }
-  return strip;
-}
+const TOP_NOTE = 'communication is what sets us apart';
+const TITLE = 'send a signal';
+const INTRO =
+  'Let’s start a conversation. Fill out the form and let’s schedule a call. Or simply email - but the best communication happens face to face.';
+const NOTE_LEFT = 'commms is a 3D and interactive web team.';
+const NOTE_RIGHT = 'my name is Adam, learn more';
 
 export function buildContact(opts: ContactOpts): HTMLElement {
   const article = document.createElement('article');
@@ -55,53 +47,54 @@ export function buildContact(opts: ContactOpts): HTMLElement {
   const body = document.createElement('div');
   body.className = 'takeover-body';
 
-  // --- heading ---
-  const hero = document.createElement('section');
-  hero.className = 'contact-hero';
+  const layout = document.createElement('div');
+  layout.className = 'contact-layout';
 
-  const heading = document.createElement('h1');
-  heading.className = 'contact-heading';
-  // Three m's — the brand signature, matching the case study footer.
-  heading.textContent = 'let’s commmunicate';
+  // --- left column: aside ---
+  const aside = document.createElement('section');
+  aside.className = 'contact-aside';
 
-  const availability = document.createElement('p');
-  availability.className = 'contact-availability';
-  availability.textContent = AVAILABILITY;
+  const topNote = document.createElement('p');
+  topNote.className = 'contact-note--top';
+  topNote.textContent = TOP_NOTE;
 
-  hero.append(heading, availability);
+  const ferroFrame = document.createElement('div');
+  ferroFrame.className = 'contact-ferro-frame';
+  ferroFrame.setAttribute('data-ferro-frame', '');
+  // Deliberately empty — the blob lives on its own canvas. See the module
+  // doc comment and FERRO_FRAME_SELECTOR above.
 
-  // --- direct ---
-  const direct = document.createElement('section');
-  direct.className = 'contact-direct';
+  const noteRow = document.createElement('div');
+  noteRow.className = 'contact-note-row';
 
-  const email = document.createElement('a');
-  email.className = 'contact-email';
-  email.href = `mailto:${EMAIL}`;
-  email.textContent = EMAIL;
+  const noteLeft = document.createElement('p');
+  noteLeft.className = 'contact-note';
+  noteLeft.textContent = NOTE_LEFT;
 
-  direct.append(tagStrip('PRIMARY', 'EMAIL'), email);
+  const noteRight = document.createElement('p');
+  noteRight.className = 'contact-note';
+  noteRight.textContent = NOTE_RIGHT;
 
-  // --- social ---
-  const social = document.createElement('section');
-  social.className = 'contact-social';
-  social.append(tagStrip('SECONDARY', 'SOCIAL'));
+  noteRow.append(noteLeft, noteRight);
+  aside.append(topNote, ferroFrame, noteRow);
 
-  const list = document.createElement('ul');
-  list.className = 'contact-social-list';
-  for (const [label, href] of SOCIALS) {
-    const li = document.createElement('li');
-    const link = document.createElement('a');
-    link.className = 'contact-link';
-    link.href = href;
-    link.textContent = label;
-    link.rel = 'noopener noreferrer';
-    link.target = '_blank';
-    li.append(link);
-    list.append(li);
-  }
-  social.append(list);
+  // --- right column: modal ---
+  const modal = document.createElement('section');
+  modal.className = 'contact-modal';
 
-  body.append(hero, direct, social);
+  const title = document.createElement('h1');
+  title.className = 'contact-title';
+  title.textContent = TITLE;
+
+  const intro = document.createElement('p');
+  intro.className = 'contact-intro';
+  intro.textContent = INTRO;
+
+  modal.append(title, intro);
+
+  layout.append(aside, modal);
+  body.append(layout);
   article.append(opts.navbar, body);
+
   return article;
 }

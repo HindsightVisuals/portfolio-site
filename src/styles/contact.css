@@ -1,130 +1,81 @@
-/* --- contact page (F12) ---------------------------------------------------
- * Pass 1 layout. Deliberately conventional: it borrows the About page's
- * 96px/48px section rhythm and the case study's mono tag chips rather than
- * introducing a look of its own, because the real design comes from Figma
- * (Design System 55:249). This exists so the page reads as part of the site
- * instead of as unstyled browser defaults — nothing here is art direction.
- *
- * All content sits inside `.takeover-body`, which paints the ground; the
- * sections below paint nothing but their own rules. */
-
-.contact-page section {
-  padding: 96px 48px;
-}
-
-/* The page has to fill the takeover even when the content is short, or the
- * ground stops partway down and the 3D world shows through beneath it — which
- * is exactly what it did.
- *
- * `.takeover-body`'s own `min-height: calc(100% - 64px)` cannot do this alone:
- * a percentage min-height resolves against the parent's height, and the
- * article's height is auto. `.takeover` IS definite (fixed, inset 0), so the
- * article can take 100% from it and hand the remainder down. */
+/* --- beat 4 --------------------------------------------------------------
+ * The contact page. Black ground, ferro blob left, `send a signal` modal
+ * right. Every number here is measured off Figma 85:1227 — see spec §5. */
 .contact-page {
-  display: flex;
-  flex-direction: column;
+  --contact-modal-w: 785px;
+  --contact-gap: 12px;
+  --contact-field-h: 57px;
+  --contact-radius: 4px;
+  --contact-field-border: #6b6b6b;
+  --contact-chip-border: #2f2f2f;
+  --contact-chip-ink: #efefef;
+  --contact-label-ink: #b1b1b1;
+  /* The send green is the cursor accent at 50% — the palette is already
+   * consistent, so this must stay tied to that token, not re-picked. */
+  --contact-send-bg: rgba(97, 232, 145, 0.5);
+
+  background: #000;
+  color: #fff;
   min-height: 100%;
 }
 
-.contact-page .takeover-body {
-  flex: 1;
-}
-
-.contact-hero {
-  border-bottom: 1px solid #eaeaea;
-}
-
-.contact-heading {
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(38px, 6.9vw, 132px);
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-}
-
-.contact-availability {
-  margin: 24px 0 0;
-  max-width: 64ch;
-  font-family: var(--font-mono);
-  font-size: clamp(13px, 0.9vw, 16px);
-  line-height: 1.6;
-  color: var(--ink);
-}
-
-/* Two chips per strip, so they need a gap — without one they render as a
- * single run-on word ("PRIMARYEMAIL"). */
-.contact-tags {
+.contact-layout {
   display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
+  gap: var(--contact-gap);
+  padding: var(--contact-gap);
 }
 
-.contact-tag {
-  border: 1px solid #d4d4d4;
-  border-radius: 2px;
-  padding: 5px 8px;
+.contact-aside { flex: 1; display: flex; flex-direction: column; }
+
+/* Sized from Figma's Frame 72. Deliberately empty — see contact.ts. */
+.contact-ferro-frame { width: 713px; height: 684px; margin: 206px 0 0 193px; }
+
+.contact-modal {
+  position: relative;
+  flex: 0 0 var(--contact-modal-w);
+  background: rgba(31, 31, 31, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+.contact-title {
+  font-family: var(--font-wordmark); /* Loos Extended; kit has Bold */
+  font-weight: 700;
+  font-size: 64px;
+  line-height: 0.94;
+}
+
+.contact-intro {
+  font-family: var(--font-mono); /* Figma: Galix Mono Regular — see §9 */
+  font-size: 16px;
+  max-width: 285px;
+}
+
+/* --- aside marginalia ------------------------------------------------------
+ * Not covered by spec §5's measured block above — these are plain notes, not
+ * art direction, so they follow the site's existing `.margin-note` mono
+ * convention (src/styles/base.css) rather than introducing a new scale. Color
+ * is `--contact-label-ink` instead of `--ink` because `--ink` is near-black
+ * and this page's ground is black. */
+.contact-note--top,
+.contact-note {
   font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 1.26px;
-  text-transform: uppercase;
-  color: var(--ink);
-  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--contact-label-ink);
 }
 
-.contact-direct {
-  border-bottom: 1px solid #eaeaea;
+.contact-note--top {
+  max-width: 320px;
 }
 
-/* Never the UA's blue underline — these are display type on this page. */
-.contact-email {
-  display: inline-block;
-  font-family: var(--font-display);
-  font-weight: 400;
-  font-size: clamp(20px, 2.4vw, 44px);
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
-  transition: border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.contact-email:hover,
-.contact-email:focus-visible {
-  border-bottom-color: var(--ink);
-}
-
-.contact-social-list {
+.contact-note-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 32px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--contact-gap);
+  margin-top: auto;
 }
 
-.contact-link {
-  font-family: var(--font-mono);
-  font-size: clamp(13px, 0.9vw, 16px);
-  color: var(--ink);
-  text-decoration: none;
-  border-bottom: 1px solid #d4d4d4;
-  transition: border-color 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.contact-link:hover,
-.contact-link:focus-visible {
-  border-bottom-color: var(--ink);
-}
-
-@media (max-width: 720px) {
-  .contact-page section {
-    padding: 56px 24px;
-  }
-
-  .contact-social-list {
-    gap: 20px;
-  }
+.contact-note-row .contact-note {
+  max-width: 320px;
 }
