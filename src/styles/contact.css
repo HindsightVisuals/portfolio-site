@@ -33,6 +33,10 @@
 .contact-modal {
   position: relative;
   flex: 0 0 var(--contact-modal-w);
+  /* 24px each side puts the form's own 737px content width (Figma 85:1227,
+   * see .contact-row / .contact-field-control--project below) flush inside
+   * the 785px modal: 785 - 24*2 = 737. */
+  padding: 24px;
   background: rgba(31, 31, 31, 0.75);
   border: 2px solid rgba(255, 255, 255, 0.5);
 }
@@ -103,3 +107,135 @@
 .contact-modal-mark--tr { top: 12px; right: 4px; }
 .contact-modal-mark--bl { bottom: 22px; left: 14px; }
 .contact-modal-mark--br { bottom: 22px; right: 14px; }
+
+/* --- the form (Task 6) ---------------------------------------------------
+ * Every field/chip metric below is measured off Figma 85:1227 — see the
+ * task-6 brief. Fields are laid out with flex + gap rather than the raw
+ * 356.5px Figma widths so the two-up rows stay exactly half of the 737px
+ * content width without a magic number that only works for two columns. */
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+/* A standard sr-only clip — present for assistive tech and keyboard users,
+ * invisible on screen. Unlike base.css's `.screen-proxy` this one never pops
+ * into a visible badge on focus: these labels shadow a visible placeholder,
+ * they are not their own on-screen affordance. No equivalent existed in the
+ * codebase before this task (checked base.css and home/screen-proxies.ts). */
+.contact-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.contact-row {
+  display: flex;
+  gap: 24px;
+}
+
+.contact-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-field-control {
+  width: 100%;
+  height: var(--contact-field-h);
+  padding: 0 16px;
+  background: #000;
+  color: #fff;
+  border: 2px solid var(--contact-field-border);
+  border-radius: var(--contact-radius);
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.contact-field-control::placeholder {
+  color: var(--contact-label-ink);
+}
+
+/* Native selects don't reliably take an empty-value placeholder colour via
+ * ::placeholder, but the disabled first option (contact-form.ts) already
+ * makes the unselected state visually distinct, so no extra rule needed
+ * here. */
+
+.contact-field-control--project {
+  height: 270px;
+  padding: 16px;
+  resize: none;
+  font-family: var(--font-mono);
+}
+
+.contact-error {
+  margin-top: 6px;
+  color: #ff8080;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.contact-counter {
+  margin-top: 6px;
+  text-align: right;
+  color: var(--contact-label-ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.contact-chip-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.contact-chips-heading {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--contact-label-ink);
+}
+
+.contact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.contact-chip {
+  height: 44px;
+  padding: 14px 12px;
+  background: transparent;
+  color: var(--contact-chip-ink);
+  border: 2px solid var(--contact-chip-border);
+  border-radius: var(--contact-radius);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.contact-chip[aria-pressed='true'] {
+  background: var(--contact-chip-ink);
+  color: #000;
+}
+
+.contact-submit {
+  align-self: flex-start;
+  height: var(--contact-field-h);
+  padding: 0 32px;
+  background: var(--contact-send-bg);
+  color: #fff;
+  border: 0;
+  border-left: 2px solid #fff;
+  border-right: 2px solid #fff;
+  border-radius: var(--contact-radius);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 2.52px;
+  cursor: pointer;
+}

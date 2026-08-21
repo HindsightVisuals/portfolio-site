@@ -16,6 +16,9 @@
 import '../styles/page2d.css';
 import '../styles/contact.css';
 
+import { buildContactForm } from './contact-form';
+import type { ContactForm } from './contact-form';
+
 export interface ContactOpts {
   reducedMotion: boolean;
   navbar: HTMLElement;
@@ -58,8 +61,17 @@ function modalCornerMark(position: (typeof MODAL_MARK_POSITIONS)[number]): HTMLS
   return mark;
 }
 
-export function buildContact(opts: ContactOpts): HTMLElement {
-  const article = document.createElement('article');
+/**
+ * `buildContact`'s return type — an intersection rather than a `{ el, form }`
+ * wrapper because `takeover.open()` takes a plain `HTMLElement`. The
+ * intersection satisfies that with no cast, while still giving a later task
+ * (which drives the form through `takeover.open()`'s own return value) a
+ * typed handle onto the form via `.form`.
+ */
+export type ContactPageEl = HTMLElement & { form: ContactForm };
+
+export function buildContact(opts: ContactOpts): ContactPageEl {
+  const article = document.createElement('article') as ContactPageEl;
   article.className = 'contact-page';
   article.tabIndex = -1; // takeover.ts focuses this after the swipe-in
 
@@ -109,11 +121,14 @@ export function buildContact(opts: ContactOpts): HTMLElement {
   intro.className = 'contact-intro';
   intro.textContent = INTRO;
 
-  modal.append(title, intro, ...MODAL_MARK_POSITIONS.map(modalCornerMark));
+  const form = buildContactForm({ reducedMotion: opts.reducedMotion });
+
+  modal.append(title, intro, form.el, ...MODAL_MARK_POSITIONS.map(modalCornerMark));
 
   layout.append(aside, modal);
   body.append(layout);
   article.append(opts.navbar, body);
+  article.form = form; // the handle a later task drives via takeover.open()'s return value
 
   return article;
 }
