@@ -39,6 +39,25 @@ const INTRO =
 const NOTE_LEFT = 'commms is a 3D and interactive web team.';
 const NOTE_RIGHT = 'my name is Adam, learn more';
 
+/**
+ * `.contact-modal`'s four corner registration marks (Figma 85:1666 top pair,
+ * 85:1717 bottom pair). Reuses the site's existing `.corner-mark` component
+ * (src/styles/base.css, also used by index.html's `.chrome`) rather than a
+ * second, drifting definition of the same plus-sign shape — placement, size
+ * and colour are overridden per-modifier in contact.css, scoped under
+ * `.contact-modal` so nothing leaks into the home page's own corner marks.
+ * `aria-hidden` keeps them out of the accessibility tree; they are pure
+ * registration-mark decoration, not content.
+ */
+const MODAL_MARK_POSITIONS = ['tl', 'tr', 'bl', 'br'] as const;
+
+function modalCornerMark(position: (typeof MODAL_MARK_POSITIONS)[number]): HTMLSpanElement {
+  const mark = document.createElement('span');
+  mark.className = `corner-mark contact-modal-mark contact-modal-mark--${position}`;
+  mark.setAttribute('aria-hidden', 'true');
+  return mark;
+}
+
 export function buildContact(opts: ContactOpts): HTMLElement {
   const article = document.createElement('article');
   article.className = 'contact-page';
@@ -90,7 +109,7 @@ export function buildContact(opts: ContactOpts): HTMLElement {
   intro.className = 'contact-intro';
   intro.textContent = INTRO;
 
-  modal.append(title, intro);
+  modal.append(title, intro, ...MODAL_MARK_POSITIONS.map(modalCornerMark));
 
   layout.append(aside, modal);
   body.append(layout);

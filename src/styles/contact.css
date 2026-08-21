@@ -79,3 +79,27 @@
 .contact-note-row .contact-note {
   max-width: 320px;
 }
+
+/* --- modal corner marks -----------------------------------------------
+ * Reuses `.corner-mark` (src/styles/base.css) for the plus-sign shape, but
+ * this page needs its own size, colour and placement — scoped under
+ * `.contact-modal` so none of it leaks into the home page's corner marks.
+ * Do not edit `.corner-mark` itself; it's shared with index.html's `.chrome`.
+ * Placement measured from Figma 85:1666 (top pair) / 85:1717 (bottom pair);
+ * size from the Figma vectors (11.772 x 11.76, rounded to 12px). */
+.contact-modal-mark {
+  width: 12px;
+  height: 12px;
+}
+
+.contact-modal-mark::before,
+.contact-modal-mark::after {
+  /* `--ink` is the world's dark ink and is invisible on this black modal;
+   * `--contact-chip-ink` is this page's own light ink token. */
+  background: var(--contact-chip-ink);
+}
+
+.contact-modal-mark--tl { top: 12px; left: 4px; }
+.contact-modal-mark--tr { top: 12px; right: 4px; }
+.contact-modal-mark--bl { bottom: 22px; left: 14px; }
+.contact-modal-mark--br { bottom: 22px; right: 14px; }
