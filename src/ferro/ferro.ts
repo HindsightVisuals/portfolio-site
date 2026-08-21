@@ -94,7 +94,7 @@ export function initFerro(opts: FerroOpts): FerroController | null {
     });
   };
 
-  stage.onFrame((dt) => {
+  const stepFerro = (dt: number): void => {
     // Drift is seconds-per-turnover, converted once here. The Empty translates
     // on Z exactly as it does in the blend file.
     offset.z -= driftUnitsPerSec(FERRO_DEFAULTS.texScale, FERRO_DEFAULTS.driftSeconds) * dt;
@@ -108,7 +108,8 @@ export function initFerro(opts: FerroOpts): FerroController | null {
     offset.y += steer.y * STEER_GAIN * dt;
 
     object.setOffset(offset.x, offset.y, offset.z);
-  });
+  };
+  stage.onFrame(stepFerro);
 
   const onResize = (): void => {
     // Rects are viewport-relative, so a resize re-derives the same home.
@@ -169,6 +170,7 @@ export function initFerro(opts: FerroOpts): FerroController | null {
       controller,
       offset,
       steer,
+      step: stepFerro, // an occluded tab never ticks rAF; drive it by hand
       rect: (): Rect | null => currentRect,
     };
   }

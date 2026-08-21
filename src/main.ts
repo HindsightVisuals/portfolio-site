@@ -413,6 +413,10 @@ if (lab === 'ferro') {
       hoverRaf = 0;
       const p = pendingPointer;
       if (!p) return;
+      // The blob only lives on 2D pages, but it reads the pointer from the one
+      // throttled handler either way — a second raw listener would double the
+      // per-move work for no gain.
+      ferro?.setPointer(p);
       if (takeover.isOpen()) {
         world.setTileHover(null);
         workHover.setHovered(null);
@@ -440,6 +444,12 @@ if (lab === 'ferro') {
     window.addEventListener('mousemove', (e) => {
       pendingPointer = { x: e.clientX, y: e.clientY };
       if (!hoverRaf) hoverRaf = requestAnimationFrame(processHover);
+    });
+    // Pointer gone from the window entirely: let the drift ease back to its
+    // unsteered Z travel rather than holding the last steer forever.
+    document.documentElement.addEventListener('pointerleave', () => {
+      pendingPointer = null;
+      ferro?.setPointer(null);
     });
 
     // Click routing: a focused tile opens its takeover; any other tile flies to
