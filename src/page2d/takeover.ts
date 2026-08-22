@@ -20,8 +20,22 @@ export interface TakeoverOpts {
   onModeChange(mode: 'world' | 'takeover'): void;
 }
 
+/**
+ * A per-open animation hook: `in` plays once the takeover `div` is in the
+ * DOM (it clips/reveals that element), `out` plays before it's removed.
+ * Passed to `open()`; remembered internally for the matching `close()` so a
+ * page that wipes in also wipes out without the caller passing it twice.
+ */
+export interface TakeoverTransition {
+  in(div: HTMLElement): Promise<void>;
+  out(div: HTMLElement): Promise<void>;
+}
+
 export interface TakeoverHandle {
-  open(page: HTMLElement, opts?: { pushHistory?: boolean }): Promise<void>;
+  open(
+    page: HTMLElement,
+    opts?: { pushHistory?: boolean; transition?: TakeoverTransition }
+  ): Promise<void>;
   close(opts?: { fromPopstate?: boolean }): Promise<void>;
   isOpen(): boolean;
   destroy(): void;
@@ -55,6 +69,10 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
   // <body> when the focused takeover article is removed from the DOM. Null
   // when nothing meaningful was focused (or it's since left the document).
   let previouslyFocused: HTMLElement | null = null;
+  // The transition given at open() is stored for the matching close(), so a
+  // page that wipes in also wipes out without the caller having to remember.
+  // Cleared by runClose once it's captured the `out` to run.
+  let activeTransition: TakeoverTransition | null = null;
 
   const topIsTakeover = (): boolean =>
     (window.history.state as { takeover?: boolean } | null)?.takeover === true;
@@ -91,10 +109,49 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
     }
   };
 
-  async function runOpen(page: HTMLElement, o: { pushHistory?: boolean }): Promise<void> {
+  // Default transition: the existing swipe up/down. Used whenever open()
+  // doesn't pass a `transition`.
+  const swipeIn = (div: HTMLElement): Promise<void> => {
+    if (opts.reducedMotion) {
+      gsap.set(div, { y: 0 });
+      return Promise.resolve();
+    }
+    gsap.set(div, { y: '100%' });
+    return new Promise<void>((resolve) => {
+      tween = gsap.to(div, {
+        y: 0,
+        duration: SWIPE_IN_S,
+        ease: EASE_IN,
+        onComplete: resolve,
+        onInterrupt: resolve,
+      });
+    });
+  };
+
+  const swipeOut = (div: HTMLElement): Promise<void> => {
+    if (opts.reducedMotion) {
+      gsap.set(div, { y: '100%' });
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      tween = gsap.to(div, {
+        y: '100%',
+        duration: SWIPE_OUT_S,
+        ease: EASE_OUT,
+        onComplete: resolve,
+        onInterrupt: resolve,
+      });
+    });
+  };
+
+  async function runOpen(
+    page: HTMLElement,
+    o: { pushHistory?: boolean; transition?: TakeoverTransition }
+  ): Promise<void> {
     const next = takeoverReducer(state, 'open');
     if (next === state) return; // already open/opening — no-op
     state = next;
+    activeTransition = o.transition ?? null;
 
     previouslyFocused =
       document.activeElement instanceof HTMLElement && document.activeElement !== document.body
@@ -117,20 +174,7 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
 
     setInert(true);
 
-    if (opts.reducedMotion) {
-      gsap.set(div, { y: 0 });
-    } else {
-      gsap.set(div, { y: '100%' });
-      await new Promise<void>((resolve) => {
-        tween = gsap.to(div, {
-          y: 0,
-          duration: SWIPE_IN_S,
-          ease: EASE_IN,
-          onComplete: resolve,
-          onInterrupt: resolve,
-        });
-      });
-    }
+    await (activeTransition?.in ?? swipeIn)(div);
     tween = null;
 
     if (destroyed || container !== div) return; // torn down mid-animation — bail
@@ -152,20 +196,10 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
     state = next;
 
     const div = container;
+    const runOut = activeTransition?.out ?? swipeOut;
+    activeTransition = null;
     if (div) {
-      if (opts.reducedMotion) {
-        gsap.set(div, { y: '100%' });
-      } else {
-        await new Promise<void>((resolve) => {
-          tween = gsap.to(div, {
-            y: '100%',
-            duration: SWIPE_OUT_S,
-            ease: EASE_OUT,
-            onComplete: resolve,
-            onInterrupt: resolve,
-          });
-        });
-      }
+      await runOut(div);
       tween = null;
       if (destroyed) return; // torn down mid-animation — destroy() already cleaned up
       if (container === div) {
@@ -217,7 +251,10 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
   window.addEventListener('popstate', onPopstate);
 
   return {
-    open(page: HTMLElement, o: { pushHistory?: boolean } = {}): Promise<void> {
+    open(
+      page: HTMLElement,
+      o: { pushHistory?: boolean; transition?: TakeoverTransition } = {}
+    ): Promise<void> {
       return runOpen(page, o);
     },
     close(o: { fromPopstate?: boolean } = {}): Promise<void> {
