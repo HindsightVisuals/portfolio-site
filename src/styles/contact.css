@@ -37,7 +37,25 @@
  * show through a page that is meant to be solid. Overriding the colour keeps
  * the structural contract and fixes the ground. */
 .contact-page .takeover-body {
-  background: #000;
+  background-color: #000;
+
+  /* The ground texture is the emblem's own inner dots, tiled (Adam: "it was
+   * supposed to be the small inner dots inside the 2D ferro pattern"). Each
+   * emblem cell is a rotated square with a small hole at its centre; this is
+   * that hole repeated across the page, so the thing you clicked and the place
+   * you land share a motif.
+   *
+   * Two offset layers rather than one, because the emblem's cells sit on a
+   * DIAGONAL lattice — rows offset by half a step — not a square grid. The
+   * second layer, shifted half a tile on both axes, is what produces that.
+   *
+   * Kept at 5% white: it should register as texture on the black, never as
+   * pattern competing with the form. */
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+  background-position: 0 0, 9px 9px;
 }
 
 /* --- the nav, beat-4 style ------------------------------------------------
