@@ -107,7 +107,11 @@ export function buildContact(opts: ContactOpts): ContactPageEl {
   noteRight.textContent = NOTE_RIGHT;
 
   noteRow.append(noteLeft, noteRight);
-  aside.append(topNote, ferroFrame, noteRow);
+  // Beat 4 puts the nav INSIDE the left column, right-aligned above the blob
+  // (Figma 85:1227 — Frame 67 sits at x980 of the 1099-wide column), rather
+  // than in the full-width sticky bar the light 2D pages use. That is what lets
+  // the modal run the full height of the page beside it.
+  aside.append(topNote, opts.navbar, ferroFrame, noteRow);
 
   // --- right column: modal ---
   const modal = document.createElement('section');
@@ -127,7 +131,7 @@ export function buildContact(opts: ContactOpts): ContactPageEl {
 
   layout.append(aside, modal);
   body.append(layout);
-  article.append(opts.navbar, body);
+  article.append(body);
   article.form = form; // the handle a later task drives via takeover.open()'s return value
 
   return article;

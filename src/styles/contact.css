@@ -35,25 +35,87 @@
   background: #000;
 }
 
-/* Same story one level up: page2d.css paints the nav's flanking strips #fdfdfd
- * and colours the wordmark/links with --ink, both sized for a light page. On
- * beat 4 that left a white bar with a black wordmark across the top of a black
- * page. Only the colours change — the strips keep their geometry, so the 220px
- * notch between them stays a real window through to the live canvas. */
-.contact-page .nav2d::before,
-.contact-page .nav2d::after {
-  background: #000;
+/* --- the nav, beat-4 style ------------------------------------------------
+ * The light 2D pages put the nav in a full-width sticky bar whose ::before /
+ * ::after strips leave a 220px notch open onto the live canvas. Beat 4 does
+ * something different (Figma 85:1227): the nav lives INSIDE the left column,
+ * right-aligned above the blob, and there is no canvas window because the page
+ * is solid black. contact.ts appends it into `.contact-aside` for that reason.
+ *
+ * So the bar's own layout has to be undone: no sticky positioning, no fixed
+ * 64px height, and no strips — otherwise a black 64px band sits in the middle
+ * of the column doing nothing. What remains is a plain row.
+ *
+ * Undoing this is also what lets the modal run the full height of the page:
+ * while the nav was a sibling bar above `.contact-layout`, the layout could
+ * only ever start 64px down. */
+.contact-page .nav2d {
+  position: static;
+  height: auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
 }
 
-.contact-page .nav2d-wordmark,
-.contact-page .nav2d-contact {
+.contact-page .nav2d::before,
+.contact-page .nav2d::after {
+  content: none; /* no strips, and therefore no notch to paint around */
+}
+
+.contact-page .nav2d-wordmark {
+  position: static;
+  transform: none;
   color: #fff;
+}
+
+/* `.nav2d-link` has no styling anywhere in the codebase — the buttons were
+ * built but never dressed, so they rendered as default UA chrome: black text
+ * on rgb(240,240,240), stacked at the far left under the wordmark. Beat 4's
+ * are Work and About, right-aligned, in the page's mono voice. */
+.contact-page .nav2d-links {
+  display: flex;
+  gap: 32px;
+}
+
+.contact-page .nav2d-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  text-transform: capitalize;
+}
+
+.contact-page .nav2d-link:hover {
+  color: var(--contact-label-ink);
+}
+
+.contact-page .nav2d-link:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
 }
 
 .contact-layout {
   display: flex;
   gap: var(--contact-gap);
   padding: var(--contact-gap);
+  /* Beat 4 is a full-bleed page: the modal runs the whole height beside the
+   * blob (Figma's modal is 1056 tall in a 1080 frame with 12px padding). The
+   * flex default `align-items: stretch` does the rest, but only if this row
+   * actually has a height to stretch into — hence the viewport min-height
+   * rather than letting the row collapse to its content. */
+  min-height: 100vh; /* border-box, so the content row gets 100vh minus the padding */
+}
+
+/* page2d.css reserves 64px here for the sticky nav bar. Beat 4's nav is inside
+ * the column instead, so that reservation would leave a dead 64px strip. */
+.contact-page .takeover-body {
+  min-height: 100%;
 }
 
 /* min-width: 0 overrides the flex-item default of `min-width: auto`, which
@@ -77,11 +139,27 @@
  * aside's box and visually overlap `.contact-modal` at 1280-1600px even
  * though the document itself had no horizontal scrollbar. Deriving width
  * from the inset keeps `inset + width` pinned to the container's own width. */
+/* Adam, 2026-08-21, against the Figma render: "Ferro should be centered at the
+ * contact form and probably a good little bit smaller."
+ *
+ * So this is no longer Figma's absolute 713x684 at a 193/206 offset. The frame
+ * is a square that CENTRES in whatever space the column has left after the
+ * marginalia and the nav — `margin: auto` in a flex column absorbs the free
+ * space above and below, `align-self: center` does the horizontal. That also
+ * makes the old fluid-inset arithmetic unnecessary: a centred box cannot push
+ * its container wide, so the 1201-1726px overflow this used to guard against
+ * is structurally gone rather than merely clamped.
+ *
+ * 520px is the "good little bit smaller": the reference render reads about
+ * 470px across at the 1920 design width, and the blob's displaced silhouette
+ * slightly overflows its frame, so a 520 frame lands near that. Kept square
+ * because placement fits the SMALLER side (ferro-placement.ts) — a non-square
+ * frame would just waste its long axis. */
 .contact-ferro-frame {
-  --contact-ferro-inset: clamp(0px, calc(100vw * 193 / 1920), 193px);
-  width: min(713px, calc(100% - var(--contact-ferro-inset)));
-  height: 684px;
-  margin: 206px 0 0 var(--contact-ferro-inset);
+  width: min(520px, 100%);
+  aspect-ratio: 1;
+  margin: auto;
+  align-self: center;
 }
 
 .contact-modal {
@@ -126,12 +204,45 @@
   max-width: 320px;
 }
 
+/* --- filling the full-height modal ----------------------------------------
+ * Making the panel full height is only half the instruction: left alone, the
+ * form stays its content height and leaves a dead band under Send Message,
+ * where the reference has the form occupying the panel. So the column stretches
+ * and the project textarea — the one field with no natural size — takes up the
+ * slack, which is also where a visitor most wants the extra room.
+ * `min-height` keeps it honest if the viewport is short. */
+.contact-page .contact-modal {
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-page .contact-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-page .contact-field--project {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 270px; /* Figma 85:1687 — never shrink below the designed box */
+}
+
+.contact-page .contact-field-control--project {
+  flex: 1;
+}
+
+/* No `margin-top: auto` here. It used to push this row to the bottom, but the
+ * ferro frame now claims the column's free space with `margin: auto` to centre
+ * itself — two auto margins competing for the same space split it, which left
+ * the blob sitting ~100px high. The frame's own bottom auto margin already
+ * pushes this row down. */
 .contact-note-row {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--contact-gap);
-  margin-top: auto;
 }
 
 .contact-note-row .contact-note {
