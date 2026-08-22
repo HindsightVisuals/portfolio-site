@@ -102,6 +102,14 @@ export function buildNavbar(opts: NavbarOpts): HTMLElement {
     nav.append(link);
   }
 
+  // Empty mount point for the nav emblem (contact affordance), matching
+  // index.html's `.site-nav` — main.ts builds and mounts the actual Emblem
+  // here so every 2D page carries it too. Beat 4 (contact) hides its copy by
+  // CSS (`.contact-page .emblem`), not by branching this builder.
+  const emblemMount = document.createElement('span');
+  emblemMount.className = 'emblem-mount';
+  nav.append(emblemMount);
+
   header.append(wordmark, ...(opts.onCloth ? [clothTab] : []), nav);
   return header;
 }

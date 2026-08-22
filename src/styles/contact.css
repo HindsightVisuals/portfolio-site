@@ -123,6 +123,14 @@
   outline-offset: 4px;
 }
 
+/* Beat 4 carries no emblem — you have arrived, the affordance is spent.
+ * Suppressed by CSS rather than by branching the navbar builder, so
+ * makeTakeoverNavbar (main.ts) can build/mount an Emblem into every takeover
+ * page uniformly. */
+.contact-page .emblem {
+  display: none;
+}
+
 .contact-layout {
   display: flex;
   gap: var(--contact-gap);

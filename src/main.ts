@@ -16,7 +16,9 @@ import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
 import { DEST_ORDER, destForPath, slugForPath, withBase, type DestId } from './routes';
-import { initTakeover } from './page2d/takeover';
+import { initTakeover, type TakeoverTransition } from './page2d/takeover';
+import { buildEmblem, type Emblem } from './contact/emblem';
+import { runWipe } from './contact/wipe';
 import type { Strip } from './page2d/strip';
 import type { LogoStage } from './page2d/logo-stage';
 import type { RdSurface } from './page2d/rd-surface';
@@ -83,6 +85,13 @@ let activeRd: RdSurface | null = null;
 let activeCurtain: CurtainLive | null = null;
 let activeBehind: BehindPanel | null = null;
 
+// The takeover navbar's own copy of the nav emblem — rebuilt fresh in
+// makeTakeoverNavbar() on every open (navbars are never cached) and torn
+// down alongside the rest of the active-page state on the takeover's
+// 'world' onModeChange. Distinct from the persistent home-chrome emblem
+// (`navEmblem`, mounted once in initSite and never destroyed).
+let activeEmblem: Emblem | null = null;
+
 // Lab mode check at the top
 const lab = new URLSearchParams(location.search).get('lab');
 if (lab === 'ferro') {
@@ -110,6 +119,10 @@ if (lab === 'ferro') {
     // Mounted further down, once router/takeover exist; declared here so the
     // ground-flip call sites below can reach it.
     let ferro: FerroController | null = null;
+    // The home chrome's own copy of the nav emblem (index.html's static
+    // `.site-nav .emblem-mount`) — built once below and never destroyed,
+    // unlike `activeEmblem` (the takeover navbar's copy, rebuilt per open).
+    let navEmblem: Emblem | null = null;
 
     /**
      * The blob's home on a 2D page. From *Work - Contact Ferro Placement*
@@ -202,6 +215,8 @@ if (lab === 'ferro') {
           activeCurtain = null;
           activeBehind?.destroy();
           activeBehind = null;
+          activeEmblem?.destroy();
+          activeEmblem = null;
         }
       },
     });
@@ -249,14 +264,28 @@ if (lab === 'ferro') {
       router.navigate(id);
     };
 
-    const makeTakeoverNavbar = (m: TakeoverPageMods): HTMLElement =>
-      m.buildNavbar({
+    const makeTakeoverNavbar = (m: TakeoverPageMods): HTMLElement => {
+      const navbar = m.buildNavbar({
         reducedMotion,
         // No onCloth: the v1 cloth-V tab is gone from takeover pages entirely.
         // The curtain replaced it on case studies, and Escape covers the rest.
         onWordmark: () => void closeTakeoverThenNavigate('home'),
         onNav: (dest) => void closeTakeoverThenNavigate(dest),
       });
+      // Navbars are rebuilt fresh on every open (never cached), so the
+      // emblem living inside this one is rebuilt too — destroy the previous
+      // takeover navbar's copy first (defensive: onModeChange's 'world'
+      // branch already does this on every close, but a caller could in
+      // principle open a second page without an intervening close).
+      activeEmblem?.destroy();
+      activeEmblem = null;
+      const mount = navbar.querySelector<HTMLElement>('.emblem-mount');
+      if (mount) {
+        activeEmblem = buildEmblem({ reducedMotion, onActivate: () => void activateContactWipe() });
+        mount.appendChild(activeEmblem.el);
+      }
+      return navbar;
+    };
 
     // open() appends the page synchronously (before its swipe tween — verified
     // in takeover.ts runOpen), so mountReveal can bind the reveal observer to
@@ -363,7 +392,7 @@ if (lab === 'ferro') {
       });
     };
 
-    const openContact = async (): Promise<void> => {
+    const openContact = async (opts: { transition?: TakeoverTransition } = {}): Promise<void> => {
       const m = await loadPageMods();
       if (takeover.isOpen()) return;
       const page = m.buildContact({
@@ -371,7 +400,7 @@ if (lab === 'ferro') {
         navbar: makeTakeoverNavbar(m),
         deferReveal: true,
       });
-      const opened = takeover.open(page);
+      const opened = takeover.open(page, opts);
       cursor?.setOnDark(true); // beat 4 is a black page
       activeRevealCleanup?.();
       activeRevealCleanup = m.mountReveal(page, { reducedMotion });
@@ -401,6 +430,40 @@ if (lab === 'ferro') {
         } else {
           page.form.showConfirmation('transport-failed');
         }
+      });
+    };
+
+    /**
+     * The nav emblem's click handler (docs/superpowers/specs/2026-08-21-
+     * contact-flow-architecture.md §6-7): the sawtooth wipe replaces the
+     * default swipe transition for this one entry into beat 4.
+     *
+     * Route pushed at the START, same ordering rule as the director.onArrive
+     * contact handler above: the takeover's own history marker must land ON
+     * TOP of /contact, or close()'s topIsTakeover() guard fails and the back
+     * button goes dead.
+     *
+     * If a case study or About was already open (the emblem lives in every
+     * takeover navbar), close it first — same history-unwind discipline as
+     * closeTakeoverThenNavigate, so that close's own history.back() unwinds
+     * BEFORE /contact is pushed, not after. openContact's existing
+     * placeFerroForContact(page, { travel: true }) call then carries the
+     * blob from wherever onModeChange just placed it (the corner, either
+     * freshly-shown or already visible) to the beat-4 frame while the wipe
+     * plays (spec §6) — no separate travel flag needed here.
+     */
+    const activateContactWipe = async (): Promise<void> => {
+      if (takeover.isOpen()) {
+        await takeover.close();
+        await afterTakeoverHistoryUnwind();
+      }
+      history.pushState({ dest: 'contact' }, '', withBase('/contact'));
+      const ferroStageEl = document.querySelector<HTMLElement>('.ferro-stage');
+      await openContact({
+        transition: {
+          in: (div) => runWipe('in', { panel: div, ferro: ferroStageEl }, { reducedMotion }),
+          out: (div) => runWipe('out', { panel: div, ferro: ferroStageEl }, { reducedMotion }),
+        },
       });
     };
 
@@ -477,6 +540,20 @@ if (lab === 'ferro') {
       true,
     );
 
+    // Feeds an emblem's own proximity pass from page coordinates, converting
+    // into the emblem-box pixels (0..64) its `setPointer` expects via its own
+    // getBoundingClientRect() — the box moves (nav vs. takeover navbar,
+    // responsive layout), so this must be read fresh every call, not cached.
+    const feedEmblemPointer = (emblem: Emblem | null, p: { x: number; y: number } | null): void => {
+      if (!emblem) return;
+      if (!p) {
+        emblem.setPointer(null);
+        return;
+      }
+      const r = emblem.el.getBoundingClientRect();
+      emblem.setPointer({ x: p.x - r.left, y: p.y - r.top });
+    };
+
     // Pointer hover over the world: RAF-throttled pick drives tile hover + the
     // canvas cursor. No-ops while a takeover covers the viewport.
     let pendingPointer: { x: number; y: number } | null = null;
@@ -487,8 +564,11 @@ if (lab === 'ferro') {
       if (!p) return;
       // The blob only lives on 2D pages, but it reads the pointer from the one
       // throttled handler either way — a second raw listener would double the
-      // per-move work for no gain.
+      // per-move work for no gain. Same reasoning for the nav emblem: whichever
+      // copy is currently live (home chrome, or the open takeover's navbar)
+      // reads the pointer from here too.
       ferro?.setPointer(p);
+      feedEmblemPointer(takeover.isOpen() ? activeEmblem : navEmblem, p);
       if (takeover.isOpen()) {
         world.setTileHover(null);
         workHover.setHovered(null);
@@ -522,6 +602,8 @@ if (lab === 'ferro') {
     document.documentElement.addEventListener('pointerleave', () => {
       pendingPointer = null;
       ferro?.setPointer(null);
+      feedEmblemPointer(navEmblem, null);
+      feedEmblemPointer(activeEmblem, null);
     });
 
     // Click routing: a focused tile opens its takeover; any other tile flies to
@@ -624,6 +706,16 @@ if (lab === 'ferro') {
       onTile: activateTile,
       onAbout: activateAbout,
     });
+
+    // The home chrome's nav emblem — mounted once into index.html's static
+    // `.site-nav .emblem-mount`, after the Work/About links (Figma 84:411).
+    // Every takeover navbar carries its own copy (see makeTakeoverNavbar);
+    // this one is the persistent home-page instance and is never destroyed.
+    const navEmblemMount = document.querySelector<HTMLElement>('.site-nav .emblem-mount');
+    if (navEmblemMount) {
+      navEmblem = buildEmblem({ reducedMotion, onActivate: () => void activateContactWipe() });
+      navEmblemMount.appendChild(navEmblem.el);
+    }
 
     // One stage, mounted once, hidden until a 2D page asks for it.
     ferro = initFerro({ reducedMotion });
