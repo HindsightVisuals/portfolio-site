@@ -35,6 +35,21 @@
   background: #000;
 }
 
+/* Same story one level up: page2d.css paints the nav's flanking strips #fdfdfd
+ * and colours the wordmark/links with --ink, both sized for a light page. On
+ * beat 4 that left a white bar with a black wordmark across the top of a black
+ * page. Only the colours change — the strips keep their geometry, so the 220px
+ * notch between them stays a real window through to the live canvas. */
+.contact-page .nav2d::before,
+.contact-page .nav2d::after {
+  background: #000;
+}
+
+.contact-page .nav2d-wordmark,
+.contact-page .nav2d-contact {
+  color: #fff;
+}
+
 .contact-layout {
   display: flex;
   gap: var(--contact-gap);
