@@ -11,6 +11,18 @@
 .ferro-stage {
   position: fixed;
   inset: 0;
+  /* A canvas is a REPLACED element: `inset: 0` alone does NOT stretch it the
+   * way it stretches a div. With width/height left `auto` the used size is the
+   * element's INTRINSIC size — its drawing buffer — and right/bottom are
+   * ignored. Since the buffer is `viewport x devicePixelRatio`, the canvas laid
+   * out 1.5x the viewport on a 150%-scaled display, anchored top-left, which is
+   * why the blob drew oversized and off its frame. Sizing it here is also what
+   * keeps ferro-stage.ts's box measurement from feeding itself: the box now
+   * comes from the viewport rather than from the buffer that box just set.
+   * Same pair of declarations as #bg-canvas in base.css. */
+  width: 100%;
+  height: 100%;
+  display: block;
   z-index: 25; /* above .takeover (20), below the cursor (100) */
   pointer-events: none;
 }
