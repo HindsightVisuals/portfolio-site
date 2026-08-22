@@ -36,6 +36,21 @@ export function countWords(text: string): number {
   return words.length;
 }
 
+/**
+ * How far past rest a full message can push the displacement.
+ *
+ * Adam, 2026-08-21: "I think we need to quadruple the word typing effect." The
+ * first pass topped out at 1.8 — a 0.75 swing above the 1.05 rest — which read
+ * as almost nothing while typing. Quadrupling that swing gives 3.0, so a long
+ * brief drives the field to ~4.05.
+ *
+ * Deliberately NOT matched by a change to BOUNDING_RADIUS in ferro.ts: that is
+ * sized from the RESTING strength, so the blob fills its frame at rest and
+ * grows past it as the message accumulates. Overflowing into the empty column
+ * is the effect, not a bug — the transmission visibly outgrows its box.
+ */
+const WORD_SWING = 0.75 * 4;
+
 /** Words → displacement strength, saturating so a long message cannot explode it. */
 export function wordStrength(
   words: number,
@@ -43,7 +58,7 @@ export function wordStrength(
 ): number {
   // 1.05 duplicated FERRO_DEFAULTS.strength — same tuned value, now one source.
   const base = opts.base ?? FERRO_DEFAULTS.strength;
-  const max = opts.max ?? 1.8;
+  const max = opts.max ?? FERRO_DEFAULTS.strength + WORD_SWING;
   const halfLife = opts.halfLife ?? 25;
   const n = Number.isFinite(words) ? Math.max(0, words) : 0;
   return base + (max - base) * (1 - Math.exp(-n / halfLife));

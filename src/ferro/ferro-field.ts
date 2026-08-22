@@ -9,20 +9,42 @@
  * of `src/home/cursor-math.ts` for the convention.
  */
 
-/** Adam's tuned look, 2026-08-21. Art direction — not Blender parity. */
+/**
+ * Adam's tuned look. Art direction — not Blender parity.
+ *
+ * REVISED 2026-08-21 (second pass) against the Figma render, superseding the
+ * first tuning. Adam: "make the displacement texture smaller, and maybe we need
+ * to adjust the glsl shader to match my reference a bit more. Let's try
+ * glossier."
+ */
 export const FERRO_DEFAULTS = Object.freeze({
   strength: 1.05,
   midLevel: 0.5,
-  texScale: 0.5,
+  /**
+   * Sample frequency, not a size — `tp = (p - empty) * texScale`, so RAISING
+   * this makes the features SMALLER. 0.5 gave two or three broad swells across
+   * the whole blob; the reference is a cluster of small lobes, which needs the
+   * field to repeat several times over the same sphere.
+   */
+  texScale: 1.35,
   radius: 0.85,
   detail: 64,
   driftSeconds: 12,
   /**
-   * Leaving normals original lights the blob as a smooth sphere regardless of
-   * silhouette — a soft gradient falloff rather than the reference's hard black
-   * chrome. Adam chose it; do not "fix" it.
+   * Now ON, reversing the first pass.
+   *
+   * Moving vertices does not move normals, so with this off the blob was lit as
+   * a smooth sphere whatever its silhouette did — the soft gradient Adam
+   * originally chose. But that is exactly what stops it reading as chrome: a
+   * mirror's whole character is that each lobe catches its own reflection.
+   * Rebuilding normals from the field gradient is what produces the hard
+   * specular hits and per-lobe highlights in the reference.
+   *
+   * This costs 3 extra field evaluations per vertex (see ferroNormal), which at
+   * detail 64 is 84,500 triangles' worth — measured as acceptable, but it is
+   * the reason to leave `detail` where it is rather than raising it.
    */
-  recalcNormals: false,
+  recalcNormals: true,
   exposure: 0.5,
 });
 

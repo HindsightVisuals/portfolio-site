@@ -25,12 +25,16 @@ describe('driftUnitsPerSec', () => {
 });
 
 describe('FERRO_DEFAULTS', () => {
+  // Revised 2026-08-21 (second pass) against the Figma render: texScale 0.5 ->
+  // 1.35 for smaller lobes, and recalcNormals false -> true for the reference's
+  // glossy per-lobe specular. These assertions exist to catch accidental drift,
+  // so changing them is deliberate and belongs in the same commit as the values.
   it("carries Adam's tuned look, not Blender parity", () => {
     expect(FERRO_DEFAULTS.strength).toBeCloseTo(1.05, 6);
-    expect(FERRO_DEFAULTS.texScale).toBeCloseTo(0.5, 6);
+    expect(FERRO_DEFAULTS.texScale).toBeCloseTo(1.35, 6);
     expect(FERRO_DEFAULTS.driftSeconds).toBe(12);
     expect(FERRO_DEFAULTS.detail).toBe(64);
-    expect(FERRO_DEFAULTS.recalcNormals).toBe(false);
+    expect(FERRO_DEFAULTS.recalcNormals).toBe(true);
     expect(FERRO_DEFAULTS.exposure).toBeCloseTo(0.5, 6);
   });
 });

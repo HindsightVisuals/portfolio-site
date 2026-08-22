@@ -127,7 +127,13 @@ export function buildContact(opts: ContactOpts): ContactPageEl {
 
   const form = buildContactForm({ reducedMotion: opts.reducedMotion });
 
-  modal.append(title, intro, form.el, ...MODAL_MARK_POSITIONS.map(modalCornerMark));
+  // The reference pairs the heading and the intro side by side inside their own
+  // bordered box, rather than stacking them loose at the top of the modal.
+  const header = document.createElement('div');
+  header.className = 'contact-modal-header';
+  header.append(title, intro);
+
+  modal.append(header, form.el, ...MODAL_MARK_POSITIONS.map(modalCornerMark));
 
   layout.append(aside, modal);
   body.append(layout);

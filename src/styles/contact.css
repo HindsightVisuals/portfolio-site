@@ -8,6 +8,11 @@
   --contact-radius: 4px;
   --contact-field-border: #6b6b6b;
   --contact-chip-border: #2f2f2f;
+  /* The chip border (#2f2f2f) sits on the page's #000; the header and services
+   * panels sit on the modal's lighter rgba(31,31,31,.75), where the same value
+   * all but disappears. The reference shows these panel edges clearly, so they
+   * get their own slightly brighter line rather than reusing the chip token. */
+  --contact-panel-border: rgba(255, 255, 255, 0.16);
   --contact-chip-ink: #efefef;
   --contact-label-ink: #b1b1b1;
   /* The send green is the cursor accent at 50% — the palette is already
@@ -202,6 +207,70 @@
 
 .contact-note--top {
   max-width: 320px;
+}
+
+/* --- matching the reference render ----------------------------------------
+ * Adam, 2026-08-21: "can we do all of the differences between the two."
+ *
+ * All of this is presentation only. The copy strings stay sentence case in the
+ * DOM and are uppercased here with text-transform, which matters for more than
+ * tidiness: a placeholder is the accessible name fallback and the visually
+ * hidden <label> text, and SCREAMING TEXT is read out character by character by
+ * some screen readers. Uppercase is a typographic treatment, not content. */
+
+/* Heading and intro share a bordered box, side by side. */
+.contact-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px;
+  border: 1px solid var(--contact-panel-border);
+  border-radius: var(--contact-radius);
+}
+
+.contact-modal-header .contact-title {
+  /* Wraps to two lines in the reference; the 8ch cap forces that break rather
+   * than leaving it to the container width, so it reads the same at any size. */
+  max-width: 8ch;
+  margin: 0;
+}
+
+.contact-modal-header .contact-intro {
+  margin: 0;
+  text-align: left;
+}
+
+/* Uppercase field text. ::placeholder for the visible string, and the same on
+ * the select, which renders its own chosen option rather than a placeholder. */
+.contact-page .contact-field-control::placeholder {
+  text-transform: uppercase;
+}
+
+.contact-page select.contact-field-control {
+  text-transform: uppercase;
+}
+
+.contact-page .contact-chip,
+.contact-page .contact-submit {
+  text-transform: uppercase;
+}
+
+/* The services block is its own bordered panel in the reference, and its
+ * heading is set in the display face rather than the mono used for labels. */
+.contact-page .contact-chip-section {
+  padding: 20px;
+  border: 1px solid var(--contact-panel-border);
+  border-radius: var(--contact-radius);
+}
+
+.contact-page .contact-chips-heading {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: 20px;
+  text-transform: none; /* the one label the reference leaves in sentence case */
+  color: #fff;
+  margin: 0 0 16px;
 }
 
 /* --- filling the full-height modal ----------------------------------------

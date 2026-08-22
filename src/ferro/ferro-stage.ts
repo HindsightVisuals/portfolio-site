@@ -53,19 +53,34 @@ function buildWhiteVoid(): THREE.DataTexture {
   const W = 256;
   const H = 128;
   const data = new Float32Array(W * H * 4);
-  const ambient = 0.85;
+  // Lowered from 0.85. Ambient is what a mirror returns where it sees nothing
+  // in particular, so it sets the blob's floor value — high ambient washes the
+  // whole surface to mid-grey and there is no contrast left for a highlight to
+  // register against. The reference is near-black with hard bright hits.
+  const ambient = 0.18;
   // [x0, y0, x1, y1, intensity] in equirect space; y 0 = up.
+  //
+  // Revised for "glossier" (Adam, 2026-08-21). Roughness is already 0, so gloss
+  // cannot come from the material — in a mirror it comes entirely from what
+  // there is to reflect. Two broad soft boxes gave broad soft sheens; these are
+  // smaller and far brighter, which is what produces a compact, hard-edged
+  // specular hit per lobe, plus the small bright dots the reference shows.
   const boxes: Array<[number, number, number, number, number]> = [
-    [0.05, 0.05, 0.35, 0.35, 6],
-    [0.6, 0.08, 0.8, 0.3, 4],
+    [0.06, 0.06, 0.2, 0.26, 26], // key
+    [0.62, 0.1, 0.72, 0.24, 18], // fill, opposite side
+    [0.38, 0.02, 0.46, 0.1, 34], // small hot source — the bright speckles
+    [0.84, 0.42, 0.9, 0.52, 12], // low kicker, catches the underside lobes
   ];
   const soft = (v: number, e: number): number => Math.min(1, Math.max(0, v / e));
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const u = x / W;
       const v = y / H;
-      // Floor bounce — studio HDRIs are brighter below the horizon.
-      let lum = ambient + (v > 0.5 ? 0.25 * (v - 0.5) * 2 : 0);
+      // Floor bounce — studio HDRIs are brighter below the horizon. Scaled back
+      // with the ambient: at the old 0.85 ambient a 0.25 lift was a nudge, but
+      // against 0.18 it would be the brightest broad area in the map and undo
+      // the contrast the smaller, hotter sources are there to create.
+      let lum = ambient + (v > 0.5 ? 0.12 * (v - 0.5) * 2 : 0);
       for (const [x0, y0, x1, y1, i] of boxes) {
         if (u > x0 && u < x1 && v > y0 && v < y1) {
           const fx = Math.min(soft(u - x0, 0.04), soft(x1 - u, 0.04));
