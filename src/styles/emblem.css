@@ -41,3 +41,22 @@
   outline: 2px solid currentColor;
   outline-offset: 4px;
 }
+
+/* --- beat 2-3 wipe flyers ---------------------------------------------------
+ * Cells that break off ahead of the sawtooth edge (wipe.ts, wipe-geometry.ts).
+ * Fixed at document.body level, above BOTH .takeover (20) and .ferro-stage
+ * (25) — these have broken off in front of everything, including the blob. */
+.wipe-flyers {
+  position: fixed;
+  inset: 0;
+  z-index: 26;
+  pointer-events: none;
+}
+
+.wipe-flyer {
+  position: absolute;
+  /* left/top are set per-frame as viewport percentages, matching the fixed
+   * .wipe-flyers container being exactly the viewport box. */
+  border-radius: 2px;
+  background: #000;
+}

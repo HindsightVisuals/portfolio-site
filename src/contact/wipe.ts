@@ -1,0 +1,132 @@
+/**
+ * Beats 2-3: the sawtooth wipe. A single GSAP timeline drives a plain
+ * `{ t: 0 }` value from 0 to 1 (or 1 to 0 for `dir: 'out'`); every update
+ * derives the SAME clip string from `sawtoothClip` and writes it to both the
+ * incoming black panel and the ferro canvas.
+ *
+ * `.ferro-stage` is a viewport-sized WebGL canvas mounted at document.body
+ * level, z-index 25 — ABOVE `.takeover` (z-index 20). Left unclipped during
+ * the sweep, the blob it renders hangs over the outgoing page rather than
+ * riding inside the incoming black panel. It must never get its own tween:
+ * two tweens "with matching numbers" drift against each other, and the
+ * symptom is the blob bleeding past the panel's edge mid-sweep. One value,
+ * one write per frame, both elements.
+ */
+
+import gsap from 'gsap';
+import '../styles/emblem.css';
+import { flyingCells, sawtoothClip } from './wipe-geometry';
+
+const WIPE_DURATION_S = 1.1;
+const WIPE_EASE = 'power2.inOut';
+
+export interface WipeTargets {
+  panel: HTMLElement;
+  ferro: HTMLElement | null;
+}
+
+// Only one wipe ever runs at a time (a page transition can't be mid-sweep in
+// two directions at once). Killing the previous timeline before starting a
+// new one avoids two timelines fighting over the same clip-path value — a
+// documented failure mode in this codebase (see takeover.ts).
+let activeTimeline: gsap.core.Timeline | null = null;
+
+function buildFlyerLayer(): { el: HTMLDivElement; cells: HTMLSpanElement[] } {
+  const el = document.createElement('div');
+  el.className = 'wipe-flyers';
+  // flyingCells() always returns the same length — build one node per entry,
+  // once, and only ever update their transforms afterward.
+  const cells = flyingCells(0).map(() => {
+    const span = document.createElement('span');
+    span.className = 'wipe-flyer';
+    el.appendChild(span);
+    return span;
+  });
+  return { el, cells };
+}
+
+function writeFlyers(cells: HTMLSpanElement[], t: number): void {
+  const positions = flyingCells(t);
+  for (let i = 0; i < positions.length; i++) {
+    const p = positions[i];
+    const span = cells[i];
+    span.style.left = `${p.x}%`;
+    span.style.top = `${p.y}%`;
+    span.style.width = `${p.size}px`;
+    span.style.height = `${p.size}px`;
+    span.style.transform = `translate(-50%, -50%) rotate(${p.rotate}deg)`;
+  }
+}
+
+/**
+ * Runs the wipe once. `dir: 'in'` sweeps the panel from nothing revealed to
+ * fully covering; `dir: 'out'` runs the identical timeline in reverse. The
+ * returned promise resolves when the timeline completes (or immediately,
+ * under reduced motion).
+ */
+export function runWipe(
+  dir: 'in' | 'out',
+  targets: WipeTargets,
+  opts: { reducedMotion: boolean }
+): Promise<void> {
+  activeTimeline?.kill();
+  activeTimeline = null;
+
+  if (opts.reducedMotion) {
+    // Beats 2-3 are skipped outright — no clip, cut straight to beat 4.
+    targets.panel.style.clipPath = '';
+    if (targets.ferro) targets.ferro.style.clipPath = '';
+    return Promise.resolve();
+  }
+
+  const layer = buildFlyerLayer();
+  document.body.appendChild(layer.el);
+
+  const state = { t: dir === 'in' ? 0 : 1 };
+  const endT = dir === 'in' ? 1 : 0;
+
+  const applyFrame = (t: number): void => {
+    const clip = sawtoothClip(t);
+    targets.panel.style.clipPath = clip;
+    if (targets.ferro) targets.ferro.style.clipPath = clip;
+    writeFlyers(layer.cells, t);
+  };
+  applyFrame(state.t); // paint the starting frame before the first tick
+
+  return new Promise<void>((resolve) => {
+    // Set on natural completion only — an interrupted run (killed by a
+    // later runWipe call, see above) must not clear the clip out from under
+    // the new run that's about to drive it.
+    let completedNaturally = false;
+
+    const finish = (): void => {
+      activeTimeline = null;
+      layer.el.remove();
+      if (completedNaturally && dir === 'in') {
+        // A leftover clip-path on .ferro-stage would clip the small corner
+        // blob on every later 2D page; a leftover one on .takeover creates a
+        // containing block that changes how fixed-position descendants
+        // resolve. Clear both.
+        targets.panel.style.clipPath = '';
+        if (targets.ferro) targets.ferro.style.clipPath = '';
+      }
+      resolve();
+    };
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        completedNaturally = true;
+        finish();
+      },
+      onInterrupt: finish,
+    });
+    activeTimeline = tl;
+
+    tl.to(state, {
+      t: endT,
+      duration: WIPE_DURATION_S,
+      ease: WIPE_EASE,
+      onUpdate: () => applyFrame(state.t),
+    });
+  });
+}
