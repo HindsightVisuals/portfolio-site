@@ -1,0 +1,43 @@
+/* --- contact emblem -------------------------------------------------------
+ * 25 cells on a diagonal lattice (see emblem-grid.ts). Each is a rounded square
+ * rotated 45 degrees with a hole at its centre — the same motif tiled at 5%
+ * white as the contact page's ground, which is the point: the thing you click
+ * becomes the place you land. */
+.emblem {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.emblem-cell {
+  --s: 0.5;
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(45deg) scale(var(--s));
+  /* No transition: the pointer pass writes every frame, and a CSS transition
+   * on top of a per-frame write fights it. Beat 2's fill is driven by GSAP. */
+}
+
+/* The hole. An inset box-shadow rather than a pseudo-element keeps this to one
+ * node per cell — there are 25 of them and they are written every frame. */
+.emblem-cell::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 1px;
+  background: var(--emblem-hole, #fdfdfd);
+}
+
+.emblem:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
