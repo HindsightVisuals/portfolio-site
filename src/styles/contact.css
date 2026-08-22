@@ -19,6 +19,22 @@
   min-height: 100%;
 }
 
+/* page2d.css gives `.takeover-body` a #fdfdfd background, because the two 2D
+ * pages that existed before this one (About, case study) are light. Beat 4 is a
+ * black page, and this wrapper is a CHILD of `.contact-page` — so without this
+ * override it paints white straight over the black ground, and the whole page
+ * renders inverted: white field, dark marginalia, and a modal whose
+ * rgba(31,31,31,0.75) reads as light grey instead of near-black.
+ *
+ * The wrapper itself has to stay. `.takeover` deliberately paints no background
+ * (page2d.css:21-23) so its nav notch can be a real window through to the live
+ * canvas; content placed outside `.takeover-body` therefore lets the 3D world
+ * show through a page that is meant to be solid. Overriding the colour keeps
+ * the structural contract and fixes the ground. */
+.contact-page .takeover-body {
+  background: #000;
+}
+
 .contact-layout {
   display: flex;
   gap: var(--contact-gap);
