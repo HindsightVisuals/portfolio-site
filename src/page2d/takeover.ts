@@ -174,8 +174,17 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
 
     setInert(true);
 
-    await (activeTransition?.in ?? swipeIn)(div);
-    tween = null;
+    try {
+      await (activeTransition?.in ?? swipeIn)(div);
+    } catch (err) {
+      // A caller-supplied transition rejecting (or throwing synchronously)
+      // must not strand the state machine mid-'opening' forever — the page
+      // is already appended, so still fall through to advance to 'opened'
+      // below; it just won't have animated in.
+      console.error('[takeover] open transition failed:', err);
+    } finally {
+      tween = null;
+    }
 
     if (destroyed || container !== div) return; // torn down mid-animation — bail
     page.focus();
@@ -199,8 +208,17 @@ export function initTakeover(opts: TakeoverOpts): TakeoverHandle {
     const runOut = activeTransition?.out ?? swipeOut;
     activeTransition = null;
     if (div) {
-      await runOut(div);
-      tween = null;
+      try {
+        await runOut(div);
+      } catch (err) {
+        // A caller-supplied transition rejecting (or throwing synchronously)
+        // must not leave a dead full-screen panel on top of the site with
+        // no way to dismiss it — div.remove() and the state advance to
+        // 'closed' below still have to run unconditionally.
+        console.error('[takeover] close transition failed:', err);
+      } finally {
+        tween = null;
+      }
       if (destroyed) return; // torn down mid-animation — destroy() already cleaned up
       if (container === div) {
         div.remove();
