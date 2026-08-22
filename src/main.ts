@@ -108,6 +108,13 @@ if (lab === 'ferro') {
     if (!canvas || !taglineEl || !fieldEl || !screenProxiesEl) throw new Error('homepage DOM incomplete');
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Same test initCursor uses internally to gate the whole cursor system off
+    // on touch. The nav emblem's pointer wiring (feedEmblemPointer, below)
+    // reuses it: per-cell proximity has no touch equivalent, so on a coarse
+    // pointer the emblem is simply never fed a pointer and stays at rest —
+    // deliberately not faked with an ambient animation (spec §7). The click
+    // handler that runs the wipe on tap is unaffected either way.
+    const finePointer = window.matchMedia('(pointer: fine)').matches;
     const debug = new URLSearchParams(location.search).has('debug-rd');
     const debugWorld = new URLSearchParams(location.search).has('debug-world');
     const HOME_LEAVE_DIST = 10; // leaving-home threshold for intro interrupt + treatment B
@@ -544,8 +551,12 @@ if (lab === 'ferro') {
     // into the emblem-box pixels (0..64) its `setPointer` expects via its own
     // getBoundingClientRect() — the box moves (nav vs. takeover navbar,
     // responsive layout), so this must be read fresh every call, not cached.
+    // Gated on finePointer: on a coarse pointer there is no hover to feed, and
+    // feeding one anyway (e.g. the synthetic mousemove some browsers fire
+    // after a tap) would flash per-cell proximity for a frame — the emblem
+    // must simply stay at rest.
     const feedEmblemPointer = (emblem: Emblem | null, p: { x: number; y: number } | null): void => {
-      if (!emblem) return;
+      if (!emblem || !finePointer) return;
       if (!p) {
         emblem.setPointer(null);
         return;
