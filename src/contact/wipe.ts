@@ -20,9 +20,19 @@ import { flyingCells, sawtoothClip } from './wipe-geometry';
 const WIPE_DURATION_S = 1.1;
 const WIPE_EASE = 'power2.inOut';
 
+/** Beat 2: every emblem cell eases to full scale before the sweep (beat 3)
+ *  continues — see contact/emblem.ts's `setFill` doc comment. Fast ease-out,
+ *  ~0.25s, no pause before the sweep stage picks up. */
+const FILL_DURATION_S = 0.25;
+const FILL_EASE = 'power2.out';
+
 export interface WipeTargets {
   panel: HTMLElement;
   ferro: HTMLElement | null;
+  /** The emblem that was clicked (or is being reformed), if any. Structural
+   *  rather than importing `Emblem` from contact/emblem.ts, to avoid a
+   *  needless module coupling — any object with `setFill` will do. */
+  emblem?: { setFill(t: number): void } | null;
 }
 
 // Only one wipe ever runs at a time (a page transition can't be mid-sweep in
@@ -139,11 +149,40 @@ export function runWipe(
     });
     activeTimeline = tl;
 
-    tl.to(state, {
-      t: endT,
-      duration: WIPE_DURATION_S,
-      ease: WIPE_EASE,
-      onUpdate: () => applyFrame(state.t),
-    });
+    // Beat 2 (fill) and beat 3 (sweep) are ONE timeline, not two tweens
+    // started alongside each other — two separately-eased animations
+    // meeting at zero velocity reads as two animations, which the design
+    // explicitly calls out to avoid. `dir: 'in'` fills first, then the sweep
+    // continues immediately (GSAP timeline default: back-to-back, no gap).
+    // `dir: 'out'` is the reverse in TIME, not just in value: the sweep
+    // retreats first, and the emblem re-forms (unfills) over the final
+    // FILL_DURATION_S as the panel finishes retreating.
+    const fillState = { v: dir === 'in' ? 0 : 1 };
+    const endFill = dir === 'in' ? 1 : 0;
+    const addFillTween = (): void => {
+      if (!targets.emblem) return;
+      tl.to(fillState, {
+        v: endFill,
+        duration: FILL_DURATION_S,
+        ease: FILL_EASE,
+        onUpdate: () => targets.emblem?.setFill(fillState.v),
+      });
+    };
+    const addSweepTween = (): void => {
+      tl.to(state, {
+        t: endT,
+        duration: WIPE_DURATION_S,
+        ease: WIPE_EASE,
+        onUpdate: () => applyFrame(state.t),
+      });
+    };
+
+    if (dir === 'in') {
+      addFillTween();
+      addSweepTween();
+    } else {
+      addSweepTween();
+      addFillTween();
+    }
   });
 }

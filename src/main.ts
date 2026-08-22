@@ -288,7 +288,10 @@ if (lab === 'ferro') {
       activeEmblem = null;
       const mount = navbar.querySelector<HTMLElement>('.emblem-mount');
       if (mount) {
-        activeEmblem = buildEmblem({ reducedMotion, onActivate: () => void activateContactWipe() });
+        activeEmblem = buildEmblem({
+          reducedMotion,
+          onActivate: () => void activateContactWipe(activeEmblem),
+        });
         mount.appendChild(activeEmblem.el);
       }
       return navbar;
@@ -413,11 +416,28 @@ if (lab === 'ferro') {
       activeRevealCleanup = m.mountReveal(page, { reducedMotion });
       // onModeChange already stamped the corner rect at open-start (the blob
       // genuinely IS in the corner here), so this is the corner → beat-4
-      // travel described in spec §3 — NOT a snap. But under normal motion
-      // runOpen sets the `.takeover` container to `y: 100%` synchronously and
-      // only tweens it back to 0 across an await, so a rect read right now
-      // would be one viewport too low. Measure once the open has landed.
-      void opened.then(() => placeFerroForContact(page, { travel: true }));
+      // travel described in spec §3 — NOT a snap. Two different transitions
+      // land here with different DOM timing, so they measure at different
+      // points:
+      //  - The WIPE path (opts.transition set — activateContactWipe is the
+      //    only caller that passes one) never translates the `.takeover`
+      //    container; it only clips it (contact/wipe.ts). runOpen appends
+      //    the page synchronously, ahead of its own first await, so the
+      //    frame's rect is already valid THE INSTANT takeover.open() above
+      //    returns — measure and start the travel right now, so the blob
+      //    moves WHILE the wipe plays (spec §6) instead of visibly flying
+      //    into place after it. Do not "simplify" this to the deferred branch
+      //    below — that was tried and is the exact bug Adam reported ("ferro
+      //    is still not center frame").
+      //  - The DEFAULT SWIPE path (no opts.transition) sets the container to
+      //    `y: 100%` synchronously and only tweens it back to 0 across an
+      //    await, so a rect read right now would be one viewport too low.
+      //    Measure once the open has landed.
+      if (opts.transition) {
+        placeFerroForContact(page, { travel: true });
+      } else {
+        void opened.then(() => placeFerroForContact(page, { travel: true }));
+      }
 
       // Figma 85:1418: "this ferro would change/be affected via displacement
       // for each word typed in the send a signal modal, matching our
@@ -438,6 +458,14 @@ if (lab === 'ferro') {
           page.form.showConfirmation('transport-failed');
         }
       });
+
+      // Only activateContactWipe's re-entrancy guard actually awaits this
+      // promise (the other two callers are `void openContact()`) — but it
+      // needs openContact() to not resolve until the takeover has genuinely
+      // finished opening (transition run, state 'opened'), not merely
+      // scheduled, or a second click could still land mid-'opening' and
+      // reproduce the double-push-state bug the guard exists to prevent.
+      await opened;
     };
 
     /**
@@ -458,20 +486,47 @@ if (lab === 'ferro') {
      * blob from wherever onModeChange just placed it (the corner, either
      * freshly-shown or already visible) to the beat-4 frame while the wipe
      * plays (spec §6) — no separate travel flag needed here.
+     *
+     * `emblem` is whichever Emblem instance was actually clicked (the
+     * persistent home-chrome one, or a takeover navbar's own copy) — passed
+     * through unchanged to BOTH the `in` and `out` transitions, so the same
+     * element that filled/expanded on the way in is the one that re-forms on
+     * the way out.
+     *
+     * Re-entrancy: `activatingContactWipe` guards the WHOLE function.
+     * Without it, a second click during the 1.1s+ wipe lands while
+     * takeover.isOpen() is already true in state 'opening' — takeoverReducer
+     * ignores a 'close' event in that state, so `await takeover.close()`
+     * below no-ops, afterTakeoverHistoryUnwind() burns its 100ms timeout, and
+     * a SECOND `{dest:'contact'}` entry gets pushed on top of the takeover's
+     * own `{takeover:true}` marker. That leaves topIsTakeover() false when it
+     * should be true, so Escape stops calling history.back() and the back
+     * button goes dead. The flag is cleared in `finally` only once
+     * openContact() has resolved — which now waits for the takeover to
+     * actually reach 'opened' (see openContact's `await opened` above) — so
+     * the guard covers the entire dangerous window, including two clicks
+     * arriving before a cold loadPageMods() resolves.
      */
-    const activateContactWipe = async (): Promise<void> => {
-      if (takeover.isOpen()) {
-        await takeover.close();
-        await afterTakeoverHistoryUnwind();
+    let activatingContactWipe = false;
+    const activateContactWipe = async (emblem: Emblem | null): Promise<void> => {
+      if (activatingContactWipe) return;
+      activatingContactWipe = true;
+      try {
+        if (takeover.isOpen()) {
+          await takeover.close();
+          await afterTakeoverHistoryUnwind();
+        }
+        history.pushState({ dest: 'contact' }, '', withBase('/contact'));
+        const ferroStageEl = document.querySelector<HTMLElement>('.ferro-stage');
+        await openContact({
+          transition: {
+            in: (div) => runWipe('in', { panel: div, ferro: ferroStageEl, emblem }, { reducedMotion }),
+            out: (div) => runWipe('out', { panel: div, ferro: ferroStageEl, emblem }, { reducedMotion }),
+          },
+        });
+      } finally {
+        activatingContactWipe = false;
       }
-      history.pushState({ dest: 'contact' }, '', withBase('/contact'));
-      const ferroStageEl = document.querySelector<HTMLElement>('.ferro-stage');
-      await openContact({
-        transition: {
-          in: (div) => runWipe('in', { panel: div, ferro: ferroStageEl }, { reducedMotion }),
-          out: (div) => runWipe('out', { panel: div, ferro: ferroStageEl }, { reducedMotion }),
-        },
-      });
     };
 
     const openAbout = async (): Promise<void> => {
@@ -724,7 +779,10 @@ if (lab === 'ferro') {
     // this one is the persistent home-page instance and is never destroyed.
     const navEmblemMount = document.querySelector<HTMLElement>('.site-nav .emblem-mount');
     if (navEmblemMount) {
-      navEmblem = buildEmblem({ reducedMotion, onActivate: () => void activateContactWipe() });
+      navEmblem = buildEmblem({
+        reducedMotion,
+        onActivate: () => void activateContactWipe(navEmblem),
+      });
       navEmblemMount.appendChild(navEmblem.el);
     }
 

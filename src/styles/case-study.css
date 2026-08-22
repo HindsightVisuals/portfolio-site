@@ -59,7 +59,8 @@
 }
 
 .case-study .nav2d--scrolled .nav2d-wordmark,
-.case-study .nav2d--scrolled .nav2d-contact {
+.case-study .nav2d--scrolled .nav2d-contact,
+.case-study .nav2d--scrolled .nav2d-link {
   color: var(--cs-ink);
 }
 

@@ -42,6 +42,30 @@
   outline-offset: 4px;
 }
 
+/* `.emblem` is a `<button>` (inline-block by UA default) inside `.emblem-mount`
+ * (a plain `<span>`) — main.ts always mounts it this way, in index.html's
+ * `.site-nav` and every takeover navbar's `.nav2d-links` alike. Left as an
+ * inline formatting context, the mount reserves an invisible ~6px descender
+ * strut below the button (the classic inline-block-in-a-span gap), inflating
+ * the mount's own box to 70px. That's harmless where the row's cross-axis
+ * has no fixed height to fit (`.site-nav`, floating in `.chrome`), but inside
+ * `.nav2d`'s exact 64px strip (page2d.css), centering that oversized box
+ * pokes the emblem visibly ~3px above and short ~3px below the strip. `flex`
+ * removes the strut — and is what `.emblem`'s own `flex: 0 0 auto` above
+ * already assumed of its parent. */
+.emblem-mount {
+  display: flex;
+}
+
+/* index.html's `.site-nav` (base.css, off-limits — shared with the home
+ * page) has `display: flex` but no `align-items`, so the default `stretch`
+ * blockifies the Work/About `<a>` links to the emblem-mount's 64px height,
+ * riding their text ~24px above the wordmark. Centering here instead of
+ * editing base.css keeps that file untouched. */
+.site-nav {
+  align-items: center;
+}
+
 /* --- beat 2-3 wipe flyers ---------------------------------------------------
  * Cells that break off ahead of the sawtooth edge (wipe.ts, wipe-geometry.ts).
  * Fixed at document.body level, above BOTH .takeover (20) and .ferro-stage

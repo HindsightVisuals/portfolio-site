@@ -38,6 +38,10 @@
  * the structural contract and fixes the ground. */
 .contact-page .takeover-body {
   background-color: #000;
+  /* page2d.css reserves 64px here for the sticky nav bar. Beat 4's nav is
+   * inside the column instead (see .contact-page .nav2d below), so that
+   * reservation would leave a dead 64px strip. */
+  min-height: 100%;
 
   /* The ground texture is the emblem's own inner dots, tiled (Adam: "it was
    * supposed to be the small inner dots inside the 2D ferro pattern"). Each
@@ -92,26 +96,20 @@
   color: #fff;
 }
 
-/* `.nav2d-link` has no styling anywhere in the codebase — the buttons were
- * built but never dressed, so they rendered as default UA chrome: black text
- * on rgb(240,240,240), stacked at the far left under the wordmark. Beat 4's
- * are Work and About, right-aligned, in the page's mono voice. */
+/* `.nav2d-links` / `.nav2d-link` layout (position, flex row, font, cursor…)
+ * lives unscoped in page2d.css now, so every 2D page gets a dressed nav
+ * instead of default UA-chrome buttons. Beat 4 still needs its own layout —
+ * the nav lives inside the aside column here, not the top strip — plus a
+ * light-on-dark colour swap, since page2d.css's default `var(--ink)` reads
+ * as near-black text on beat 4's black ground. */
 .contact-page .nav2d-links {
+  position: static;
   display: flex;
   gap: 32px;
 }
 
 .contact-page .nav2d-link {
-  background: none;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  cursor: pointer;
   color: #fff;
-  font-family: var(--font-mono);
-  font-size: 14px;
-  line-height: 1;
-  text-transform: capitalize;
 }
 
 .contact-page .nav2d-link:hover {
@@ -140,13 +138,12 @@
    * flex default `align-items: stretch` does the rest, but only if this row
    * actually has a height to stretch into — hence the viewport min-height
    * rather than letting the row collapse to its content. */
-  min-height: 100vh; /* border-box, so the content row gets 100vh minus the padding */
-}
-
-/* page2d.css reserves 64px here for the sticky nav bar. Beat 4's nav is inside
- * the column instead, so that reservation would leave a dead 64px strip. */
-.contact-page .takeover-body {
-  min-height: 100%;
+  /* dvh, not vh: `.takeover` is `position: fixed; inset: 0` (page2d.css) —
+   * a fixed-position scroller, not the document — so `vh` measures against
+   * the LARGEST mobile toolbar state and undershoots once the browser chrome
+   * collapses, leaving phantom scroll room below the fold. `dvh` tracks the
+   * toolbar live instead. */
+  min-height: 100dvh; /* border-box, so the content row gets 100dvh minus the padding */
 }
 
 /* min-width: 0 overrides the flex-item default of `min-width: auto`, which
