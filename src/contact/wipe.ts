@@ -102,13 +102,30 @@ export function runWipe(
     const finish = (): void => {
       activeTimeline = null;
       layer.el.remove();
-      if (completedNaturally && dir === 'in') {
-        // A leftover clip-path on .ferro-stage would clip the small corner
-        // blob on every later 2D page; a leftover one on .takeover creates a
-        // containing block that changes how fixed-position descendants
-        // resolve. Clear both.
-        targets.panel.style.clipPath = '';
-        if (targets.ferro) targets.ferro.style.clipPath = '';
+      if (completedNaturally) {
+        if (dir === 'in') {
+          // At progress 1 the clip already covers everything, so clearing is
+          // visually identical. A leftover clip-path on .ferro-stage would
+          // clip the small corner blob on every later 2D page; a leftover
+          // one on .takeover creates a containing block that changes how
+          // fixed-position descendants resolve. Clear both.
+          targets.panel.style.clipPath = '';
+          if (targets.ferro) targets.ferro.style.clipPath = '';
+        } else {
+          // dir === 'out': asymmetric on purpose — do NOT clear the panel
+          // here. At progress 0 the panel is clipped to nothing; clearing it
+          // would flash the full outgoing page for the frame between this
+          // promise resolving and takeover.ts's div.remove() actually
+          // running. That leftover clip is harmless because the panel node
+          // is about to be destroyed.
+          //
+          // The ferro stage is not about to be destroyed — it's a
+          // long-lived, viewport-level canvas shared by every page,
+          // including the small corner blob rendered on ordinary 2D pages.
+          // Its clip DOES need clearing, or that blob stays invisible
+          // site-wide until something unrelated happens to reset it.
+          if (targets.ferro) targets.ferro.style.clipPath = '';
+        }
       }
       resolve();
     };
