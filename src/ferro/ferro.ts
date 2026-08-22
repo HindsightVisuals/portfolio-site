@@ -115,11 +115,21 @@ export function initFerro(opts: FerroOpts): FerroController | null {
   };
   stage.onFrame(stepFerro);
 
+  /**
+   * Re-derive the placement whenever the stage's viewport changes.
+   *
+   * This listens to the STAGE, not to `window.resize`, and that distinction is
+   * the whole point: a rect is converted into world units against
+   * `stage.viewport()`, so the conversion goes stale exactly when that viewport
+   * changes — which is not always when the window does. A canvas box that
+   * settles late, or a display-scaling mismatch, moves the viewport with no
+   * window resize at all, and the old listener slept through it. The stage now
+   * watches its own element and tells us.
+   */
   const onResize = (): void => {
-    // Rects are viewport-relative, so a resize re-derives the same home.
     if (currentRect) apply(currentRect, true);
   };
-  window.addEventListener('resize', onResize);
+  stage.onViewportChange(onResize);
 
   const controller: FerroController = {
     placeAt(rect, placeOpts) {
@@ -174,7 +184,8 @@ export function initFerro(opts: FerroOpts): FerroController | null {
       if (opts.reducedMotion) stage.requestFrame();
     },
     destroy(): void {
-      window.removeEventListener('resize', onResize);
+      // No window listener to remove any more — the subscription lives on the
+      // stage, and stage.destroy() below drops it with the rest of the stage.
       gsap.killTweensOf([object.mesh.position, object.mesh.scale]);
       placeSettle?.kill();
       placeSettle = null;

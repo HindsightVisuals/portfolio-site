@@ -30,6 +30,12 @@ export interface FerroStage {
   requestFrame(): void;
   /** Park the loop when the blob has no home on screen. */
   setActive(active: boolean): void;
+  /**
+   * Fires whenever the canvas's box changes, i.e. whenever `viewport()` starts
+   * returning something new. Anything that converted a CSS rect into world
+   * units against the old viewport has to redo that conversion — see ferro.ts.
+   */
+  onViewportChange(cb: () => void): void;
   viewport(): { w: number; h: number };
   destroy(): void;
 }
@@ -137,9 +143,28 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
 
   let vw = 1;
   let vh = 1;
+  /**
+   * Measure the CANVAS'S OWN BOX, not `window.innerWidth/innerHeight`.
+   *
+   * This used to trust the window and re-read it only on a `resize` event, and
+   * that shipped a real bug: on a display at 150% scaling the boot measurement
+   * cached roughly 1707x870 while the element was really 2560x1305, and no
+   * resize ever fired to correct it. Everything downstream is derived from this
+   * pair — `worldPerPx` in ferro-placement.ts divides by the height — so a
+   * viewport 1.5x too small rendered the blob 1.5x too large and threw its
+   * screen position out by the same factor, parking it near the bottom-middle
+   * of the viewport instead of inside its frame.
+   *
+   * The element is what the projection actually maps onto, so measuring it is
+   * both more direct and self-correcting: whatever makes the box change —
+   * scaling, zoom, a resize the listener missed, a stylesheet — the numbers
+   * follow. The ResizeObserver below is what closes the loop.
+   */
   const measure = (): void => {
-    vw = Math.max(1, window.innerWidth);
-    vh = Math.max(1, window.innerHeight);
+    const box = canvas.getBoundingClientRect();
+    // Fall back to the window only if the element has no box yet (not laid out).
+    vw = Math.max(1, Math.round(box.width || window.innerWidth));
+    vh = Math.max(1, Math.round(box.height || window.innerHeight));
     camera.aspect = vw / vh;
     camera.updateProjectionMatrix();
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -179,8 +204,18 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
     if (v) start();
   });
 
+  const viewportCbs: Array<() => void> = [];
+
   const onResize = (): void => {
+    const beforeW = vw;
+    const beforeH = vh;
     measure();
+    // Only notify on an actual change: the observer fires on observe() and on
+    // every layout pass that touches the box, and re-placing the blob on a
+    // no-op would restart its travel tween mid-flight.
+    if (vw !== beforeW || vh !== beforeH) {
+      for (const cb of viewportCbs) cb();
+    }
     // A parked-but-ACTIVE stage still has to repaint, or a resize leaves a
     // stale frame (e.g. the <=1200px contact stack, where the frame's CSS
     // box changes size but nothing else re-triggers a render). An inactive
@@ -190,6 +225,21 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
     if (!raf && active) step(0);
   };
   window.addEventListener('resize', onResize);
+
+  /**
+   * The real guarantee. A `resize` listener only fires when the WINDOW changes,
+   * and the bug this fixes was a canvas box that disagreed with the cached size
+   * without any window resize ever happening. Observing the element itself
+   * catches every cause — display scaling, zoom, a late layout, a stylesheet
+   * arriving — because it watches the thing the projection maps onto rather
+   * than a proxy for it.
+   *
+   * The observer fires once on observe(), which also re-measures after first
+   * layout: at initFerroStage() time the canvas has just been appended and may
+   * still report a zero or provisional box.
+   */
+  const boxObserver = new ResizeObserver(() => onResize());
+  boxObserver.observe(canvas);
 
   return {
     scene,
@@ -201,6 +251,9 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
     },
     requestFrame() {
       if (!raf) step(0);
+    },
+    onViewportChange(cb) {
+      viewportCbs.push(cb);
     },
     setActive(next) {
       active = next;
@@ -215,6 +268,8 @@ export function initFerroStage(opts: FerroStageOpts): FerroStage | null {
     },
     destroy(): void {
       offVisibility();
+      boxObserver.disconnect();
+      viewportCbs.length = 0;
       window.removeEventListener('resize', onResize);
       if (raf) cancelAnimationFrame(raf);
       callbacks.length = 0;
