@@ -1,0 +1,116 @@
+/* --- contact emblem -------------------------------------------------------
+ * 25 cells on a diagonal lattice (see emblem-grid.ts). Each is a rounded square
+ * rotated 45 degrees with a hole at its centre — the same motif tiled at 5%
+ * white as the contact page's ground, which is the point: the thing you click
+ * becomes the place you land. */
+.emblem {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.emblem-cell {
+  --s: 0.5;
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(45deg) scale(var(--s));
+  /* No transition: the pointer pass writes every frame, and a CSS transition
+   * on top of a per-frame write fights it. Beat 2's fill is driven by GSAP. */
+}
+
+/* The hole. An inset box-shadow rather than a pseudo-element keeps this to one
+ * node per cell — there are 25 of them and they are written every frame. */
+.emblem-cell::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 1px;
+  background: var(--emblem-hole, #fdfdfd);
+}
+
+.emblem:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
+
+/* `.emblem` is a `<button>` (inline-block by UA default) inside `.emblem-mount`
+ * (a plain `<span>`) — main.ts always mounts it this way, in index.html's
+ * `.site-nav` and every takeover navbar's `.nav2d-links` alike. Left as an
+ * inline formatting context, the mount reserves an invisible ~6px descender
+ * strut below the button (the classic inline-block-in-a-span gap), inflating
+ * the mount's own box to 70px. That's harmless where the row's cross-axis
+ * has no fixed height to fit (`.site-nav`, floating in `.chrome`), but inside
+ * `.nav2d`'s exact 64px strip (page2d.css), centering that oversized box
+ * pokes the emblem visibly ~3px above and short ~3px below the strip. `flex`
+ * removes the strut — and is what `.emblem`'s own `flex: 0 0 auto` above
+ * already assumed of its parent. */
+.emblem-mount {
+  display: flex;
+}
+
+/* index.html's `.site-nav` (base.css, off-limits — shared with the home
+ * page) has `display: flex` but no `align-items`, so the default `stretch`
+ * blockifies the Work/About `<a>` links to the emblem-mount's 64px height,
+ * riding their text ~24px above the wordmark. Centering here instead of
+ * editing base.css keeps that file untouched. */
+.site-nav {
+  align-items: center;
+}
+
+/* --- beat 3: the tile field -------------------------------------------------
+ * The diamonds the contact page builds on out of (wipe.ts, wipe-geometry.ts) —
+ * the emblem's own motif at viewport scale. Fixed at document.body level, above
+ * BOTH .takeover (20) and .ferro-stage (25): the incoming page hides behind the
+ * field until it is opaque, rather than being revealed by it. */
+.wipe-tiles {
+  position: fixed;
+  inset: 0;
+  z-index: 26;
+  pointer-events: none;
+  /* The field overshoots the viewport by a tile on every side so the edges are
+   * covered; without this the overshoot ring would grow scrollbars. */
+  overflow: hidden;
+}
+
+.wipe-tile {
+  position: absolute;
+  /* left/top are set once, in px, from tileField(). Only `transform` is
+   * touched per frame — and only on the tiles actually moving that frame. */
+  /* border-radius is written by wipe.ts from TILE_RADIUS, not set here: it eats
+   * into how far a tile reaches, so the geometry module has to own it or the
+   * coverage maths there is reasoning about a shape this file has changed. */
+  background: #000;
+  /* Starts at nothing. wipe.ts writes the full transform (including the 45deg
+   * rotation) from the first frame, but a tile must not flash at full size in
+   * the frame between being appended and being written. */
+  transform: translate(-50%, -50%) rotate(45deg) scale(0);
+}
+
+/* The hole, as on the emblem's cells — except it is a WHITE SQUARE, not a hole.
+ * Adam: "the holes should actually just be white smaller squares inside the
+ * bigger black ones". That distinction is what lets the motif survive at
+ * viewport scale: a real hole would leave the field see-through however far the
+ * tiles grew, and the incoming page hides behind that field. Painted white, it
+ * carries the same read while the field stays opaque. */
+.wipe-tile::after {
+  content: '';
+  position: absolute;
+  /* Kept small deliberately. At the emblem's own 1:3 proportion the square
+   * swamps a 200px tile and the field reads as white-on-black rather than as a
+   * black field carrying a mark. The 2-4px radius Adam asked for is itself the
+   * clue to the intended size — that radius only reads as "rounded" on a
+   * square of a few tens of pixels. If this changes, INNER_INSET in
+   * wipe-geometry.test.ts mirrors it. */
+  inset: 44%;
+  border-radius: 3px; /* Adam asked for 2-4px */
+  background: #fdfdfd;
+}

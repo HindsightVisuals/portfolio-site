@@ -16,7 +16,9 @@ import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
 import { DEST_ORDER, destForPath, slugForPath, withBase, type DestId } from './routes';
-import { initTakeover } from './page2d/takeover';
+import { initTakeover, type TakeoverTransition } from './page2d/takeover';
+import { buildEmblem, type Emblem } from './contact/emblem';
+import { runWipe } from './contact/wipe';
 import type { Strip } from './page2d/strip';
 import type { LogoStage } from './page2d/logo-stage';
 import type { RdSurface } from './page2d/rd-surface';
@@ -41,6 +43,11 @@ const loadPageMods = (): Promise<TakeoverPageMods> => {
 };
 import { initScreenProxies } from './home/screen-proxies';
 import { initCursor } from './home/cursor';
+import { initFerro, type FerroController } from './ferro/ferro';
+import type { Rect } from './ferro/ferro-placement';
+import { countWords, wordStrength } from './ferro/ferro-influence';
+import { FERRO_DEFAULTS } from './ferro/ferro-field';
+import { submitInquiry } from './contact/submit';
 import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
@@ -78,8 +85,18 @@ let activeRd: RdSurface | null = null;
 let activeCurtain: CurtainLive | null = null;
 let activeBehind: BehindPanel | null = null;
 
+// The takeover navbar's own copy of the nav emblem — rebuilt fresh in
+// makeTakeoverNavbar() on every open (navbars are never cached) and torn
+// down alongside the rest of the active-page state on the takeover's
+// 'world' onModeChange. Distinct from the persistent home-chrome emblem
+// (`navEmblem`, mounted once in initSite and never destroyed).
+let activeEmblem: Emblem | null = null;
+
 // Lab mode check at the top
-if (new URLSearchParams(location.search).get('lab') === 'fly') {
+const lab = new URLSearchParams(location.search).get('lab');
+if (lab === 'ferro') {
+  void import('./lab/ferro').then((m) => m.initFerroLab());
+} else if (lab === 'fly') {
   void import('./lab/fly').then((m) => m.initFlyLab());
 } else {
   // Normal site boot
@@ -91,6 +108,13 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     if (!canvas || !taglineEl || !fieldEl || !screenProxiesEl) throw new Error('homepage DOM incomplete');
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Same test initCursor uses internally to gate the whole cursor system off
+    // on touch. The nav emblem's pointer wiring (feedEmblemPointer, below)
+    // reuses it: per-cell proximity has no touch equivalent, so on a coarse
+    // pointer the emblem is simply never fed a pointer and stays at rest —
+    // deliberately not faked with an ambient animation (spec §7). The click
+    // handler that runs the wipe on tap is unaffected either way.
+    const finePointer = window.matchMedia('(pointer: fine)').matches;
     const debug = new URLSearchParams(location.search).has('debug-rd');
     const debugWorld = new URLSearchParams(location.search).has('debug-world');
     const HOME_LEAVE_DIST = 10; // leaving-home threshold for intro interrupt + treatment B
@@ -99,6 +123,23 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     // F15: null on coarse pointers, where the whole system is gated off and the
     // OS cursor is left alone. Every consumer below treats null as normal.
     const cursor = initCursor({ reducedMotion });
+    // Mounted further down, once router/takeover exist; declared here so the
+    // ground-flip call sites below can reach it.
+    let ferro: FerroController | null = null;
+    // The home chrome's own copy of the nav emblem (index.html's static
+    // `.site-nav .emblem-mount`) — built once below and never destroyed,
+    // unlike `activeEmblem` (the takeover navbar's copy, rebuilt per open).
+    let navEmblem: Emblem | null = null;
+
+    /**
+     * The blob's home on a 2D page. From *Work - Contact Ferro Placement*
+     * (`87:2240`): 227x218 at x1693,y862 in a 1920x1080 frame — i.e. flush to
+     * the bottom-right margin, sized ~11.8% of viewport width.
+     */
+    const cornerRect = (): Rect => {
+      const w = Math.round(window.innerWidth * 0.118);
+      return { x: window.innerWidth - w - 48, y: window.innerHeight - w - 48, w, h: w };
+    };
     const bg = initBackgroundLayer(stage.renderer, { reducedMotion, debug }, () => {
       if (reducedMotion) stage.requestFrame();
     });
@@ -153,6 +194,15 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
         // own mode. (scrollNav is null under reduced motion — no wheel nav.)
         inputMode = mode;
         scrollNav?.setMode(mode);
+        // The ferrofluid rides 2D pages only — the home world has the synth nav
+        // for that job (architecture spec §1).
+        if (mode === 'takeover') {
+          void ferro?.placeAt(cornerRect(), { instant: true });
+          ferro?.setGlow(true);
+          ferro?.show();
+        } else {
+          ferro?.hide();
+        }
         // A takeover with no window onto the world can pause it immediately
         // (About). A case study keeps it alive until its curtain scrolls off —
         // see the scroll handler below, which owns the pause from then on.
@@ -172,6 +222,8 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
           activeCurtain = null;
           activeBehind?.destroy();
           activeBehind = null;
+          activeEmblem?.destroy();
+          activeEmblem = null;
         }
       },
     });
@@ -219,14 +271,31 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       router.navigate(id);
     };
 
-    const makeTakeoverNavbar = (m: TakeoverPageMods): HTMLElement =>
-      m.buildNavbar({
+    const makeTakeoverNavbar = (m: TakeoverPageMods): HTMLElement => {
+      const navbar = m.buildNavbar({
         reducedMotion,
         // No onCloth: the v1 cloth-V tab is gone from takeover pages entirely.
         // The curtain replaced it on case studies, and Escape covers the rest.
         onWordmark: () => void closeTakeoverThenNavigate('home'),
         onNav: (dest) => void closeTakeoverThenNavigate(dest),
       });
+      // Navbars are rebuilt fresh on every open (never cached), so the
+      // emblem living inside this one is rebuilt too — destroy the previous
+      // takeover navbar's copy first (defensive: onModeChange's 'world'
+      // branch already does this on every close, but a caller could in
+      // principle open a second page without an intervening close).
+      activeEmblem?.destroy();
+      activeEmblem = null;
+      const mount = navbar.querySelector<HTMLElement>('.emblem-mount');
+      if (mount) {
+        activeEmblem = buildEmblem({
+          reducedMotion,
+          onActivate: () => void activateContactWipe(activeEmblem),
+        });
+        mount.appendChild(activeEmblem.el);
+      }
+      return navbar;
+    };
 
     // open() appends the page synchronously (before its swipe tween — verified
     // in takeover.ts runOpen), so mountReveal can bind the reveal observer to
@@ -280,6 +349,186 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       });
     };
 
+    /**
+     * The blob's beat-4 home is read off the layout, not recomputed from the spec's
+     * numbers — so the reflow in Task 9 moves the blob with no extra wiring.
+     *
+     * Not instant: if a case study was already open, the blob is in the corner and
+     * this is the travel described in spec §3. placeAt tweens it. Arriving from the
+     * world it is hidden, so show() after placing avoids a visible slide from a
+     * stale rect.
+     */
+    const placeFerroForContact = (page: HTMLElement, opts: { travel: boolean }): void => {
+      // Literal, not an imported constant: contact.ts exports FERRO_FRAME_SELECTOR,
+      // but a static import from main.ts would drag contact.ts (and its stylesheet)
+      // into the eager bundle — route modules stay in the lazy loadPageMods() chunk.
+      const frame = page.querySelector<HTMLElement>('[data-ferro-frame]');
+      if (!frame || !ferro) return;
+      const r = frame.getBoundingClientRect();
+      void ferro.placeAt({ x: r.x, y: r.y, w: r.width, h: r.height }, { instant: !opts.travel });
+      ferro.setGlow(false); // beat 4's blob is the subject, not a corner accent
+      ferro.show();
+    };
+
+    // Task 9: below 1200px the contact layout stacks and the ferro frame's
+    // pixel box moves with it. ferro.ts re-applies its OLD stored rect on
+    // resize, which is stale the instant CSS reflows the frame — re-measure
+    // the live frame instead. Registered once (not per open); a no-op when no
+    // contact page is mounted.
+    window.addEventListener('resize', () => {
+      const page = document.querySelector<HTMLElement>('.contact-page');
+      if (page) placeFerroForContact(page, { travel: false });
+    });
+
+    /**
+     * The payoff: the transmission the visitor built by typing is absorbed
+     * in one gulp. Strength jumps, then settles back to rest.
+     *
+     * Reduced motion gets the state change with no spike — the confirmation
+     * is the information, the lurch is the decoration (spec §8).
+     */
+    const SPIKE_TO = 2.6;
+    const spikeState = { v: SPIKE_TO };
+    const spikeFerro = (): void => {
+      if (!ferro || reducedMotion) return;
+      spikeState.v = SPIKE_TO;
+      ferro.setStrength(SPIKE_TO);
+      gsap.killTweensOf(spikeState); // two tweens fighting over one value is a documented failure mode here
+      gsap.to(spikeState, {
+        v: FERRO_DEFAULTS.strength,
+        duration: 1.1,
+        ease: 'power3.out',
+        onUpdate: () => ferro?.setStrength(spikeState.v),
+      });
+    };
+
+    const openContact = async (opts: { transition?: TakeoverTransition } = {}): Promise<void> => {
+      const m = await loadPageMods();
+      if (takeover.isOpen()) return;
+      const page = m.buildContact({
+        reducedMotion,
+        navbar: makeTakeoverNavbar(m),
+        deferReveal: true,
+      });
+      const opened = takeover.open(page, opts);
+      cursor?.setOnDark(true); // beat 4 is a black page
+      activeRevealCleanup?.();
+      activeRevealCleanup = m.mountReveal(page, { reducedMotion });
+      // onModeChange already stamped the corner rect at open-start (the blob
+      // genuinely IS in the corner here), so this is the corner → beat-4
+      // travel described in spec §3 — NOT a snap. Two different transitions
+      // land here with different DOM timing, so they measure at different
+      // points:
+      //  - The WIPE path (opts.transition set — activateContactWipe is the
+      //    only caller that passes one) never translates the `.takeover`
+      //    container; it only clips it (contact/wipe.ts). runOpen appends
+      //    the page synchronously, ahead of its own first await, so the
+      //    frame's rect is already valid THE INSTANT takeover.open() above
+      //    returns — measure and start the travel right now, so the blob
+      //    moves WHILE the wipe plays (spec §6) instead of visibly flying
+      //    into place after it. Do not "simplify" this to the deferred branch
+      //    below — that was tried and is the exact bug Adam reported ("ferro
+      //    is still not center frame").
+      //  - The DEFAULT SWIPE path (no opts.transition) sets the container to
+      //    `y: 100%` synchronously and only tweens it back to 0 across an
+      //    await, so a rect read right now would be one viewport too low.
+      //    Measure once the open has landed.
+      if (opts.transition) {
+        placeFerroForContact(page, { travel: true });
+      } else {
+        void opened.then(() => placeFerroForContact(page, { travel: true }));
+      }
+
+      // Figma 85:1418: "this ferro would change/be affected via displacement
+      // for each word typed in the send a signal modal, matching our
+      // 'building a transmission as you type' model." Word COMPLETION, not
+      // keystrokes — countWords ignores a trailing partial word, so the
+      // field only moves once a word is finished.
+      page.form.onProjectInput((text) => {
+        ferro?.setStrength(wordStrength(countWords(text)));
+      });
+
+      page.form.onSubmit((inquiry) => {
+        const result = submitInquiry(inquiry);
+        if (!result.ok && result.reason === 'invalid') return; // the form paints its own errors
+        if (result.ok) {
+          spikeFerro();
+          page.form.showConfirmation('sent');
+        } else {
+          page.form.showConfirmation('transport-failed');
+        }
+      });
+
+      // Only activateContactWipe's re-entrancy guard actually awaits this
+      // promise (the other two callers are `void openContact()`) — but it
+      // needs openContact() to not resolve until the takeover has genuinely
+      // finished opening (transition run, state 'opened'), not merely
+      // scheduled, or a second click could still land mid-'opening' and
+      // reproduce the double-push-state bug the guard exists to prevent.
+      await opened;
+    };
+
+    /**
+     * The nav emblem's click handler (docs/superpowers/specs/2026-08-21-
+     * contact-flow-architecture.md §6-7): the sawtooth wipe replaces the
+     * default swipe transition for this one entry into beat 4.
+     *
+     * Route pushed at the START, same ordering rule as the director.onArrive
+     * contact handler above: the takeover's own history marker must land ON
+     * TOP of /contact, or close()'s topIsTakeover() guard fails and the back
+     * button goes dead.
+     *
+     * If a case study or About was already open (the emblem lives in every
+     * takeover navbar), close it first — same history-unwind discipline as
+     * closeTakeoverThenNavigate, so that close's own history.back() unwinds
+     * BEFORE /contact is pushed, not after. openContact's existing
+     * placeFerroForContact(page, { travel: true }) call then carries the
+     * blob from wherever onModeChange just placed it (the corner, either
+     * freshly-shown or already visible) to the beat-4 frame while the wipe
+     * plays (spec §6) — no separate travel flag needed here.
+     *
+     * `emblem` is whichever Emblem instance was actually clicked (the
+     * persistent home-chrome one, or a takeover navbar's own copy) — passed
+     * through unchanged to BOTH the `in` and `out` transitions, so the same
+     * element that filled/expanded on the way in is the one that re-forms on
+     * the way out.
+     *
+     * Re-entrancy: `activatingContactWipe` guards the WHOLE function.
+     * Without it, a second click during the 1.1s+ wipe lands while
+     * takeover.isOpen() is already true in state 'opening' — takeoverReducer
+     * ignores a 'close' event in that state, so `await takeover.close()`
+     * below no-ops, afterTakeoverHistoryUnwind() burns its 100ms timeout, and
+     * a SECOND `{dest:'contact'}` entry gets pushed on top of the takeover's
+     * own `{takeover:true}` marker. That leaves topIsTakeover() false when it
+     * should be true, so Escape stops calling history.back() and the back
+     * button goes dead. The flag is cleared in `finally` only once
+     * openContact() has resolved — which now waits for the takeover to
+     * actually reach 'opened' (see openContact's `await opened` above) — so
+     * the guard covers the entire dangerous window, including two clicks
+     * arriving before a cold loadPageMods() resolves.
+     */
+    let activatingContactWipe = false;
+    const activateContactWipe = async (emblem: Emblem | null): Promise<void> => {
+      if (activatingContactWipe) return;
+      activatingContactWipe = true;
+      try {
+        if (takeover.isOpen()) {
+          await takeover.close();
+          await afterTakeoverHistoryUnwind();
+        }
+        history.pushState({ dest: 'contact' }, '', withBase('/contact'));
+        const ferroStageEl = document.querySelector<HTMLElement>('.ferro-stage');
+        await openContact({
+          transition: {
+            in: (div) => runWipe('in', { panel: div, ferro: ferroStageEl, emblem }, { reducedMotion }),
+            out: (div) => runWipe('out', { panel: div, ferro: ferroStageEl, emblem }, { reducedMotion }),
+          },
+        });
+      } finally {
+        activatingContactWipe = false;
+      }
+    };
+
     const openAbout = async (): Promise<void> => {
       const m = await loadPageMods();
       if (takeover.isOpen()) return;
@@ -307,6 +556,21 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       if (director.isFocused() && slug === slugForPath(location.pathname)) void openCaseStudy(slug);
       else navToProject(slug);
     };
+    // The contact SUMMON is gone with the RD mark. Contact is a real routed
+    // page now, entered through the beat 2-4 transition, so the ordering bug
+    // that forced the summon to leave the URL alone no longer applies: the
+    // route is pushed at the START of the transition rather than by onArrive
+    // ~2s later, which is what used to land /contact on top of the takeover's
+    // own history marker and kill the back button. See
+    // docs/superpowers/specs/2026-08-21-contact-flow-architecture.md §7.
+    //
+    // Until Plan 3 builds the nav emblem that triggers that transition, /contact
+    // is entered by the router flying the camera to the contact screen and
+    // opening the page on arrival (see the director.onArrive handler below) —
+    // openContact() above is that page. Contact as a place in the world is
+    // otherwise untouched: the footer, the nav and a /contact deep link all
+    // still fly the camera to its screen, so the scroll loop still closes.
+
     const activateAbout = (): void => {
       if (takeover.isOpen()) return;
       if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) void openAbout();
@@ -338,6 +602,24 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       true,
     );
 
+    // Feeds an emblem's own proximity pass from page coordinates, converting
+    // into the emblem-box pixels (0..64) its `setPointer` expects via its own
+    // getBoundingClientRect() — the box moves (nav vs. takeover navbar,
+    // responsive layout), so this must be read fresh every call, not cached.
+    // Gated on finePointer: on a coarse pointer there is no hover to feed, and
+    // feeding one anyway (e.g. the synthetic mousemove some browsers fire
+    // after a tap) would flash per-cell proximity for a frame — the emblem
+    // must simply stay at rest.
+    const feedEmblemPointer = (emblem: Emblem | null, p: { x: number; y: number } | null): void => {
+      if (!emblem || !finePointer) return;
+      if (!p) {
+        emblem.setPointer(null);
+        return;
+      }
+      const r = emblem.el.getBoundingClientRect();
+      emblem.setPointer({ x: p.x - r.left, y: p.y - r.top });
+    };
+
     // Pointer hover over the world: RAF-throttled pick drives tile hover + the
     // canvas cursor. No-ops while a takeover covers the viewport.
     let pendingPointer: { x: number; y: number } | null = null;
@@ -346,6 +628,13 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       hoverRaf = 0;
       const p = pendingPointer;
       if (!p) return;
+      // The blob only lives on 2D pages, but it reads the pointer from the one
+      // throttled handler either way — a second raw listener would double the
+      // per-move work for no gain. Same reasoning for the nav emblem: whichever
+      // copy is currently live (home chrome, or the open takeover's navbar)
+      // reads the pointer from here too.
+      ferro?.setPointer(p);
+      feedEmblemPointer(takeover.isOpen() ? activeEmblem : navEmblem, p);
       if (takeover.isOpen()) {
         world.setTileHover(null);
         workHover.setHovered(null);
@@ -373,6 +662,14 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
     window.addEventListener('mousemove', (e) => {
       pendingPointer = { x: e.clientX, y: e.clientY };
       if (!hoverRaf) hoverRaf = requestAnimationFrame(processHover);
+    });
+    // Pointer gone from the window entirely: let the drift ease back to its
+    // unsteered Z travel rather than holding the last steer forever.
+    document.documentElement.addEventListener('pointerleave', () => {
+      pendingPointer = null;
+      ferro?.setPointer(null);
+      feedEmblemPointer(navEmblem, null);
+      feedEmblemPointer(activeEmblem, null);
     });
 
     // Click routing: a focused tile opens its takeover; any other tile flies to
@@ -441,6 +738,16 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       }
     });
 
+    // /contact opens beat 4 on arrival, not before. By the time onArrive fires
+    // the router has already pushed /contact, so the takeover's own history
+    // marker lands ON TOP of /contact and takeover.close()'s topIsTakeover()
+    // guard holds — the back button works. This also covers the deep-link
+    // boot: initRouter calls go(initial, true) for a deep link, which arrives
+    // and triggers this same handler.
+    director.onArrive((id) => {
+      if (id === 'contact' && !takeover.isOpen()) void openContact();
+    });
+
     // First render must follow initRouter: under reduced motion the router's
     // deep-link boot does an instant jumpTo/jumpToFocus (no frame loop to paint
     // it later), so the camera must be positioned before this first paint or
@@ -466,7 +773,32 @@ if (new URLSearchParams(location.search).get('lab') === 'fly') {
       onAbout: activateAbout,
     });
 
+    // The home chrome's nav emblem — mounted once into index.html's static
+    // `.site-nav .emblem-mount`, after the Work/About links (Figma 84:411).
+    // Every takeover navbar carries its own copy (see makeTakeoverNavbar);
+    // this one is the persistent home-page instance and is never destroyed.
+    const navEmblemMount = document.querySelector<HTMLElement>('.site-nav .emblem-mount');
+    if (navEmblemMount) {
+      navEmblem = buildEmblem({
+        reducedMotion,
+        onActivate: () => void activateContactWipe(navEmblem),
+      });
+      navEmblemMount.appendChild(navEmblem.el);
+    }
+
+    // One stage, mounted once, hidden until a 2D page asks for it.
+    ferro = initFerro({ reducedMotion });
+
     const bootDest = destForPath(location.pathname) ?? 'home';
+
+    // Reduced motion CUTS instead of flying: initRouter's boot navigation calls
+    // director.jumpTo(), which emits arrive synchronously — before the onArrive
+    // handler above was registered. A /contact deep link would therefore never
+    // open its page for reduced-motion users. Normal motion is unaffected: the
+    // ~2s flight lands long after registration, and the page must wait for it
+    // rather than opening instantly, which is why this is gated.
+    if (reducedMotion && bootDest === 'contact' && !takeover.isOpen()) void openContact();
+
     // intro is a single-shot writer racing bindHomeVisibility; kill it the moment
     // the camera leaves home so only one writer touches tagline/reticle opacity
     let introInterrupted = false;

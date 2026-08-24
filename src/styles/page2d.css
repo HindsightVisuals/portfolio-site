@@ -132,9 +132,46 @@
 
 .nav2d-wordmark:focus-visible,
 .nav2d-contact:focus-visible,
-.cloth-tab:focus-visible {
+.cloth-tab:focus-visible,
+.nav2d-link:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 4px;
+}
+
+/* --- 2D nav links + emblem ---
+ * `.nav2d-links` (navbar.ts) holds the Work/About buttons plus the emblem
+ * mount (main.ts) — every takeover navbar carries an Emblem (Figma 84:462),
+ * not only the contact page's. Positioned like the old `.nav2d-contact` used
+ * to be: right-aligned, vertically centered in the 64px strip. The emblem is
+ * a fixed 64x64 square, so centering the row within the header's own 64px
+ * height puts it flush top-to-bottom with no overflow.
+ *
+ * `.contact-page` overrides this entirely (contact.css) — beat 4's nav lives
+ * inside the aside column, not this top strip — and swaps only the link
+ * colour here, since black text reads fine on the light 2D pages but not on
+ * beat 4's black ground. */
+.nav2d-links {
+  position: absolute;
+  right: 48px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1; /* above the ::before/::after strips */
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.nav2d-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  text-transform: capitalize;
 }
 
 /* --- case-study page template (Task 8) ---

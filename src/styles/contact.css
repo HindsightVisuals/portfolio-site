@@ -1,0 +1,578 @@
+/* --- beat 4 --------------------------------------------------------------
+ * The contact page. Black ground, ferro blob left, `send a signal` modal
+ * right. Every number here is measured off Figma 85:1227 — see spec §5. */
+.contact-page {
+  --contact-modal-w: 785px;
+  --contact-gap: 12px;
+  --contact-field-h: 57px;
+  --contact-radius: 4px;
+  --contact-field-border: #6b6b6b;
+  --contact-chip-border: #2f2f2f;
+  /* The chip border (#2f2f2f) sits on the page's #000; the header and services
+   * panels sit on the modal's lighter rgba(31,31,31,.75), where the same value
+   * all but disappears. The reference shows these panel edges clearly, so they
+   * get their own slightly brighter line rather than reusing the chip token. */
+  --contact-panel-border: rgba(255, 255, 255, 0.16);
+  --contact-chip-ink: #efefef;
+  --contact-label-ink: #b1b1b1;
+  /* The send green is the cursor accent at 50% — the palette is already
+   * consistent, so this must stay tied to that token, not re-picked. */
+  --contact-send-bg: rgba(97, 232, 145, 0.5);
+
+  background: #000;
+  color: #fff;
+  min-height: 100%;
+}
+
+/* page2d.css gives `.takeover-body` a #fdfdfd background, because the two 2D
+ * pages that existed before this one (About, case study) are light. Beat 4 is a
+ * black page, and this wrapper is a CHILD of `.contact-page` — so without this
+ * override it paints white straight over the black ground, and the whole page
+ * renders inverted: white field, dark marginalia, and a modal whose
+ * rgba(31,31,31,0.75) reads as light grey instead of near-black.
+ *
+ * The wrapper itself has to stay. `.takeover` deliberately paints no background
+ * (page2d.css:21-23) so its nav notch can be a real window through to the live
+ * canvas; content placed outside `.takeover-body` therefore lets the 3D world
+ * show through a page that is meant to be solid. Overriding the colour keeps
+ * the structural contract and fixes the ground. */
+.contact-page .takeover-body {
+  background-color: #000;
+  /* page2d.css reserves 64px here for the sticky nav bar. Beat 4's nav is
+   * inside the column instead (see .contact-page .nav2d below), so that
+   * reservation would leave a dead 64px strip. */
+  min-height: 100%;
+
+  /* The ground texture is the emblem's own inner dots, tiled (Adam: "it was
+   * supposed to be the small inner dots inside the 2D ferro pattern"). Each
+   * emblem cell is a rotated square with a small hole at its centre; this is
+   * that hole repeated across the page, so the thing you clicked and the place
+   * you land share a motif.
+   *
+   * Two offset layers rather than one, because the emblem's cells sit on a
+   * DIAGONAL lattice — rows offset by half a step — not a square grid. The
+   * second layer, shifted half a tile on both axes, is what produces that.
+   *
+   * Kept at 5% white: it should register as texture on the black, never as
+   * pattern competing with the form. */
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1.5px);
+  background-size: 18px 18px;
+  background-position: 0 0, 9px 9px;
+}
+
+/* --- the nav, beat-4 style ------------------------------------------------
+ * The light 2D pages put the nav in a full-width sticky bar whose ::before /
+ * ::after strips leave a 220px notch open onto the live canvas. Beat 4 does
+ * something different (Figma 85:1227): the nav lives INSIDE the left column,
+ * right-aligned above the blob, and there is no canvas window because the page
+ * is solid black. contact.ts appends it into `.contact-aside` for that reason.
+ *
+ * So the bar's own layout has to be undone: no sticky positioning, no fixed
+ * 64px height, and no strips — otherwise a black 64px band sits in the middle
+ * of the column doing nothing. What remains is a plain row.
+ *
+ * Undoing this is also what lets the modal run the full height of the page:
+ * while the nav was a sibling bar above `.contact-layout`, the layout could
+ * only ever start 64px down. */
+.contact-page .nav2d {
+  position: static;
+  height: auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.contact-page .nav2d::before,
+.contact-page .nav2d::after {
+  content: none; /* no strips, and therefore no notch to paint around */
+}
+
+.contact-page .nav2d-wordmark {
+  position: static;
+  transform: none;
+  color: #fff;
+}
+
+/* `.nav2d-links` / `.nav2d-link` layout (position, flex row, font, cursor…)
+ * lives unscoped in page2d.css now, so every 2D page gets a dressed nav
+ * instead of default UA-chrome buttons. Beat 4 still needs its own layout —
+ * the nav lives inside the aside column here, not the top strip — plus a
+ * light-on-dark colour swap, since page2d.css's default `var(--ink)` reads
+ * as near-black text on beat 4's black ground. */
+.contact-page .nav2d-links {
+  position: static;
+  display: flex;
+  gap: 32px;
+}
+
+.contact-page .nav2d-link {
+  color: #fff;
+}
+
+.contact-page .nav2d-link:hover {
+  color: var(--contact-label-ink);
+}
+
+.contact-page .nav2d-link:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
+}
+
+/* Beat 4 carries no emblem — you have arrived, the affordance is spent.
+ * Suppressed by CSS rather than by branching the navbar builder, so
+ * makeTakeoverNavbar (main.ts) can build/mount an Emblem into every takeover
+ * page uniformly. */
+.contact-page .emblem {
+  display: none;
+}
+
+.contact-layout {
+  display: flex;
+  gap: var(--contact-gap);
+  padding: var(--contact-gap);
+  /* Beat 4 is a full-bleed page: the modal runs the whole height beside the
+   * blob (Figma's modal is 1056 tall in a 1080 frame with 12px padding). The
+   * flex default `align-items: stretch` does the rest, but only if this row
+   * actually has a height to stretch into — hence the viewport min-height
+   * rather than letting the row collapse to its content. */
+  /* dvh, not vh: `.takeover` is `position: fixed; inset: 0` (page2d.css) —
+   * a fixed-position scroller, not the document — so `vh` measures against
+   * the LARGEST mobile toolbar state and undershoots once the browser chrome
+   * collapses, leaving phantom scroll room below the fold. `dvh` tracks the
+   * toolbar live instead. */
+  min-height: 100dvh; /* border-box, so the content row gets 100dvh minus the padding */
+}
+
+/* min-width: 0 overrides the flex-item default of `min-width: auto`, which
+ * otherwise floors this column at the ferro frame's 713px content width —
+ * plus the 785px modal, gap and padding that pushes past ~1727px and forces
+ * a horizontal scrollbar on 1440/1536/1600 laptop viewports (the 1200px
+ * stack breakpoint doesn't kick in until well below that). See fix-2. */
+.contact-aside { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* Sized from Figma's Frame 72 at >=1920 (the Figma design width) — see
+ * contact.ts. Width and left margin are fluid below that so the side-by-side
+ * layout (not the <=1200px stack) survives 1440/1536/1600 without overflow;
+ * height and top margin are unaffected because they never drove the overflow.
+ *
+ * --contact-ferro-inset scales linearly with viewport width and is clamped at
+ * the Figma value of 193px, so `100vw * 193 / 1920` lands on exactly 193px
+ * at the 1920px design width (not an approximation like a round `vw` number
+ * would). The frame's own width is then `100% MINUS that same inset`, not an
+ * independent `min(713px, 100%)` — sizing width and margin from the same
+ * container % but different formulas let the frame's right edge run past the
+ * aside's box and visually overlap `.contact-modal` at 1280-1600px even
+ * though the document itself had no horizontal scrollbar. Deriving width
+ * from the inset keeps `inset + width` pinned to the container's own width. */
+/* Adam, 2026-08-21, against the Figma render: "Ferro should be centered at the
+ * contact form and probably a good little bit smaller."
+ *
+ * So this is no longer Figma's absolute 713x684 at a 193/206 offset. The frame
+ * is a square that CENTRES in whatever space the column has left after the
+ * marginalia and the nav — `margin: auto` in a flex column absorbs the free
+ * space above and below, `align-self: center` does the horizontal. That also
+ * makes the old fluid-inset arithmetic unnecessary: a centred box cannot push
+ * its container wide, so the 1201-1726px overflow this used to guard against
+ * is structurally gone rather than merely clamped.
+ *
+ * 520px is the "good little bit smaller": the reference render reads about
+ * 470px across at the 1920 design width, and the blob's displaced silhouette
+ * slightly overflows its frame, so a 520 frame lands near that. Kept square
+ * because placement fits the SMALLER side (ferro-placement.ts) — a non-square
+ * frame would just waste its long axis. */
+.contact-ferro-frame {
+  width: min(520px, 100%);
+  aspect-ratio: 1;
+  margin: auto;
+  align-self: center;
+}
+
+.contact-modal {
+  position: relative;
+  flex: 0 0 var(--contact-modal-w);
+  /* 24px each side puts the form's own 737px content width (Figma 85:1227,
+   * see .contact-row / .contact-field-control--project below) flush inside
+   * the 785px modal: 785 - 24*2 = 737. */
+  padding: 24px;
+  background: rgba(31, 31, 31, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+.contact-title {
+  font-family: var(--font-wordmark); /* Loos Extended; kit has Bold */
+  font-weight: 700;
+  font-size: 64px;
+  line-height: 0.94;
+}
+
+.contact-intro {
+  font-family: var(--font-mono); /* Figma: Galix Mono Regular — see §9 */
+  font-size: 16px;
+  max-width: 285px;
+}
+
+/* --- aside marginalia ------------------------------------------------------
+ * Not covered by spec §5's measured block above — these are plain notes, not
+ * art direction, so they follow the site's existing `.margin-note` mono
+ * convention (src/styles/base.css) rather than introducing a new scale. Color
+ * is `--contact-label-ink` instead of `--ink` because `--ink` is near-black
+ * and this page's ground is black. */
+.contact-note--top,
+.contact-note {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--contact-label-ink);
+}
+
+.contact-note--top {
+  max-width: 320px;
+}
+
+/* --- matching the reference render ----------------------------------------
+ * Adam, 2026-08-21: "can we do all of the differences between the two."
+ *
+ * All of this is presentation only. The copy strings stay sentence case in the
+ * DOM and are uppercased here with text-transform, which matters for more than
+ * tidiness: a placeholder is the accessible name fallback and the visually
+ * hidden <label> text, and SCREAMING TEXT is read out character by character by
+ * some screen readers. Uppercase is a typographic treatment, not content. */
+
+/* Heading and intro share a bordered box, side by side. */
+.contact-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px;
+  border: 1px solid var(--contact-panel-border);
+  border-radius: var(--contact-radius);
+}
+
+.contact-modal-header .contact-title {
+  /* Wraps to two lines in the reference; the 8ch cap forces that break rather
+   * than leaving it to the container width, so it reads the same at any size. */
+  max-width: 8ch;
+  margin: 0;
+}
+
+.contact-modal-header .contact-intro {
+  margin: 0;
+  text-align: left;
+}
+
+/* Uppercase field text. ::placeholder for the visible string, and the same on
+ * the select, which renders its own chosen option rather than a placeholder. */
+.contact-page .contact-field-control::placeholder {
+  text-transform: uppercase;
+}
+
+.contact-page select.contact-field-control {
+  text-transform: uppercase;
+}
+
+.contact-page .contact-chip,
+.contact-page .contact-submit {
+  text-transform: uppercase;
+}
+
+/* The services block is its own bordered panel in the reference, and its
+ * heading is set in the display face rather than the mono used for labels. */
+.contact-page .contact-chip-section {
+  padding: 20px;
+  border: 1px solid var(--contact-panel-border);
+  border-radius: var(--contact-radius);
+}
+
+.contact-page .contact-chips-heading {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: 20px;
+  text-transform: none; /* the one label the reference leaves in sentence case */
+  color: #fff;
+  margin: 0 0 16px;
+}
+
+/* --- filling the full-height modal ----------------------------------------
+ * Making the panel full height is only half the instruction: left alone, the
+ * form stays its content height and leaves a dead band under Send Message,
+ * where the reference has the form occupying the panel. So the column stretches
+ * and the project textarea — the one field with no natural size — takes up the
+ * slack, which is also where a visitor most wants the extra room.
+ * `min-height` keeps it honest if the viewport is short. */
+.contact-page .contact-modal {
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-page .contact-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-page .contact-field--project {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 270px; /* Figma 85:1687 — never shrink below the designed box */
+}
+
+.contact-page .contact-field-control--project {
+  flex: 1;
+}
+
+/* No `margin-top: auto` here. It used to push this row to the bottom, but the
+ * ferro frame now claims the column's free space with `margin: auto` to centre
+ * itself — two auto margins competing for the same space split it, which left
+ * the blob sitting ~100px high. The frame's own bottom auto margin already
+ * pushes this row down. */
+.contact-note-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--contact-gap);
+}
+
+.contact-note-row .contact-note {
+  max-width: 320px;
+}
+
+/* --- modal corner marks -----------------------------------------------
+ * Reuses `.corner-mark` (src/styles/base.css) for the plus-sign shape, but
+ * this page needs its own size, colour and placement — scoped under
+ * `.contact-modal` so none of it leaks into the home page's corner marks.
+ * Do not edit `.corner-mark` itself; it's shared with index.html's `.chrome`.
+ * Placement measured from Figma 85:1666 (top pair) / 85:1717 (bottom pair);
+ * size from the Figma vectors (11.772 x 11.76, rounded to 12px). */
+.contact-modal-mark {
+  width: 12px;
+  height: 12px;
+}
+
+.contact-modal-mark::before,
+.contact-modal-mark::after {
+  /* `--ink` is the world's dark ink and is invisible on this black modal;
+   * `--contact-chip-ink` is this page's own light ink token. */
+  background: var(--contact-chip-ink);
+}
+
+.contact-modal-mark--tl { top: 12px; left: 4px; }
+.contact-modal-mark--tr { top: 12px; right: 4px; }
+.contact-modal-mark--bl { bottom: 22px; left: 14px; }
+.contact-modal-mark--br { bottom: 22px; right: 14px; }
+
+/* --- the form (Task 6) ---------------------------------------------------
+ * Every field/chip metric below is measured off Figma 85:1227 — see the
+ * task-6 brief. Fields are laid out with flex + gap rather than the raw
+ * 356.5px Figma widths so the two-up rows stay exactly half of the 737px
+ * content width without a magic number that only works for two columns. */
+.contact-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+/* A standard sr-only clip — present for assistive tech and keyboard users,
+ * invisible on screen. Unlike base.css's `.screen-proxy` this one never pops
+ * into a visible badge on focus: these labels shadow a visible placeholder,
+ * they are not their own on-screen affordance. No equivalent existed in the
+ * codebase before this task (checked base.css and home/screen-proxies.ts). */
+.contact-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.contact-row {
+  display: flex;
+  gap: 24px;
+}
+
+.contact-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.contact-field-control {
+  width: 100%;
+  height: var(--contact-field-h);
+  padding: 0 16px;
+  background: #000;
+  color: #fff;
+  border: 2px solid var(--contact-field-border);
+  border-radius: var(--contact-radius);
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
+.contact-field-control::placeholder {
+  color: var(--contact-label-ink);
+}
+
+/* Native selects don't reliably take an empty-value placeholder colour via
+ * ::placeholder, but the disabled first option (contact-form.ts) already
+ * makes the unselected state visually distinct, so no extra rule needed
+ * here. */
+
+.contact-field-control--project {
+  height: 270px;
+  padding: 16px;
+  resize: none;
+  font-family: var(--font-mono);
+}
+
+.contact-error {
+  margin-top: 6px;
+  color: #ff8080;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.contact-counter {
+  margin-top: 6px;
+  text-align: right;
+  color: var(--contact-label-ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.contact-chip-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.contact-chips-heading {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--contact-label-ink);
+}
+
+.contact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.contact-chip {
+  height: 44px;
+  padding: 14px 12px;
+  background: transparent;
+  color: var(--contact-chip-ink);
+  border: 2px solid var(--contact-chip-border);
+  border-radius: var(--contact-radius);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.contact-chip[aria-pressed='true'] {
+  background: var(--contact-chip-ink);
+  color: #000;
+}
+
+.contact-submit {
+  align-self: flex-start;
+  height: var(--contact-field-h);
+  padding: 0 32px;
+  background: var(--contact-send-bg);
+  color: #fff;
+  border: 0;
+  border-left: 2px solid #fff;
+  border-right: 2px solid #fff;
+  border-radius: var(--contact-radius);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 2.52px;
+  cursor: pointer;
+}
+
+/* --- fallback address + confirmation (Task 8) -----------------------------
+ * `mailto:` can't confirm delivery (contact/submit.ts's "THE SEAM" doc
+ * comment), so the real address has to be readable on the page at all
+ * times — not only after a submit — for the visitor whose browser has no
+ * mail client and does nothing when they click send. */
+.contact-submit-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.contact-fallback {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--contact-label-ink);
+}
+
+.contact-mailto-link {
+  color: var(--contact-chip-ink);
+}
+
+/* Confirmation replaces the fields visually once the form carries a
+ * data-confirmation outcome — the controls themselves are left in the DOM
+ * with their values untouched (contact-form.ts never clears them), only
+ * hidden, so "everything you typed is still in this form" is literally
+ * true underneath. */
+.contact-form[data-confirmation] .contact-row,
+.contact-form[data-confirmation] .contact-field--project,
+.contact-form[data-confirmation] .contact-chip-section,
+.contact-form[data-confirmation] .contact-submit-row {
+  display: none;
+}
+
+/* The confirmation block is a role="status" live region present (empty) from
+ * mount — see contact-form.ts — so its visibility is CSS-driven off the same
+ * [data-confirmation] attribute rather than a JS-toggled `hidden`, which would
+ * pull it out of the accessibility tree at the exact moment its text changes. */
+.contact-form:not([data-confirmation]) .contact-confirmation {
+  display: none;
+}
+
+.contact-confirmation-heading {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.15;
+  text-transform: lowercase;
+}
+
+.contact-confirmation-text {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--contact-label-ink);
+  max-width: 420px;
+}
+
+.contact-confirmation .contact-mailto-link {
+  color: #fff;
+}
+
+/* Adam, 2026-08-21: stack — blob above, form below, one column, page scrolls.
+ * The blob follows automatically: main.ts measures [data-ferro-frame] and hands
+ * that rect to placeAt(), so the layout owns the blob's position and this
+ * breakpoint needs no JS at all. */
+@media (max-width: 1200px) {
+  .contact-layout { flex-direction: column; }
+  .contact-modal { flex: 1 1 auto; width: 100%; }
+  /* The blob keeps a shorter frame so it is still the first thing met, without
+   * pushing the whole form below the fold. */
+  .contact-ferro-frame {
+    width: 100%;
+    max-width: 713px;
+    height: 42vh;
+    min-height: 260px;
+    margin: 0 auto;
+  }
+}

@@ -13,6 +13,7 @@
 
 export { buildCaseStudy } from './case-study';
 export { buildAbout } from './about';
+export { buildContact } from './contact';
 export { buildNavbar } from './navbar';
 export { mountReveal } from './reveal';
 export { initStrip } from './strip';
