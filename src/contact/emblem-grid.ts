@@ -12,6 +12,21 @@ export interface EmblemCell {
   restScale: number;
 }
 
+/** Horizontal pitch between two cells in the SAME row, as a fraction of the box. */
+const STEP = 1 / 4;
+/**
+ * Vertical pitch between rows. Exactly half the horizontal pitch, which is also
+ * how far each row is offset sideways from the one above — that equality is
+ * what makes this a true 45-degree lattice rather than a sheared one.
+ *
+ * It shipped as `1 / (EMBLEM_ROWS - 1)` — the rows stretched to fill the box's
+ * full height while the four columns only spanned three quarters of its width,
+ * so the emblem read, in Adam's words, "somewhat tall rectangular". Deriving it
+ * from STEP makes the lattice square by construction: six row-steps down is the
+ * same distance as three column-steps across.
+ */
+const ROW_STEP = STEP / 2;
+
 /**
  * The 25 cells, on a DIAGONAL lattice: seven rows of 4-3-4-3-4-3-4, each offset
  * half a step from the row above. A square grid would read as a checkerboard;
@@ -27,12 +42,15 @@ function buildCells(): EmblemCell[] {
   for (let row = 0; row < EMBLEM_ROWS; row++) {
     const wide = row % 2 === 0;
     const count = wide ? 4 : 3;
-    const step = 1 / 4; // four columns of pitch across the box
+    const step = STEP;
     for (let i = 0; i < count; i++) {
       // Wide rows start half a step in; narrow rows start a full step in, which
       // is what puts them between the cells above rather than under them.
       const x = wide ? step * i + step / 2 : step * i + step;
-      const y = row / (EMBLEM_ROWS - 1);
+      // Centred the same way the columns are: the first row sits one row-step
+      // down and the last one row-step up from the bottom, so the lattice has
+      // the same margin on all four sides.
+      const y = ROW_STEP * (row + 1);
       const dist = Math.hypot(x - 0.5, y - 0.5) / Math.SQRT1_2; // 0 centre, ~1 corner
       // 0.86 keeps the biggest cell clear of full scale; 0.34 keeps the corners
       // visible. Both bounds are asserted in the tests.

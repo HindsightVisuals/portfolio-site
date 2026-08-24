@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { cellScale, EMBLEM_CELLS, EMBLEM_ROWS, type EmblemCell } from './emblem-grid';
 
-const rowsOf = (n: number): EmblemCell[] =>
-  EMBLEM_CELLS.filter((c) => Math.round(c.y * (EMBLEM_ROWS - 1)) === n);
+const ys = [...new Set(EMBLEM_CELLS.map((c) => c.y))].sort((a, b) => a - b);
+const rowsOf = (n: number): EmblemCell[] => EMBLEM_CELLS.filter((c) => c.y === ys[n]);
+const span = (vals: number[]): number => Math.max(...vals) - Math.min(...vals);
 
 describe('EMBLEM_CELLS', () => {
   it('has the 25 cells the emblem is drawn from', () => {
@@ -21,6 +22,35 @@ describe('EMBLEM_CELLS', () => {
       expect(c.y).toBeGreaterThanOrEqual(0);
       expect(c.y).toBeLessThanOrEqual(1);
     }
+  });
+
+  it('reads square — the lattice spans the same distance across as it does down', () => {
+    // Adam, on the first build: "I need this to be square. Currently it's
+    // reading somewhat tall rectangular." It was: x spanned 0.75 of the box
+    // (four columns at a quarter-pitch) while y spanned the whole 1.0.
+    expect(span(EMBLEM_CELLS.map((c) => c.x))).toBeCloseTo(
+      span(EMBLEM_CELLS.map((c) => c.y)),
+      10,
+    );
+  });
+
+  it('is centred in the box — equal margin on all four sides', () => {
+    const xs = EMBLEM_CELLS.map((c) => c.x);
+    const yy = EMBLEM_CELLS.map((c) => c.y);
+    expect(Math.min(...xs)).toBeCloseTo(1 - Math.max(...xs), 10);
+    expect(Math.min(...yy)).toBeCloseTo(1 - Math.max(...yy), 10);
+    expect(Math.min(...xs)).toBeCloseTo(Math.min(...yy), 10);
+  });
+
+  it('steps down exactly as far as it steps across — a true 45-degree lattice', () => {
+    // Rows are offset half a horizontal pitch from each other, so the vertical
+    // pitch has to match that half-step or the diamonds shear. This is also
+    // what lets the same tile geometry tile the plane edge-to-edge, which the
+    // page transition relies on.
+    const rowPitch = ys[1] - ys[0];
+    const xs = rowsOf(0).map((c) => c.x).sort((a, b) => a - b);
+    const halfStep = (xs[1] - xs[0]) / 2;
+    expect(rowPitch).toBeCloseTo(halfStep, 10);
   });
 
   it('offsets each row half a step from the one above — a diagonal lattice, not a grid', () => {
