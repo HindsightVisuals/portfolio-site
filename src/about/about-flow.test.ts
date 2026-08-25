@@ -653,18 +653,40 @@ describe('initAboutFlow', () => {
       flow.destroy();
     });
 
+    // Mutation testing (QA pass) found this test toothless: removing exit()'s
+    // clearIdleTimer() call didn't fail it, because scheduleIdleDrain's
+    // callback only ever writes through `doc?.root` — never `--gate-show` —
+    // and exit() had already nulled `doc` by the time a dangling timer could
+    // fire, so a stale timer touching nothing looked identical to one that
+    // had genuinely been cleared. The real risk isn't firing into a void; the
+    // callback closes over the shared `doc`/`gate` closure variables, not
+    // over the visit that armed it, so a timer that survives exit() fires
+    // into whatever LATER visit happens to be mounted by the time it goes
+    // off — this only shows up once a second enter() has happened.
     it('does not fire against a corridor that has already been exited', () => {
       const deps = makeDeps();
       const flow = initAboutFlow(deps);
       vi.useFakeTimers();
       flow.enter(parent);
       flow.setScrollForTest(1);
-      flow.feedGateForTest(GATE_THRESHOLD_PX / 4);
+      flow.feedGateForTest(GATE_THRESHOLD_PX / 4); // arms the idle-retreat timer
       flow.exit();
-      // A dangling timer touching doc.root or --gate-show after teardown
-      // would throw or resurrect cleared state — either is a bug.
+
+      // Re-enter before that timer's deadline elapses. No time is spent
+      // between exit() and this second enter(), so the stale timer (if
+      // exit() failed to clear it) still has its full original deadline
+      // ahead of it — pointed, via the closure, at whatever `doc` is by then.
+      flow.enter(parent);
+      const secondRoot = parent.querySelector<HTMLElement>('.about-doc')!;
+      const removeProperty = vi.spyOn(secondRoot.style, 'removeProperty');
+
       expect(() => vi.advanceTimersByTime(GATE_IDLE_MS)).not.toThrow();
-      expect(document.documentElement.style.getPropertyValue('--gate-show')).toBe('');
+
+      // The exited visit's timer must not reach into the new visit's
+      // document — that would be exactly the same call scheduleIdleDrain's
+      // callback makes against a *live* corridor to drain a genuine idle
+      // fill, only now firing for a visit that never pushed at all.
+      expect(removeProperty).not.toHaveBeenCalledWith('--gate');
       flow.destroy();
     });
   });
