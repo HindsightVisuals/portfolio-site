@@ -1,0 +1,45 @@
+/* src/styles/about.css
+ * The About corridor's scrolling document.
+ *
+ * The canvas is fixed behind this and the camera is driven by how far this has
+ * scrolled, so the layout rule that matters most is the boring one: sections
+ * are sized in px from about-document.ts, never by their content. Content that
+ * grew a section taller than its path span would desynchronise scroll from
+ * camera, which reads as the corridor lurching.
+ */
+
+.about-doc {
+  position: relative;
+  z-index: 1;               /* above #world (0), below .ferro-stage (25) */
+  margin: 0;
+  padding: 0;
+}
+
+.about-beat {
+  position: relative;
+  /* height is written per-beat in px by about-document.ts — do not set it here */
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.about-beat-heading {
+  margin: 0;
+  font: inherit;
+  /* Placeholder until each beat's own plan dresses it. Visible on purpose:
+   * the spine's whole deliverable is being able to see where you are in the
+   * corridor while scrolling it. */
+  opacity: 0.5;
+}
+
+/* Reduced motion: no canvas, so the document is all there is. Sections stop
+ * being scroll geometry and collapse to their content. */
+@media (prefers-reduced-motion: reduce) {
+  .about-beat {
+    height: auto !important;
+    min-height: 0;
+    padding: 4rem 0;
+    display: block;
+  }
+}
