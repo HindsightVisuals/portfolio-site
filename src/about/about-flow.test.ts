@@ -16,6 +16,7 @@ const makeDeps = (over: Partial<AboutFlowDeps> = {}): AboutFlowDeps => ({
   cursor: { setOnDark: vi.fn() },
   background: { setInvert: vi.fn() },
   setGround: vi.fn(),
+  setTextInk: vi.fn(),
   reducedMotion: false,
   ...over,
 });
@@ -33,6 +34,7 @@ beforeEach(() => {
 afterEach(() => {
   document.documentElement.classList.remove('about-open');
   document.documentElement.style.removeProperty('--ground');
+  document.documentElement.style.removeProperty('--ink');
   document.querySelector('#bg-canvas')?.remove();
 });
 
@@ -265,6 +267,93 @@ describe('initAboutFlow', () => {
     expect(deps.atmosphere.setInk).not.toHaveBeenLastCalledWith(DAY_INK);
     flow.exit();
     expect(deps.atmosphere.setInk).toHaveBeenLastCalledWith(DAY_INK);
+    flow.destroy();
+  });
+
+  // C1 (whole-branch review, round 3): apply() writes FOUR pieces of shared,
+  // site-wide state — setGround, setTextInk, setInk, setOnDark, setInvert —
+  // and exit() was restoring only three. cursor.setOnDark used to self-heal
+  // via processHover's own call on every mousemove, until the I1 fix (round
+  // 2) made about-flow the sole owner of the cursor while the corridor is
+  // open — after that, a keyboard exit (arrow keys) or the back button left
+  // the custom cursor in its white-on-dark treatment over the pale world
+  // until the next mouse move.
+  it('restores the cursor to its light-ground treatment on exit, even from a dark beat', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.3); // well inside the night range (before clientWall's ramp)
+    expect(deps.cursor!.setOnDark).toHaveBeenLastCalledWith(true);
+    flow.exit();
+    expect(deps.cursor!.setOnDark).toHaveBeenLastCalledWith(false);
+    flow.destroy();
+  });
+
+  // T1: the invariant, not one more reactive patch. Every restore above was
+  // added one bug at a time (setInvert, then setInk, then setOnDark) — this
+  // asserts the whole set together in one place, so a FIFTH writer added to
+  // apply() without a matching restore in exit() fails here rather than in
+  // production. --ground and --ink are pre-seeded with garbage values before
+  // enter() specifically so their being empty afterward actually proves
+  // exit() cleared them, rather than merely never having been set by the
+  // (mocked, non-DOM-touching) setGround/setTextInk in this test.
+  it('restores every site-wide default apply() can have driven, on exit from a dark beat', () => {
+    document.documentElement.style.setProperty('--ground', '#123456');
+    document.documentElement.style.setProperty('--ink', '#abcdef');
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.3); // well inside the night range
+    flow.exit();
+    expect(deps.background!.setInvert).toHaveBeenLastCalledWith(false);
+    expect(deps.atmosphere.setInk).toHaveBeenLastCalledWith(DAY_INK);
+    expect(deps.cursor!.setOnDark).toHaveBeenLastCalledWith(false);
+    expect(document.documentElement.style.getPropertyValue('--ground')).toBe('');
+    expect(document.documentElement.style.getPropertyValue('--ink')).toBe('');
+    flow.destroy();
+  });
+
+  // T2: the last uncovered ordering path in this module — resize -> doc.resize
+  // -> onScroll -> instant placeAt. jsdom was added to this repo specifically
+  // so lifecycle paths like this could be tested.
+  it('on window resize: re-lays out the document, re-applies scroll, and re-places a mid-beat ferro instantly', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.78); // capabilities — establishes lastBeat, so the instant re-place branch is live
+    const placeAtCallsBefore = (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    const originalScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')!;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 550 });
+    // documentElement.scrollHeight has no OWN property in jsdom by default
+    // (falls through to its built-in getter, which reports 0 — the same
+    // "jsdom gives every element a zero-height box" limitation setScrollForTest
+    // exists to route around); this defines one for the duration of the test.
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 2000 });
+    try {
+      window.dispatchEvent(new Event('resize'));
+
+      // doc.resize(window.innerHeight) ran: the last (one-full-viewport)
+      // section reflects the NEW height, not the one it was mounted with.
+      const lastSection = parent.querySelector<HTMLElement>('.about-beat[data-beat="ai"]');
+      expect(lastSection?.style.height).toBe('900px');
+
+      // onScroll() ran again, reading the resize's OWN window.innerHeight:
+      // scrollToT(550, 2000, 900) = 550 / (2000 - 900) = 0.5.
+      expect(flow.t()).toBeCloseTo(0.5, 6);
+
+      // lastBeat was already set from the scrub above, so the explicit
+      // re-place fires too, instantly — no tween racing the reflow.
+      const calls = (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls.length).toBeGreaterThan(placeAtCallsBefore);
+      expect(calls[calls.length - 1][1]).toEqual({ instant: true });
+    } finally {
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+      Object.defineProperty(window, 'scrollY', originalScrollY);
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+    }
     flow.destroy();
   });
 });

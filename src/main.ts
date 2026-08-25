@@ -695,12 +695,21 @@ if (lab === 'ferro') {
 
     // Nav links AND the wordmark fly (full-length flythrough). The selector is
     // any [data-nav] inside .chrome rather than just .site-nav anchors, so the
-    // wordmark's home button is picked up by the same wiring.
+    // wordmark's home button is picked up by the same wiring. .chrome stays
+    // fixed above the corridor throughout, so the nav "About" link and the
+    // "learn more" margin button (data-nav="about") are both clickable while
+    // the corridor is already open — router.navigate('about') would bypass
+    // activateAbout()'s isOpen() guard and cost the user their scroll
+    // position (exit() -> a full 2s zero-distance flight -> onArrive ->
+    // enter() back at t=0), so 'about' routes through activateAbout()
+    // instead, which no-ops while already open.
     for (const el of document.querySelectorAll<HTMLElement>('.chrome [data-nav]')) {
       el.addEventListener('click', (e) => {
         e.preventDefault();
         if (takeover.isOpen()) return; // a takeover covers the chrome; its own navbar handles nav
-        router.navigate(el.dataset.nav as DestId);
+        const dest = el.dataset.nav as DestId;
+        if (dest === 'about') activateAbout();
+        else router.navigate(dest);
       });
     }
 
@@ -816,15 +825,22 @@ if (lab === 'ferro') {
       setGround: (css) => {
         document.documentElement.style.setProperty('--ground', css);
       },
+      setTextInk: (css) => {
+        document.documentElement.style.setProperty('--ink', css);
+      },
       reducedMotion,
     });
 
-    // Every route out of the corridor funnels through one of the director's
-    // four travel methods (flyTo/flyToFocus/jumpTo/jumpToFocus), all of which
-    // fire departCbs before touching state.z or the camera — so this one
-    // subscription is enough to hand the camera back cleanly no matter which
+    // Nearly every route out of the corridor funnels through one of the
+    // director's four travel methods (flyTo/flyToFocus/jumpTo/jumpToFocus),
+    // all of which fire departCbs before touching state.z or the camera — so
+    // this one subscription hands the camera back cleanly no matter which
     // activate* function is leaving. exit() is idempotent, so the spurious
-    // fire when flying TOWARD About is a harmless no-op.
+    // fire when flying TOWARD About is a harmless no-op. The ONE exception is
+    // activateContactWipe: it pushes history and opens the takeover directly,
+    // calling no CameraDirector method at all, so this subscription can never
+    // fire for that path — it carries its own explicit `aboutFlow.exit()` as
+    // its first line instead (see there for why).
     director.onDepart(() => aboutFlow.exit());
 
     // activateAbout() navigates (rather than entering directly) when the

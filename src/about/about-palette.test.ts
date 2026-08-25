@@ -2,7 +2,15 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { buildAboutPath } from './about-path';
-import { DAY_GROUND, DAY_INK, NIGHT_GROUND, NIGHT_INK, paletteAt } from './about-palette';
+import {
+  DAY_GROUND,
+  DAY_INK,
+  DAY_TEXT_INK,
+  NIGHT_GROUND,
+  NIGHT_INK,
+  NIGHT_TEXT_INK,
+  paletteAt,
+} from './about-palette';
 
 const path = buildAboutPath(new THREE.Vector3(0, 0, -86));
 
@@ -37,6 +45,23 @@ describe('paletteAt', () => {
   it('moves ink with the ground so atmosphere stays legible on both', () => {
     expect(paletteAt(0, path).ink).toBeCloseTo(NIGHT_INK, 6);
     expect(paletteAt(path.tForBeat('capabilities'), path).ink).toBeCloseTo(DAY_INK, 6);
+  });
+
+  // C2: text on the night ground was going near-invisible — .about-beat-heading
+  // and .chrome both read var(--ink), which nothing was driving.
+  it('moves textInk with the ground — pale at night, the site default by day', () => {
+    expect(paletteAt(0, path).textInk).toBe(NIGHT_TEXT_INK);
+    expect(paletteAt(path.tForBeat('capabilities'), path).textInk).toBe(DAY_TEXT_INK);
+  });
+
+  it('crosses textInk continuously too — no jump between adjacent samples anywhere', () => {
+    const lum = (hex: string): number => new THREE.Color(hex).getHSL({ h: 0, s: 0, l: 0 }).l;
+    let prev = lum(paletteAt(0, path).textInk);
+    for (let i = 1; i <= 400; i++) {
+      const cur = lum(paletteAt(i / 400, path).textInk);
+      expect(Math.abs(cur - prev)).toBeLessThan(0.05);
+      prev = cur;
+    }
   });
 
   it('never reports onDark true on a pale ground', () => {

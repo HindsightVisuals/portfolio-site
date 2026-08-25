@@ -29,6 +29,19 @@ html.about-open body {
   background: var(--ground);
 }
 
+/* .chrome is fixed above the corridor throughout (corner marks, margin
+ * notes, the wordmark, the Work/About nav links) and its children already
+ * read var(--ink) directly (base.css) — on the corridor's near-black night
+ * ground, the site's own --ink (#141414) is nearly invisible, and the
+ * palette now drives --ink per-beat (about-palette.ts's textInk) to fix
+ * that. This rule makes that dependency visible here, in the corridor's own
+ * stylesheet, scoped the same way html.about-open body is above — belt and
+ * braces matching that rule's reasoning, rather than leaving .chrome's
+ * legibility to be inferred from base.css's unscoped var(--ink) consumers. */
+html.about-open .chrome {
+  color: var(--ink);
+}
+
 /* Reduced motion: no camera, no WebGL beats — the corridor's opaque canvas is
  * hidden outright rather than left covering the CSS ground it's meant to
  * reveal (about-flow.ts toggles this on enter/exit). */

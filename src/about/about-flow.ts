@@ -48,6 +48,14 @@ export interface AboutFlowDeps {
    */
   background: { setInvert(on: boolean): void } | null;
   setGround(css: string): void;
+  /**
+   * Writes `--ink` (body text; also read directly by several `.chrome`
+   * children — base.css). A sibling of `setGround` above, same shape, driven
+   * by the palette's `textInk` rather than `ground`. Distinct from
+   * `atmosphere.setInk` above: that one takes a NUMBER for an unrelated
+   * shader uniform — same word, unrelated axis.
+   */
+  setTextInk(css: string): void;
   reducedMotion: boolean;
 }
 
@@ -84,8 +92,8 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   // this class (about.css) lifts that lock for exactly as long as the
   // corridor is open, on both motion paths (reduced motion needs to scroll
   // too; the document IS the whole experience there). It also scopes the
-  // `body { background: var(--ground) }` rule so the site's default ground
-  // is untouched everywhere else.
+  // `body { background: var(--ground) }` and `.chrome { color: var(--ink) }`
+  // rules (about.css) so the site's defaults are untouched everywhere else.
   const ABOUT_OPEN_CLASS = 'about-open';
   // Reduced motion has no camera/WebGL beats — the document is the whole
   // experience (spec: "what remains when the canvas is removed") — so the
@@ -116,6 +124,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
 
     const palette = paletteAt(t, path);
     deps.setGround(palette.ground);
+    deps.setTextInk(palette.textInk);
     deps.atmosphere.setInk(palette.ink);
     deps.cursor?.setOnDark(palette.onDark);
     // Known limitation, out of scope to fix here: setInvert is binary, so the
@@ -184,11 +193,12 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       if (!open) return;
       open = false;
       document.documentElement.classList.remove(ABOUT_OPEN_CLASS);
-      // Cleared, not merely left to go stale: the --ground-scoped body rule
-      // only applies while about-open is set, so this is belt-and-braces —
-      // but a lingering inline value would otherwise be the first thing
-      // painted (briefly, pre-apply(0)) the NEXT time the corridor opens.
+      // Cleared, not merely left to go stale: the --ground/--ink-scoped rules
+      // only apply while about-open is set, so this is belt-and-braces — but
+      // a lingering inline value would otherwise be the first thing painted
+      // (briefly, pre-apply(0)) the NEXT time the corridor opens.
       document.documentElement.style.removeProperty('--ground');
+      document.documentElement.style.removeProperty('--ink');
       bgCanvas()?.classList.remove('about-canvas-hidden');
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onResize);
@@ -197,16 +207,21 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       lastBeat = null;
       t = 0;
       // Restored unconditionally, even though apply() (the only caller of
-      // setInvert/setInk) never runs under reduced motion — background and
-      // atmosphere are SHARED, site-wide state (every page renders through
-      // the same background layer and atmosphere), and paletteAt returns
-      // onDark: true at BOTH t=0 and t=1. Leaving the corridor by any route
-      // except mid-capabilities — nav click, arrow key, the contact emblem,
-      // or simply scrolling back to the top — would otherwise leave
-      // uInvert=1 and the atmosphere ink pinned at NIGHT_INK for every other
-      // page until a reload.
+      // setInvert/setInk/setOnDark) never runs under reduced motion —
+      // background, atmosphere and the cursor are all SHARED, site-wide state
+      // (every page renders through the same background layer/atmosphere,
+      // and shares the one cursor), and paletteAt returns onDark: true at
+      // BOTH t=0 and t=1. Leaving the corridor by any route except
+      // mid-capabilities — nav click, arrow key, the contact emblem, or
+      // simply scrolling back to the top — would otherwise leave uInvert=1,
+      // the atmosphere ink pinned at NIGHT_INK, and the cursor stuck in its
+      // white-on-dark treatment on the pale world, for every other page until
+      // a reload (or, for the cursor, until the next mousemove — it used to
+      // self-heal via processHover's own setOnDark call, until the I1 fix
+      // made about-flow the sole owner of the cursor while open).
       deps.background?.setInvert(false);
       deps.atmosphere.setInk(DAY_INK);
+      deps.cursor?.setOnDark(false);
       if (deps.reducedMotion) return;
       deps.ferro?.hide();
       deps.ferroEl?.classList.remove('ferro-stage--behind');
