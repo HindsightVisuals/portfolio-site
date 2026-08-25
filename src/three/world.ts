@@ -120,6 +120,8 @@ export type PickResult = { kind: 'tile'; slug: string } | { kind: 'screen'; dest
 
 export interface WorldLayer extends StageLayer {
   camera: THREE.PerspectiveCamera;
+  /** The atmosphere layer, for palette-driven ink (about-palette.ts). */
+  atmosphere: { setInk(v: number): void };
   setVelocitySource(fn: () => number): void;
   setHomeMockVisible(v: boolean): void;
   pick(ndcX: number, ndcY: number): PickResult | null;
@@ -291,6 +293,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
 
   return {
     camera,
+    atmosphere,
     setVelocitySource(fn: () => number): void {
       velocitySource = fn;
     },

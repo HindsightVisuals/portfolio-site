@@ -2,6 +2,9 @@
   --ink: #141414;
   --bg-edge: #f2f2f2;
   --bg-center: #ffffff;
+  /* Page ground. The About corridor drives this per-beat from about-palette.ts;
+   * everything else leaves it at the site default. */
+  --ground: #fdfdfd;
   /* Loos via Typekit (kit jhm5bdq); Space Grotesk as loading fallback */
   --font-wordmark: 'loos-extended', 'Space Grotesk', system-ui, sans-serif;
   --font-display: 'loos-extrawide', 'Space Grotesk', system-ui, sans-serif;
@@ -23,6 +26,10 @@ body {
   background: linear-gradient(90deg, var(--bg-edge) 0%, var(--bg-center) 50%, var(--bg-edge) 100%);
   color: var(--ink);
   font-family: var(--font-mono);
+}
+
+body {
+  background: var(--ground);
 }
 
 #bg-canvas {

@@ -51,6 +51,7 @@ import { submitInquiry } from './contact/submit';
 import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
+import { initAboutFlow } from './about/about-flow';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
@@ -529,20 +530,6 @@ if (lab === 'ferro') {
       }
     };
 
-    const openAbout = async (): Promise<void> => {
-      const m = await loadPageMods();
-      if (takeover.isOpen()) return;
-      const page = m.buildAbout({
-        reducedMotion,
-        navbar: makeTakeoverNavbar(m),
-        deferReveal: true,
-        onContact: () => void closeTakeoverThenNavigate('contact'),
-      });
-      void takeover.open(page);
-      activeRevealCleanup?.(); // defensive: dispose any still-live observer before overwriting
-      activeRevealCleanup = m.mountReveal(page, { reducedMotion });
-    };
-
     // Shared routing decision for a WORK tile / the ABOUT screen, used by
     // BOTH the canvas click handler (mouse, via raycast pick) and the
     // keyboard-only screen-proxy buttons below (spec: Accessibility section
@@ -572,9 +559,15 @@ if (lab === 'ferro') {
     // still fly the camera to its screen, so the scroll loop still closes.
 
     const activateAbout = (): void => {
-      if (takeover.isOpen()) return;
-      if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) void openAbout();
-      else router.navigate('about');
+      if (takeover.isOpen() || aboutFlow.isOpen()) return;
+      if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) {
+        aboutFlow.enter(document.body);
+      } else {
+        // The flow is entered by the onArrive handler once the camera lands —
+        // entering here would start the scrub while the flight is still writing
+        // the camera, and the two would fight for a full two seconds.
+        router.navigate('about');
+      }
     };
 
     // nav2d notch: close the live-canvas window once the takeover body scrolls
@@ -789,6 +782,41 @@ if (lab === 'ferro') {
     // One stage, mounted once, hidden until a 2D page asks for it.
     ferro = initFerro({ reducedMotion });
 
+    // The About corridor's camera-handover controller (Task 11). Queried
+    // directly rather than threaded through from activateContactWipe's
+    // function-scoped `ferroStageEl` local, which doesn't reach this scope —
+    // initFerro (just above) is what creates the `.ferro-stage` element.
+    const aboutFlow = initAboutFlow({
+      camera: world.camera,
+      director,
+      world,
+      atmosphere: world.atmosphere,
+      scrollNav,
+      ferro,
+      ferroEl: document.querySelector<HTMLElement>('.ferro-stage'),
+      cursor,
+      setGround: (css) => {
+        document.documentElement.style.setProperty('--ground', css);
+      },
+      reducedMotion,
+    });
+
+    // Every route out of the corridor funnels through one of the director's
+    // four travel methods (flyTo/flyToFocus/jumpTo/jumpToFocus), all of which
+    // fire departCbs before touching state.z or the camera — so this one
+    // subscription is enough to hand the camera back cleanly no matter which
+    // activate* function is leaving. exit() is idempotent, so the spurious
+    // fire when flying TOWARD About is a harmless no-op.
+    director.onDepart(() => aboutFlow.exit());
+
+    // activateAbout() navigates (rather than entering directly) when the
+    // camera isn't already framed at rest — this is what completes that
+    // flight into a scrub once it lands. Also covers a nav click, popstate,
+    // and — via the boot block below — a deep link.
+    director.onArrive((id) => {
+      if (id === 'about' && !takeover.isOpen()) aboutFlow.enter(document.body);
+    });
+
     const bootDest = destForPath(location.pathname) ?? 'home';
 
     // Reduced motion CUTS instead of flying: initRouter's boot navigation calls
@@ -798,6 +826,18 @@ if (lab === 'ferro') {
     // ~2s flight lands long after registration, and the page must wait for it
     // rather than opening instantly, which is why this is gated.
     if (reducedMotion && bootDest === 'contact' && !takeover.isOpen()) void openContact();
+
+    // /about deep link: initRouter's boot navigation already started a flight
+    // (or, under reduced motion, an instant jump whose arrival fired before
+    // aboutFlow existed to catch it) toward About before this line runs.
+    // Cut the rest of the way there and enter now — no visible fly-in on a
+    // deep link. jumpTo() is idempotent when the camera is already at rest,
+    // and aboutFlow.enter() is idempotent if the onArrive handler above
+    // already fired it as part of this same jump.
+    if (bootDest === 'about' && !takeover.isOpen()) {
+      director.jumpTo('about');
+      aboutFlow.enter(document.body);
+    }
 
     // intro is a single-shot writer racing bindHomeVisibility; kill it the moment
     // the camera leaves home so only one writer touches tagline/reticle opacity
