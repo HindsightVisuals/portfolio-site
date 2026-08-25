@@ -7,6 +7,7 @@ import { documentHeightFor } from './about-scrub';
 import { ABOUT_MARKERS } from './about-markers';
 import { mountAboutDocument } from './about-document';
 import { DESTINATIONS } from '../three/world';
+import { buildFooter } from '../page2d/footer';
 
 const ANCHOR_Z = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ; // -26
 const path = buildAboutPath(new THREE.Vector3(0, 0, ANCHOR_Z));
@@ -14,7 +15,7 @@ const path = buildAboutPath(new THREE.Vector3(0, 0, ANCHOR_Z));
 const mount = (h = 1000) => {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
-  return { parent, doc: mountAboutDocument(parent, path, h) };
+  return { parent, doc: mountAboutDocument(parent, path, h, () => buildFooter({ onNav: () => {} })) };
 };
 
 describe('mountAboutDocument', () => {
@@ -73,6 +74,13 @@ describe('mountAboutDocument', () => {
     const { doc, parent } = mount();
     doc.destroy();
     expect(parent.querySelector('main')).toBeNull();
+    parent.remove();
+  });
+
+  it('mounts the site footer in the last beat', () => {
+    const { doc, parent } = mount();
+    expect(doc.sectionFor('ai').querySelector('footer.cs-footer')).not.toBeNull();
+    doc.destroy();
     parent.remove();
   });
 });

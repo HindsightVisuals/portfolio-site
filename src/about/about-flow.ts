@@ -9,6 +9,14 @@ import { beatAt, scrollToT } from './about-scrub';
 import type { BeatId } from './about-markers';
 import { shouldLeaveCorridor } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
+import { createGate, feedGate } from './about-gate';
+import { buildFooter } from '../page2d/footer';
+// The footer's classes (.cs-footer, .cs-fband, ...) are unscoped top-level
+// selectors defined here, not nested under .case-study — case-study.ts pulls
+// this in for its own footer the same way, and nothing else in the corridor's
+// own bundle (about.css) has ever needed to. Without it the corridor's footer
+// renders unstyled until some OTHER page has happened to load this file first.
+import '../styles/case-study.css';
 
 /**
  * The About corridor's controller — the only stateful module in src/about/.
@@ -90,6 +98,13 @@ export interface AboutFlow {
   /** Test/debug seam: step the return flight to a given 0..1 progress. */
   stepReturnForTest(p: number): void;
   /**
+   * Test/debug seam: feed the footer gate a raw px delta, bypassing a real
+   * wheel event — same reasoning as setScrollForTest below. Mirrors onWheel's
+   * own open/paused/reducedMotion guard, since it bypasses the listener that
+   * normally enforces it.
+   */
+  feedGateForTest(deltaPx: number): void;
+  /**
    * Hold the corridor while something covers it — the contact modal.
    *
    * NOT exit(): contact is a surface over wherever you are, so closing it must
@@ -132,6 +147,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   let paused = false;
   let t = 0;
   let lastBeat: BeatId | null = null;
+
+  // The footer gate's own state (about-gate.ts) — reset on every enter() so a
+  // PREVIOUS visit's fully-armed gate can't fire on the very next forward
+  // wheel tick of a later one.
+  const gate = createGate();
 
   // returnHome()'s scratch poses — module-scoped so applyReturn (an onUpdate
   // callback GSAP calls every tick) never allocates.
@@ -330,6 +350,100 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     }
   };
 
+  /**
+   * Fly the camera home and hand over — the shared body behind the public
+   * returnHome() below AND the footer gate arming (feedGateAt further down).
+   * Top-level, like exit(), so both callers reach the same one flight rather
+   * than each keeping their own copy.
+   */
+  const doReturnHome = (): Promise<void> => {
+    if (!open) return Promise.resolve();
+    fromPos.copy(deps.camera.position);
+    fromQuat.copy(deps.camera.quaternion);
+    window.removeEventListener('scroll', onScroll);
+    // Also detached here, not just in applyReturn's p>=1 branch: onResize
+    // and onWheel stay attached for the corridor's whole open lifetime
+    // (same as exit()), and both already no-op once `open` flips false —
+    // but leaving them attached would double them up on the next enter().
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('wheel', onWheel);
+    if (deps.reducedMotion) {
+      applyReturn(1);
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      returnResolve = resolve;
+      const p = { v: 0 };
+      gsap.to(p, {
+        v: 1,
+        duration: RETURN_S,
+        ease: 'none',
+        onUpdate: () => applyReturn(p.v),
+      });
+    });
+  };
+
+  /**
+   * Feed the footer gate (about-gate.ts) a wheel delta and, once armed, kick
+   * off the return flight home.
+   *
+   * Only reachable from onWheel below, which has already checked
+   * open/paused/reducedMotion — so this never duplicates that guard, only
+   * adds the one condition specific to the gate: it arms only at the very
+   * end of the corridor (t >= 1). A ruling on this task deliberately folded
+   * this into the EXISTING onWheel listener rather than a second 'wheel'
+   * listener with its own open/paused check: a paused corridor is still
+   * `open`, and the contact takeover's wheel events bubble to window
+   * uncaught (it never calls stopPropagation) — precisely the bug already
+   * fixed once for the leave-corridor check just above. A second listener
+   * would have to re-derive that same guard from scratch and risk missing
+   * `paused`, which is exactly how that bug got reintroduced for onResize
+   * and onWheel in the first place (see their own comments below/above).
+   */
+  const feedGateAt = (deltaPx: number): void => {
+    if (t < 1) return;
+    const { armed, amount } = feedGate(gate, deltaPx);
+    doc?.root.style.setProperty('--gate', String(amount));
+    if (armed) void doReturnHome();
+  };
+
+  /**
+   * Scroll the real document to where a beat's t sits, driving the camera
+   * there through the ordinary scroll pipeline (onScroll/apply) — the same
+   * mechanism a raw scroll gesture uses. Used by the footer's site nav
+   * (onFooterNav below) for 'about' and 'contact': both are scroll positions
+   * inside THIS document now (D2/the corridor spec), not places to fly to or
+   * reopen, so there is nothing to hand off to — just move the scrollbar.
+   * Under reduced motion this is also correct and sufficient: the browser's
+   * own scroll position is the only "position" that mode has (see enter()'s
+   * reduced-motion branch), and mountAboutDocument lays the document out
+   * identically regardless of reducedMotion.
+   */
+  const scrollToBeat = (id: BeatId): void => {
+    const range = document.documentElement.scrollHeight - window.innerHeight;
+    if (range > 0) window.scrollTo(0, range * path.tForBeat(id));
+  };
+
+  /**
+   * The footer's site nav, clicked from inside the corridor.
+   *
+   * 'work' is the one destination that actually leaves: exit() already cuts
+   * the camera to the Work rest and hands back to the director, which IS the
+   * Work wall — no separate "fly to work" move is needed. 'about' and
+   * 'contact' stay inside this same page and just scroll to that beat's
+   * offset. Deliberately doesn't go through main.ts's router: the corridor
+   * already owns its own path and document, and router.navigate('about')
+   * would only reach onCorridorRoute -> enterCorridor, which no-ops whenever
+   * aboutFlow.isOpen() — exactly the case here.
+   */
+  const onFooterNav = (dest: 'work' | 'about' | 'contact'): void => {
+    if (dest === 'work') {
+      exit();
+      return;
+    }
+    scrollToBeat(dest === 'about' ? 'anchor' : 'contact');
+  };
+
   // Backward scroll at the very top of the corridor hands the camera back —
   // needed as its own listener because scrollNav (main.ts) is put into
   // 'about' mode on enter() below and deliberately feeds the director
@@ -348,9 +462,15 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // — clearing open/paused and releasing the director — and resume() would
     // then no-op on close, landing the user in 'world' instead of back in
     // the corridor. Exactly the bug this task exists to fix, reintroduced via
-    // the one listener pause() doesn't touch.
+    // the one listener pause() doesn't touch. The footer gate below shares
+    // this exact guard for the exact same reason — see feedGateAt's comment.
     if (!open || paused || deps.reducedMotion) return;
-    if (shouldLeaveCorridor({ open, t, deltaPx: normalizeWheelDelta(e.deltaY, e.deltaMode) })) exit();
+    const deltaPx = normalizeWheelDelta(e.deltaY, e.deltaMode);
+    if (shouldLeaveCorridor({ open, t, deltaPx })) {
+      exit();
+      return;
+    }
+    feedGateAt(deltaPx);
   };
 
   return {
@@ -358,11 +478,16 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       if (open) return;
       open = true;
       paused = false;
+      // Reset per visit: without this, a gate fully armed on a PREVIOUS visit
+      // (it survives in this closure across enter()/exit() cycles) would fire
+      // on the very first forward wheel tick of a later one, with no fresh
+      // push required.
+      gate.accumulated = 0;
       // Both motion paths: the document has to be able to scroll past one
       // viewport's worth of content, and the site's default full-bleed lock
       // (base.css) otherwise pins it at zero height (C1).
       document.documentElement.classList.add(ABOUT_OPEN_CLASS);
-      doc = mountAboutDocument(parent, path, window.innerHeight);
+      doc = mountAboutDocument(parent, path, window.innerHeight, () => buildFooter({ onNav: onFooterNav }));
       window.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('resize', onResize);
       window.addEventListener('wheel', onWheel, { passive: true });
@@ -404,34 +529,13 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     },
 
     exit,
-    returnHome(): Promise<void> {
-      if (!open) return Promise.resolve();
-      fromPos.copy(deps.camera.position);
-      fromQuat.copy(deps.camera.quaternion);
-      window.removeEventListener('scroll', onScroll);
-      // Also detached here, not just in applyReturn's p>=1 branch: onResize
-      // and onWheel stay attached for the corridor's whole open lifetime
-      // (same as exit()), and both already no-op once `open` flips false —
-      // but leaving them attached would double them up on the next enter().
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('wheel', onWheel);
-      if (deps.reducedMotion) {
-        applyReturn(1);
-        return Promise.resolve();
-      }
-      return new Promise((resolve) => {
-        returnResolve = resolve;
-        const p = { v: 0 };
-        gsap.to(p, {
-          v: 1,
-          duration: RETURN_S,
-          ease: 'none',
-          onUpdate: () => applyReturn(p.v),
-        });
-      });
-    },
+    returnHome: doReturnHome,
     stepReturnForTest(p: number): void {
       applyReturn(Math.min(1, Math.max(0, p)));
+    },
+    feedGateForTest(deltaPx: number): void {
+      if (!open || paused || deps.reducedMotion) return;
+      feedGateAt(deltaPx);
     },
     pause(): void {
       if (!open || paused) return;

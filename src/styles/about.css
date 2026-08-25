@@ -84,3 +84,17 @@ html.about-open .chrome {
     display: block;
   }
 }
+
+/* The footer gate's indicator. Placeholder treatment — the mechanism is real,
+ * the look awaits Adam's Figma. --gate is 0..1, written per wheel event. */
+.about-doc::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: calc(var(--gate, 0) * 100%);
+  background: var(--ink);
+  opacity: calc(var(--gate, 0) * 0.6);
+  pointer-events: none;
+}

@@ -39,6 +39,7 @@ export function mountAboutDocument(
   parent: HTMLElement,
   path: AboutPath,
   viewportH: number,
+  footer?: () => HTMLElement,
 ): AboutDocument {
   const root = document.createElement('main');
   root.className = 'about-doc';
@@ -55,6 +56,10 @@ export function mountAboutDocument(
     sections.set(m.id, section);
     root.appendChild(section);
   }
+
+  // The footer lives in the last beat: it IS the end of the page, and the
+  // gate is scroll pushed against it.
+  if (footer) sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!.appendChild(footer());
 
   /**
    * Height per beat, proportional to that beat's span of the path.

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { DESTINATIONS } from '../three/world';
 import { DAY_INK } from './about-palette';
 import { initAboutFlow, type AboutFlowDeps } from './about-flow';
+import { GATE_THRESHOLD_PX } from './about-gate';
 
 const makeDeps = (over: Partial<AboutFlowDeps> = {}): AboutFlowDeps => ({
   camera: new THREE.PerspectiveCamera(),
@@ -614,5 +615,81 @@ describe('initAboutFlow', () => {
       expect(deps.director.setSuspended).toHaveBeenLastCalledWith(false);
       flow.destroy();
     });
+  });
+
+  // The gate must not fire mid-corridor: onGateWheel (folded into onWheel)
+  // only feeds the gate once t has actually reached the very end of the
+  // path. Without this guard, feeding it a full THRESHOLD worth of delta at
+  // any t would arm it and eject the reader outright.
+  it('only feeds the gate at the very end of the corridor', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.5);
+    flow.feedGateForTest(GATE_THRESHOLD_PX);
+    expect(flow.isOpen()).toBe(true); // mid-corridor scroll must not eject you
+    flow.destroy();
+  });
+
+  it('returns home once the gate arms at the end', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    flow.feedGateForTest(GATE_THRESHOLD_PX);
+    flow.stepReturnForTest(1);
+    expect(flow.isOpen()).toBe(false);
+    flow.destroy();
+  });
+
+  // Ruling on this task: the brief's gate guard was `open && t() >= 1`, but a
+  // PAUSED corridor is still `open` — the contact modal pauses rather than
+  // exits it, and its wheel events bubble to window uncaught. Without this
+  // guard, scrolling inside the modal while paused at the last beat would
+  // fill the gate and fly the reader home from behind it.
+  it('a paused corridor at the end does not feed the gate', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    flow.pause();
+    flow.feedGateForTest(GATE_THRESHOLD_PX);
+    expect(flow.isOpen()).toBe(true);
+    flow.destroy();
+  });
+
+  it('the footer nav "work" leaves the corridor', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    const btn = [...parent.querySelectorAll('footer.cs-footer button')]
+      .find((b) => b.textContent === 'work') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    btn.click();
+    expect(flow.isOpen()).toBe(false);
+    flow.destroy();
+  });
+
+  it('the footer nav "about"/"contact" scroll the document to that beat without leaving the corridor', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 5000 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    try {
+      const btn = [...parent.querySelectorAll('footer.cs-footer button')]
+        .find((b) => b.textContent === 'contact') as HTMLButtonElement;
+      expect(btn).toBeTruthy();
+      btn.click();
+      expect(scrollTo).toHaveBeenCalledWith(0, 4000 * flow.path().tForBeat('contact'));
+      expect(flow.isOpen()).toBe(true);
+    } finally {
+      scrollTo.mockRestore();
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+    }
+    flow.destroy();
   });
 });
