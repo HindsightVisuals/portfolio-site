@@ -175,3 +175,54 @@ beat content, so it belongs explicitly in the client-wall beat's plan. `strip.ts
    restructured into pure reducers instead.**
 2. **`.gitignore` gained `.superpowers/`** — that line came from an earlier brainstorming session
    in this worktree, not from this feature. It is repo-wide in effect. Confirm you want it.
+
+---
+
+## Adam's first browser pass (2026-08-24)
+
+The corridor scrolls and the camera move reads correctly. Two things came out of it.
+
+### FIXED — the RD field smeared once the camera went vertical
+
+`background.ts`'s `PARALLAX_UV_PER_UNIT` (0.01 UV per world unit) was tuned against the pointer
+magnet, which deflects the camera by a fraction of a unit, and `BASE_OVERSCAN`'s 3% was sized to
+cover exactly that — its comment says it "must leave more margin than the max parallax offset."
+The corridor climbs `cam.y` to +31 units, asking for a 31% shift against a ~1.5% margin, so the
+field ran off its own clamped edge for the whole climb.
+
+Fixed in `8cf9f0e` by clamping the offset to the margin the zoom actually leaves
+(`parallaxMargin`/`clampParallax`, pure and tested). Near the spine nothing changes; it saturates
+only where it would otherwise tear. Hardens the field against any future off-spine camera.
+
+### OPEN — there is no entry or exit transition, and it shows
+
+Adam: *"when you hit the about page in the main flow, it just shows the about page card
+placeholder, then snaps to black (inverted) then the travel begins, its not smooth, and when you
+want to go back... it just snaps back to white then your back on the main flow again."*
+
+**This is a scoping gap in the spine plan, not a bug.** The spec's beat 1 is "camera pitches from
+horizontal to looking straight up," which was built as the *path's shape* and never as a *visual
+treatment*. Three separate hard edges compose the effect:
+
+1. **The About screen card flashes, then vanishes.** `setAboutMode(true)` hides the world's
+   anchored roots outright (`world.ts`) — no fade. It was written that way because the
+   materialize pass fades on z-distance alone, which is meaningless once the camera is 31 units
+   off-axis in y.
+2. **The snap to black.** `setInvert` is binary — see §8. The ground flips rather than dims.
+3. **The snap back to white on exit.** Deliberate (Ruling F4): `exit()` cuts the camera to the
+   About rest and resets the quaternion, because nothing else in the codebase writes
+   `camera.quaternion` and leaving it un-reset left the entire site rotated after one visit. A cut
+   was chosen over a rotated world; a *transition* was never designed.
+
+Needs art direction before code — it is the first thing anyone sees of the corridor. Brainstorm
+it, then plan it.
+
+### Deferred by Adam, this pass
+
+- **Text contrast through the crossfade** (§2) — "this is fine for now."
+- **Pacing** (`WORLD_UNITS_PER_VIEWPORT`) — "easier to judge once we nail that down a bit more in
+  the next few passes."
+- **Sense of travel** — reads as travel from the dots alone. The frozen-velocity item (§3) was not
+  independently noticeable yet, likely because the beats are empty.
+- **Depth cues** — "the only things giving the illusion of 3d space at the moment are the floating
+  dots." Expected: the beats are empty and the lander's grass is a later plan.
