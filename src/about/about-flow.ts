@@ -68,6 +68,17 @@ export interface AboutFlow {
    */
   enter(parent: HTMLElement, startT?: number): void;
   exit(): void;
+  /**
+   * Hold the corridor while something covers it — the contact modal.
+   *
+   * NOT exit(): contact is a surface over wherever you are, so closing it must
+   * put you back at the beat you opened it from. exit() would reset the camera
+   * pose and release the director, and you would find yourself at the Work
+   * rest with the corridor unmounted.
+   */
+  pause(): void;
+  /** Give the wheel back to the corridor. Safe to call when never paused. */
+  resume(): void;
   isOpen(): boolean;
   /** Test/debug seam: the current path parameter. */
   t(): number;
@@ -92,6 +103,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
 
   let doc: AboutDocument | null = null;
   let open = false;
+  let paused = false;
   let t = 0;
   let lastBeat: BeatId | null = null;
 
@@ -167,6 +179,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   const exit = (): void => {
     if (!open) return;
     open = false;
+    paused = false;
     document.documentElement.classList.remove(ABOUT_OPEN_CLASS);
     // Cleared, not merely left to go stale: the --ground/--ink-scoped rules
     // only apply while about-open is set, so this is belt-and-braces — but
@@ -238,6 +251,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     enter(parent: HTMLElement, startT = 0): void {
       if (open) return;
       open = true;
+      paused = false;
       // Both motion paths: the document has to be able to scroll past one
       // viewport's worth of content, and the site's default full-bleed lock
       // (base.css) otherwise pins it at zero height (C1).
@@ -284,6 +298,18 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     },
 
     exit,
+    pause(): void {
+      if (!open || paused) return;
+      paused = true;
+      window.removeEventListener('scroll', onScroll);
+    },
+
+    resume(): void {
+      if (!open || !paused) return;
+      paused = false;
+      window.addEventListener('scroll', onScroll, { passive: true });
+      deps.scrollNav?.setMode('about');
+    },
     isOpen: () => open,
     t: () => t,
     path: () => path,

@@ -243,6 +243,10 @@ if (lab === 'ferro') {
         // see the scroll handler below, which owns the pause from then on.
         if (mode === 'world') stage.setPaused(false);
         if (mode === 'world') {
+          // Give the wheel back to a paused corridor — a no-op when the
+          // corridor was never paused (every takeover close routes through
+          // here, not just contact's).
+          aboutFlow.resume();
           // Back to the light world; the wall hover takes over from here.
           cursor?.setOnDark(false);
           activeRevealCleanup?.();
@@ -550,9 +554,12 @@ if (lab === 'ferro') {
       // never fires here. The nav emblem lives in .chrome (z-index 10), above
       // .about-doc (z-index 1), so it's clickable throughout the corridor —
       // without this, one click strands the director suspended forever.
-      // exit() is idempotent, so this is harmless on every other path through
-      // this function too.
-      aboutFlow.exit();
+      // pause() is idempotent, so this is harmless on every other path
+      // through this function too.
+      //
+      // Pause, do not exit — contact is a modal over wherever you are, so
+      // closing it must return you to the beat you opened it from.
+      aboutFlow.pause();
       if (activatingContactWipe) return;
       activatingContactWipe = true;
       try {

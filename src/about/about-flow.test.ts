@@ -473,4 +473,37 @@ describe('initAboutFlow', () => {
     }
     flow.destroy();
   });
+
+  it('pause keeps the corridor open and the camera where it is', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.42);
+    const z = deps.camera.position.z;
+    flow.pause();
+    expect(flow.isOpen()).toBe(true);
+    expect(flow.t()).toBeCloseTo(0.42, 6);
+    expect(deps.camera.position.z).toBeCloseTo(z, 6);
+    flow.destroy();
+  });
+
+  it('resume puts the wheel back with the corridor and does not reset t', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.42);
+    flow.pause();
+    flow.resume();
+    expect(flow.t()).toBeCloseTo(0.42, 6);
+    expect(deps.scrollNav!.setMode).toHaveBeenLastCalledWith('about');
+    flow.destroy();
+  });
+
+  it('pause on a closed corridor is a no-op', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    expect(() => { flow.pause(); flow.resume(); }).not.toThrow();
+    expect(flow.isOpen()).toBe(false);
+    flow.destroy();
+  });
 });
