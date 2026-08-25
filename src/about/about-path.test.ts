@@ -3,8 +3,10 @@ import * as THREE from 'three';
 import { ABOUT_MARKERS } from './about-markers';
 import { BLENDER_TO_WORLD, pitchToQuaternion } from './about-coords';
 import { buildAboutPath } from './about-path';
+import { DESTINATIONS } from '../three/world';
 
-const ANCHOR = new THREE.Vector3(0, 0, -86); // the site's About rest
+const ANCHOR_Z = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ; // -26
+const ANCHOR = new THREE.Vector3(0, 0, ANCHOR_Z); // the site's Work rest
 
 describe('buildAboutPath', () => {
   const path = buildAboutPath(ANCHOR);
@@ -83,10 +85,12 @@ describe('buildAboutPath', () => {
     expect(out.position).toBe(into.position);
   });
 
-  it('stops short of the Contact destination — the corridor is a mezzanine, not a collision', () => {
-    // Contact's camera rest is z = -146. If the path overran it the scrub would
-    // fly through the Contact screen, which the world still has anchored there.
-    expect(path.sample(1).position.z).toBeGreaterThan(-146);
+  it('ends on the mezzanine, forward of and above the Work rest', () => {
+    // The corridor now begins AT the Work rest and runs 43.7 units forward
+    // (25.72 Blender units x 1.7) while climbing 31 (18.23 x 1.7).
+    const end = path.sample(1);
+    expect(end.position.z).toBeCloseTo(ANCHOR_Z - 43.72, 1);
+    expect(end.position.y).toBeCloseTo(30.99, 1);
   });
 
   it('reports its own world length so the scroll document can be sized from it', () => {

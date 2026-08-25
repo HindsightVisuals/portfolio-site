@@ -154,19 +154,19 @@ describe('initAboutFlow', () => {
   // camera-director.ts only ever writes position — so once the corridor
   // pitches the camera 90° to look upward, nothing puts it back unless exit()
   // does it explicitly. Separately, the director resumes from its own
-  // remembered state.z (the About rest), while the camera has travelled well
-  // past that along the path, so exit must also reset position to the About
+  // remembered state.z (the Work rest), while the camera has travelled well
+  // past that along the path, so exit must also reset position to the Work
   // rest before releasing the director.
-  it('restores the camera to the About rest, level, on exit', () => {
+  it('restores the camera to the Work rest, level, on exit', () => {
     const deps = makeDeps();
-    const aboutRest = DESTINATIONS.find((d) => d.id === 'about')!.cameraZ;
+    const anchorRest = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ;
     const flow = initAboutFlow(deps);
     flow.enter(parent);
     flow.setScrollForTest(0.6);
     flow.exit();
     expect(deps.camera.position.x).toBeCloseTo(0, 6);
     expect(deps.camera.position.y).toBeCloseTo(0, 6);
-    expect(deps.camera.position.z).toBeCloseTo(aboutRest, 6);
+    expect(deps.camera.position.z).toBeCloseTo(anchorRest, 6);
     expect(deps.camera.quaternion.angleTo(new THREE.Quaternion())).toBeCloseTo(0, 6);
     flow.destroy();
   });

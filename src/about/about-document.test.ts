@@ -6,8 +6,10 @@ import { buildAboutPath } from './about-path';
 import { documentHeightFor } from './about-scrub';
 import { ABOUT_MARKERS } from './about-markers';
 import { mountAboutDocument } from './about-document';
+import { DESTINATIONS } from '../three/world';
 
-const path = buildAboutPath(new THREE.Vector3(0, 0, -86));
+const ANCHOR_Z = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ; // -26
+const path = buildAboutPath(new THREE.Vector3(0, 0, ANCHOR_Z));
 
 const mount = (h = 1000) => {
   const parent = document.createElement('div');

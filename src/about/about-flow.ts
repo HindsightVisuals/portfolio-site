@@ -78,8 +78,8 @@ export interface AboutFlow {
 }
 
 export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
-  const aboutRest = DESTINATIONS.find((d) => d.id === 'about')!.cameraZ;
-  const path: AboutPath = buildAboutPath(new THREE.Vector3(0, 0, aboutRest));
+  const anchorRest = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ;
+  const path: AboutPath = buildAboutPath(new THREE.Vector3(0, 0, anchorRest));
   const pose: CameraPose = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 
   let doc: AboutDocument | null = null;
@@ -232,12 +232,12 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       // camera-director.ts only ever writes position — so once the corridor
       // pitches the camera to look upward, nothing else will ever level it
       // again unless this does. The director also resumes from its own
-      // remembered state.z (this same aboutRest), while the camera has
+      // remembered state.z (this same anchorRest), while the camera has
       // travelled along the whole path; resetting position here keeps the
       // director's remembered state consistent with where the camera actually
       // is. This is a cut, matching the hard transition a closing 2D takeover
       // already performs.
-      deps.camera.position.set(0, 0, aboutRest);
+      deps.camera.position.set(0, 0, anchorRest);
       deps.camera.quaternion.identity();
       // Released LAST: the director resumes writing the camera from here, and
       // it must not do so while the world is still in About mode.

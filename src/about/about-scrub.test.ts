@@ -5,8 +5,10 @@ import { buildAboutPath } from './about-path';
 import {
   beatAt, beatProgress, documentHeightFor, scrollToT, WORLD_UNITS_PER_VIEWPORT,
 } from './about-scrub';
+import { DESTINATIONS } from '../three/world';
 
-const path = buildAboutPath(new THREE.Vector3(0, 0, -86));
+const ANCHOR_Z = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ; // -26
+const path = buildAboutPath(new THREE.Vector3(0, 0, ANCHOR_Z));
 
 describe('scrollToT', () => {
   it('is 0 at the top and 1 at the bottom', () => {

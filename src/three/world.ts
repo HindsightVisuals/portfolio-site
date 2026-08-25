@@ -110,9 +110,28 @@ export interface Destination {
   cameraZ: number;
 }
 
-export const DESTINATIONS: Destination[] = (['home', 'work', 'about', 'contact'] as DestId[]).map(
-  (id, i) => ({ id, anchorZ: -SPACING * i, cameraZ: -SPACING * i + CAMERA_OFFSET }),
-);
+/**
+ * The spine's RESTS — places the camera stops. Home and Work only.
+ *
+ * About and Contact used to be rests. They are not any more: everything past
+ * the Work wall is continuous travel into the About corridor, which ends at
+ * the footer and returns you Home (see
+ * docs/superpowers/specs/2026-08-24-continuous-flow-design.md).
+ *
+ * Removing them here also deletes their screen planes, because the plane
+ * builder below iterates this array — they were labels for stops that no
+ * longer exist.
+ *
+ * The spacing is still indexed off the original four-destination layout so
+ * Work keeps anchorZ -60 and the wall does not reframe. Do not renumber.
+ */
+const SPINE_INDEX: Record<'home' | 'work', number> = { home: 0, work: 1 };
+
+export const DESTINATIONS: Destination[] = (['home', 'work'] as DestId[]).map((id) => ({
+  id,
+  anchorZ: -SPACING * SPINE_INDEX[id as 'home' | 'work'],
+  cameraZ: -SPACING * SPINE_INDEX[id as 'home' | 'work'] + CAMERA_OFFSET,
+}));
 
 export const HOME_REST_Z = DESTINATIONS[0].cameraZ; // home camera rest — single source of truth
 

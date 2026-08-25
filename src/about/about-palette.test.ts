@@ -11,8 +11,10 @@ import {
   NIGHT_TEXT_INK,
   paletteAt,
 } from './about-palette';
+import { DESTINATIONS } from '../three/world';
 
-const path = buildAboutPath(new THREE.Vector3(0, 0, -86));
+const ANCHOR_Z = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ; // -26
+const path = buildAboutPath(new THREE.Vector3(0, 0, ANCHOR_Z));
 
 describe('paletteAt', () => {
   it('is night at the start of the corridor', () => {

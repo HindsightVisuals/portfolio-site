@@ -15,7 +15,7 @@ import { initScrollNav, type ScrollNav } from './home/scroll-nav';
 import { initRouter } from './router';
 import { bindHomeVisibility } from './home/home-visibility';
 import { wrapDelta } from './three/loop';
-import { DEST_ORDER, destForPath, slugForPath, withBase, type DestId } from './routes';
+import { destForPath, slugForPath, withBase, type DestId } from './routes';
 import { initTakeover, type TakeoverTransition } from './page2d/takeover';
 import { buildEmblem, type Emblem } from './contact/emblem';
 import { runWipe } from './contact/wipe';
@@ -178,7 +178,7 @@ if (lab === 'ferro') {
     const router = initRouter(director, { reducedMotion });
 
     // --- 2D takeover wiring (Task 12): the DOM side of the signature journey ---
-    const aboutRest = DESTINATIONS.find((d) => d.id === 'about')!.cameraZ;
+    const workRest = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ;
     // Camera within this wrapped-z distance of the ABOUT screen's rest counts
     // as "framed at rest" — a click then opens the About takeover in place
     // rather than flying to it first.
@@ -569,7 +569,7 @@ if (lab === 'ferro') {
 
     const activateAbout = (): void => {
       if (takeover.isOpen() || aboutFlow.isOpen()) return;
-      if (Math.abs(wrapDelta(aboutRest, world.camera.position.z)) < ABOUT_REST_EPS) {
+      if (Math.abs(wrapDelta(workRest, world.camera.position.z)) < ABOUT_REST_EPS) {
         aboutFlow.enter(document.body);
       } else {
         // The flow is entered by the onArrive handler once the camera lands —
@@ -719,16 +719,20 @@ if (lab === 'ferro') {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (inputMode === 'takeover') return; // Task 12: takeover mode disables world navigation
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      // I2: the corridor drags the camera ~43.7 units past the About rest
+      // I2: the corridor drags the camera ~43.7 units past the Work rest
       // (against a 60-unit SPACING) — past its halfway point camera.position.z
-      // is nearer Contact than About, so resolve from the About rest instead
-      // of the camera's actual (mid-scrub) position while the corridor is open.
-      const refZ = aboutFlow.isOpen() ? aboutRest : world.camera.position.z;
+      // is nearer the wrapped-around Home rest than Work, so resolve from the
+      // Work rest instead of the camera's actual (mid-scrub) position while
+      // the corridor is open.
+      const refZ = aboutFlow.isOpen() ? workRest : world.camera.position.z;
       const current = DESTINATIONS.reduce((best, d) =>
         Math.abs(wrapDelta(d.cameraZ, refZ)) < Math.abs(wrapDelta(best.cameraZ, refZ)) ? d : best,
       );
-      const idx = DEST_ORDER.indexOf(current.id) + (e.key === 'ArrowDown' ? 1 : -1);
-      const next = DEST_ORDER[(idx + DEST_ORDER.length) % DEST_ORDER.length];
+      // Cycles the spine's RESTS, not DEST_ORDER — /about and /contact are
+      // still routes but no longer places the camera stops.
+      const ids = DESTINATIONS.map((d) => d.id);
+      const idx = ids.indexOf(current.id) + (e.key === 'ArrowDown' ? 1 : -1);
+      const next = ids[(idx + ids.length) % ids.length];
       if (next !== current.id) router.navigate(next);
     });
 
