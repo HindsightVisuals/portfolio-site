@@ -52,6 +52,8 @@ import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
 import { initAboutFlow } from './about/about-flow';
+import { shouldEnterCorridor, shouldLeaveCorridor } from './about/about-handover';
+import { normalizeWheelDelta } from './home/wheel';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
@@ -170,19 +172,42 @@ if (lab === 'ferro') {
 
     let scrollNav: ScrollNav | null = null;
     if (!reducedMotion) {
-      scrollNav = initScrollNav((px) => director.feedScroll(px));
+      scrollNav = initScrollNav((px) => {
+        // The handover. At the Work rest, forward scroll belongs to the
+        // corridor and backward scroll belongs to the director — the
+        // corridor's t = 0 IS that rest, so nothing jumps.
+        if (shouldEnterCorridor({
+          open: aboutFlow.isOpen(),
+          cameraZ: world.camera.position.z,
+          restZ: workRest,
+          deltaPx: px,
+        })) {
+          aboutFlow.enter(document.body);
+          return;
+        }
+        director.feedScroll(px);
+      });
       window.addEventListener('mousemove', (e) => {
         director.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
       });
     }
     const router = initRouter(director, { reducedMotion });
 
+    // Backward scroll at the very top of the corridor hands the camera back.
+    // Needed as its own listener because scrollNav is in 'about' mode by then
+    // and deliberately feeds the director nothing.
+    window.addEventListener('wheel', (e) => {
+      if (shouldLeaveCorridor({
+        open: aboutFlow.isOpen(),
+        t: aboutFlow.t(),
+        deltaPx: normalizeWheelDelta(e.deltaY, e.deltaMode),
+      })) {
+        aboutFlow.exit();
+      }
+    }, { passive: true });
+
     // --- 2D takeover wiring (Task 12): the DOM side of the signature journey ---
     const workRest = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ;
-    // Camera within this wrapped-z distance of the ABOUT screen's rest counts
-    // as "framed at rest" — a click then opens the About takeover in place
-    // rather than flying to it first.
-    const ABOUT_REST_EPS = 2;
     // scrollTop past which the nav2d notch closes (paints #fdfdfd over the
     // live-canvas window) — see .nav2d--scrolled in page2d.css.
     const NOTCH_SCROLL_THRESHOLD_PX = 32;
@@ -569,14 +594,10 @@ if (lab === 'ferro') {
 
     const activateAbout = (): void => {
       if (takeover.isOpen() || aboutFlow.isOpen()) return;
-      if (Math.abs(wrapDelta(workRest, world.camera.position.z)) < ABOUT_REST_EPS) {
-        aboutFlow.enter(document.body);
-      } else {
-        // The flow is entered by the onArrive handler once the camera lands —
-        // entering here would start the scrub while the flight is still writing
-        // the camera, and the two would fight for a full two seconds.
-        router.navigate('about');
-      }
+      // No flight and no arrival — About is not a destination any more. Put the
+      // camera on the Work rest and hand straight to the corridor.
+      director.jumpTo('work');
+      aboutFlow.enter(document.body);
     };
 
     // nav2d notch: close the live-canvas window once the takeover body scrolls
@@ -698,10 +719,8 @@ if (lab === 'ferro') {
     // wordmark's home button is picked up by the same wiring. .chrome stays
     // fixed above the corridor throughout, so the nav "About" link and the
     // "learn more" margin button (data-nav="about") are both clickable while
-    // the corridor is already open — router.navigate('about') would bypass
-    // activateAbout()'s isOpen() guard and cost the user their scroll
-    // position (exit() -> a full 2s zero-distance flight -> onArrive ->
-    // enter() back at t=0), so 'about' routes through activateAbout()
+    // the corridor is already open — router.navigate('about') is a now-broken
+    // destination lookup besides, so 'about' routes through activateAbout()
     // instead, which no-ops while already open.
     for (const el of document.querySelectorAll<HTMLElement>('.chrome [data-nav]')) {
       el.addEventListener('click', (e) => {
@@ -847,33 +866,24 @@ if (lab === 'ferro') {
     // its first line instead (see there for why).
     director.onDepart(() => aboutFlow.exit());
 
-    // activateAbout() navigates (rather than entering directly) when the
-    // camera isn't already framed at rest — this is what completes that
-    // flight into a scrub once it lands. Also covers a nav click, popstate,
-    // and — via the boot block below — a deep link.
-    director.onArrive((id) => {
-      if (id === 'about' && !takeover.isOpen()) aboutFlow.enter(document.body);
-    });
-
     const bootDest = destForPath(location.pathname) ?? 'home';
 
     // Reduced motion CUTS instead of flying: initRouter's boot navigation calls
-    // director.jumpTo(), which emits arrive synchronously — before the onArrive
-    // handler above was registered. A /contact deep link would therefore never
-    // open its page for reduced-motion users. Normal motion is unaffected: the
-    // ~2s flight lands long after registration, and the page must wait for it
-    // rather than opening instantly, which is why this is gated.
+    // director.jumpTo(), which emits arrive synchronously — before the
+    // /contact onArrive handler above was registered. A /contact deep link
+    // would therefore never open its page for reduced-motion users. Normal
+    // motion is unaffected: the ~2s flight lands long after registration, and
+    // the page must wait for it rather than opening instantly, which is why
+    // this is gated.
     if (reducedMotion && bootDest === 'contact' && !takeover.isOpen()) void openContact();
 
-    // /about deep link: initRouter's boot navigation already started a flight
-    // (or, under reduced motion, an instant jump whose arrival fired before
-    // aboutFlow existed to catch it) toward About before this line runs.
-    // Cut the rest of the way there and enter now — no visible fly-in on a
-    // deep link. jumpTo() is idempotent when the camera is already at rest,
-    // and aboutFlow.enter() is idempotent if the onArrive handler above
-    // already fired it as part of this same jump.
+    // /about deep link: About is not a destination on the spine any more —
+    // router.ts's own boot navigation for 'about' is a now-broken lookup
+    // (out of scope here; see the plan). Put the camera on the Work rest and
+    // hand straight to the corridor, same as activateAbout() — no flight, no
+    // arrival, no visible fly-in on a deep link.
     if (bootDest === 'about' && !takeover.isOpen()) {
-      director.jumpTo('about');
+      director.jumpTo('work');
       aboutFlow.enter(document.body);
     }
 

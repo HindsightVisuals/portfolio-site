@@ -60,7 +60,11 @@ export interface AboutFlowDeps {
 }
 
 export interface AboutFlow {
-  enter(parent: HTMLElement): void;
+  /**
+   * @param startT Where along the path to land, 0..1. Defaults to the top —
+   * pass a value for a deep link straight into the corridor.
+   */
+  enter(parent: HTMLElement, startT?: number): void;
   exit(): void;
   isOpen(): boolean;
   /** Test/debug seam: the current path parameter. */
@@ -155,7 +159,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   };
 
   return {
-    enter(parent: HTMLElement): void {
+    enter(parent: HTMLElement, startT = 0): void {
       if (open) return;
       open = true;
       // Both motion paths: the document has to be able to scroll past one
@@ -184,7 +188,13 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       lastBeat = null;
       // Position before the first paint: the camera must already be on the
       // corridor when the next frame renders, not one frame behind it.
-      apply(0);
+      apply(Math.min(1, Math.max(0, startT)));
+      // Put the document where the camera is, or the first real scroll event
+      // would snap the camera back to the top.
+      if (doc) {
+        const range = document.documentElement.scrollHeight - window.innerHeight;
+        if (range > 0) window.scrollTo(0, range * t);
+      }
     },
 
     exit(): void {

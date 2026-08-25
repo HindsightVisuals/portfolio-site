@@ -70,6 +70,22 @@ describe('initAboutFlow', () => {
     flow.destroy();
   });
 
+  it('can enter at a given t, for deep links into the corridor', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent, 0.5);
+    expect(flow.t()).toBeCloseTo(0.5, 6);
+    flow.destroy();
+  });
+
+  it('defaults to the top when no t is given', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    expect(flow.t()).toBe(0);
+    flow.destroy();
+  });
+
   it('drives the camera from the document scroll offset', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);
