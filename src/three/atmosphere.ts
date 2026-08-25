@@ -10,7 +10,13 @@ const DRIFT_MAX = 1.6;          // units/s — slow wander
 const STREAK_GAIN = 0.12;       // apparent-motion -> capsule half-length
 const STREAK_MAX = 2.5;         // cap (sprite-local units); full lightspeed would be ~6
 const VELOCITY_EASE = 8;        // how fast streaks respond to speed changes
-const INK = 0.07;
+
+/**
+ * Particle ink. Tuned against the site's pale ground; the About flow's night
+ * palette drives it up through setInk() (about-palette.ts), which is why this
+ * is a uniform rather than baked into the shader string as it once was.
+ */
+const INK_DEFAULT = 0.07;
 
 const VERT = /* glsl */ `
 uniform float uPixelRatio;
@@ -53,6 +59,7 @@ void main() {
 
 const FRAG = /* glsl */ `
 precision highp float;
+uniform float uInk;
 varying float vDepthFade;
 varying vec2 vRadial;
 varying float vStretch;
@@ -69,13 +76,15 @@ void main() {
   float taper = mix(1.0, 0.2, stretch > 0.0 ? onTail / max(stretch, 1e-4) : 0.0);
   float alpha = core * taper * vDepthFade * 0.85;
   if (alpha < 0.01) discard;
-  gl_FragColor = vec4(vec3(${INK.toFixed(2)}), alpha);
+  gl_FragColor = vec4(vec3(uInk), alpha);
 }
 `;
 
 export interface Atmosphere {
   object: THREE.Points;
   update(dt: number, velocity: number, cameraZ: number): void;
+  /** 0..1 particle ink; clamped. Driven by the About palette. */
+  setInk(v: number): void;
   destroy(): void;
 }
 
@@ -106,6 +115,7 @@ export function initAtmosphere(): Atmosphere {
       uTime: { value: 0 },
       uVelocity: { value: 0 },
       uCameraZ: { value: 0 },
+      uInk: { value: INK_DEFAULT },
     },
     transparent: true,
     depthWrite: false,
@@ -121,6 +131,9 @@ export function initAtmosphere(): Atmosphere {
       material.uniforms.uCameraZ.value = cameraZ;
       const current = material.uniforms.uVelocity.value as number;
       material.uniforms.uVelocity.value = current + (velocity - current) * Math.min(dt * VELOCITY_EASE, 1);
+    },
+    setInk(v: number): void {
+      material.uniforms.uInk.value = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : INK_DEFAULT;
     },
     destroy(): void {
       geometry.dispose();
