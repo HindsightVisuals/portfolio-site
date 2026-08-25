@@ -1,6 +1,15 @@
 import { normalizeWheelDelta } from './wheel';
 
-export type ScrollMode = 'world' | 'takeover';
+/**
+ * 'world'    — the wheel drives the camera director along the spine.
+ * 'takeover' — a 2D page covers the world; the wheel belongs to that page.
+ * 'about'    — the About corridor; the scrolling document owns the wheel and
+ *              drives the camera itself through about-flow.ts. Distinct from
+ *              'takeover' because main.ts reads this same value to gate arrow
+ *              -key navigation, which must not fly the camera off the corridor
+ *              mid-scrub.
+ */
+export type ScrollMode = 'world' | 'takeover' | 'about';
 
 export interface ScrollNav {
   setMode(mode: ScrollMode): void;
