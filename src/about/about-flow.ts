@@ -1,6 +1,7 @@
 // src/about/about-flow.ts
 import * as THREE from 'three';
-import { DESTINATIONS } from '../three/world';
+import gsap from 'gsap';
+import { DESTINATIONS, HOME_REST_Z } from '../three/world';
 import { mountAboutDocument, type AboutDocument } from './about-document';
 import { buildAboutPath, type AboutPath, type CameraPose } from './about-path';
 import { paletteAt, DAY_INK } from './about-palette';
@@ -26,6 +27,13 @@ const IN_FRONT: ReadonlySet<BeatId> = new Set<BeatId>(['anchor', 'transition', '
 
 /** Blob size as a fraction of the viewport's smaller dimension. */
 const FERRO_FRACTION = 0.42;
+
+/**
+ * Duration of the return flight home (returnHome), in seconds. Long enough to
+ * read as travel across the ~53-unit gap between the corridor's end pose and
+ * Home, short enough not to trap the user at the footer. A tuning value.
+ */
+const RETURN_S = 1.6;
 
 export interface AboutFlowDeps {
   camera: THREE.PerspectiveCamera;
@@ -69,6 +77,19 @@ export interface AboutFlow {
   enter(parent: HTMLElement, startT?: number): void;
   exit(): void;
   /**
+   * Fly the camera from wherever the corridor left it back to Home, then hand
+   * over. The footer gate's payoff.
+   *
+   * Its own move rather than exit()+flyTo: exit() CUTS to the anchor before
+   * releasing the director, so reusing it would jump the camera up to the Work
+   * rest and only then fly — worse than the snap this replaces. And the
+   * director's travel methods write position only; the return has to
+   * interpolate orientation too, from a pitched off-spine pose.
+   */
+  returnHome(): Promise<void>;
+  /** Test/debug seam: step the return flight to a given 0..1 progress. */
+  stepReturnForTest(p: number): void;
+  /**
    * Hold the corridor while something covers it — the contact modal.
    *
    * NOT exit(): contact is a surface over wherever you are, so closing it must
@@ -111,6 +132,14 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   let paused = false;
   let t = 0;
   let lastBeat: BeatId | null = null;
+
+  // returnHome()'s scratch poses — module-scoped so applyReturn (an onUpdate
+  // callback GSAP calls every tick) never allocates.
+  const fromPos = new THREE.Vector3();
+  const fromQuat = new THREE.Quaternion();
+  const homePos = new THREE.Vector3(0, 0, HOME_REST_Z);
+  const homeQuat = new THREE.Quaternion();
+  let returnResolve: (() => void) | null = null;
 
   // `html, body { overflow: hidden; height: 100% }` (base.css) otherwise pins
   // window.scrollY at 0 and scrollHeight at innerHeight for the whole site —
@@ -186,12 +215,30 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     }
   };
 
-  // Named top-level (not an object-literal method) so onWheel below — also
-  // top-level, needing no `this` — can call it directly.
-  const exit = (): void => {
-    if (!open) return;
-    open = false;
-    paused = false;
+  /**
+   * Restore every piece of shared, site-wide state the corridor's apply()
+   * (and the CSS class it flips) can have driven — the --ground/--ink
+   * escape hatch, the WebGL background invert, the atmosphere ink, the
+   * cursor's on-dark treatment, and, on the animated path only, the ferro
+   * blob, scrollNav's mode and the world's About flag.
+   *
+   * Extracted so exit() and returnHome() share one restore list instead of
+   * two hand-maintained copies: three separate leaks (setInvertAmount,
+   * atmosphere.setInk, cursor.setOnDark) each reached this exact branch
+   * independently, in three different review rounds, because the list used
+   * to live only in exit(). Deliberately does NOT touch doc/lastBeat/t/open
+   * or the camera/director handover — those are per-instance lifecycle and
+   * per-caller (exit() cuts the camera; returnHome() has already flown it),
+   * not shared state.
+   *
+   * Preserves exit()'s original split: background/atmosphere/cursor are
+   * restored unconditionally because paletteAt returns onDark: true at BOTH
+   * t=0 and t=1, even though apply() (their only other caller) never runs
+   * under reduced motion — belt-and-braces. ferro/scrollNav/world mode were
+   * never engaged in that mode (see enter()'s reduced-motion branch) and
+   * must not be touched here either.
+   */
+  const releaseSharedState = (): void => {
     document.documentElement.classList.remove(ABOUT_OPEN_CLASS);
     // Cleared, not merely left to go stale: the --ground/--ink-scoped rules
     // only apply while about-open is set, so this is belt-and-braces — but
@@ -200,13 +247,6 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     document.documentElement.style.removeProperty('--ground');
     document.documentElement.style.removeProperty('--ink');
     bgCanvas()?.classList.remove('about-canvas-hidden');
-    window.removeEventListener('scroll', onScroll);
-    window.removeEventListener('resize', onResize);
-    window.removeEventListener('wheel', onWheel);
-    doc?.destroy();
-    doc = null;
-    lastBeat = null;
-    t = 0;
     // Restored unconditionally, even though apply() (the only caller of
     // setInvertAmount/setInk/setOnDark) never runs under reduced motion —
     // background, atmosphere and the cursor are all SHARED, site-wide state
@@ -228,6 +268,23 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     deps.ferroEl?.classList.remove('ferro-stage--behind');
     deps.scrollNav?.setMode('world');
     deps.world.setAboutMode(false);
+  };
+
+  // Named top-level (not an object-literal method) so onWheel below — also
+  // top-level, needing no `this` — can call it directly.
+  const exit = (): void => {
+    if (!open) return;
+    open = false;
+    paused = false;
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('wheel', onWheel);
+    doc?.destroy();
+    doc = null;
+    lastBeat = null;
+    t = 0;
+    releaseSharedState();
+    if (deps.reducedMotion) return;
     // Cut the camera back to the About rest before handing it back.
     // Nothing else in this codebase ever writes camera.quaternion —
     // camera-director.ts only ever writes position — so once the corridor
@@ -243,6 +300,34 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // Released LAST: the director resumes writing the camera from here, and
     // it must not do so while the world is still in About mode.
     deps.director.setSuspended(false);
+  };
+
+  /**
+   * Step the return flight to progress p (0..1), writing the camera pose and,
+   * at p>=1, closing the corridor out and handing back to the director.
+   *
+   * Its own move rather than exit()+a director flyTo: exit() cuts the camera
+   * to the anchor before releasing the director, and the director's travel
+   * methods write position only — the return has to interpolate orientation
+   * too, from the corridor's actual (pitched, off-spine) end pose.
+   */
+  const applyReturn = (p: number): void => {
+    const e = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2; // easeInOutQuad
+    deps.camera.position.lerpVectors(fromPos, homePos, e);
+    deps.camera.quaternion.copy(fromQuat).slerp(homeQuat, e);
+    if (p >= 1) {
+      open = false;
+      paused = false;
+      doc?.destroy();
+      doc = null;
+      lastBeat = null;
+      t = 0;
+      releaseSharedState(); // the same restores exit() performs
+      deps.director.setSuspended(false);
+      const r = returnResolve;
+      returnResolve = null;
+      r?.();
+    }
   };
 
   // Backward scroll at the very top of the corridor hands the camera back —
@@ -319,6 +404,35 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     },
 
     exit,
+    returnHome(): Promise<void> {
+      if (!open) return Promise.resolve();
+      fromPos.copy(deps.camera.position);
+      fromQuat.copy(deps.camera.quaternion);
+      window.removeEventListener('scroll', onScroll);
+      // Also detached here, not just in applyReturn's p>=1 branch: onResize
+      // and onWheel stay attached for the corridor's whole open lifetime
+      // (same as exit()), and both already no-op once `open` flips false —
+      // but leaving them attached would double them up on the next enter().
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('wheel', onWheel);
+      if (deps.reducedMotion) {
+        applyReturn(1);
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        returnResolve = resolve;
+        const p = { v: 0 };
+        gsap.to(p, {
+          v: 1,
+          duration: RETURN_S,
+          ease: 'none',
+          onUpdate: () => applyReturn(p.v),
+        });
+      });
+    },
+    stepReturnForTest(p: number): void {
+      applyReturn(Math.min(1, Math.max(0, p)));
+    },
     pause(): void {
       if (!open || paused) return;
       paused = true;

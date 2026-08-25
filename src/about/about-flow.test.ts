@@ -589,4 +589,30 @@ describe('initAboutFlow', () => {
     expect((deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(placeAtCallsBefore);
     flow.destroy();
   });
+
+  it('flies home from the corridor\'s end pose, not from a cut', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    const startY = deps.camera.position.y;
+    expect(startY).toBeGreaterThan(20); // up on the mezzanine
+
+    const done = flow.returnHome();
+    // Mid-flight the camera must be BETWEEN the two poses — never teleported
+    // to the anchor first.
+    flow.stepReturnForTest(0.5);
+    expect(deps.camera.position.y).toBeGreaterThan(0);
+    expect(deps.camera.position.y).toBeLessThan(startY);
+
+    flow.stepReturnForTest(1);
+    return done.then(() => {
+      expect(deps.camera.position.y).toBeCloseTo(0, 4);
+      expect(deps.camera.position.z).toBeCloseTo(34, 4);
+      expect(deps.camera.quaternion.angleTo(new THREE.Quaternion())).toBeCloseTo(0, 4);
+      expect(flow.isOpen()).toBe(false);
+      expect(deps.director.setSuspended).toHaveBeenLastCalledWith(false);
+      flow.destroy();
+    });
+  });
 });
