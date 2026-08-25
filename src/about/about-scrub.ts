@@ -57,6 +57,30 @@ export function beatProgress(t: number, path: AboutPath): number {
 }
 
 /**
+ * How far the footer has risen, 0..1, across the corridor's last beat.
+ *
+ * Adam's mockup (Figma 110:2) puts the footer at 804 of 1080px with the world
+ * still visible as a 276px band above it — so this is not a takeover, and
+ * nothing needs to compress. The footer simply covers the canvas as it rises;
+ * what this number drives is the CHROME, which lifts out of its way: the nav
+ * travels to the top of the viewport (where it already sits on the 2D pages)
+ * and the bottom margin notes rise with the footer's edge.
+ *
+ * The ramp starts at 'contact', not 'ai': 'ai' is the FINAL marker, so
+ * tForBeat('ai') is always 1 (see about-path's ts[last] = 1) — it is the
+ * corridor's end point, not a beat with a range of its own. beatAt() only
+ * ever reports 'ai' at t === 1 itself; everything from 'contact' up to that
+ * point reports as the 'contact' beat. That range — contact through the very
+ * end — is "the last beat" this ramps across.
+ */
+export function footerRiseAt(t: number, path: AboutPath): number {
+  const start = path.tForBeat('contact');
+  if (!Number.isFinite(t) || t <= start) return 0;
+  if (start >= 1) return 1;
+  return Math.min(1, (t - start) / (1 - start));
+}
+
+/**
  * Where a route lands inside the corridor.
  *
  * About and Contact stopped being destinations the camera flies to; they are

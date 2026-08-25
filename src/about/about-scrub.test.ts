@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { buildAboutPath } from './about-path';
 import {
-  beatAt, beatProgress, documentHeightFor, scrollToT, WORLD_UNITS_PER_VIEWPORT,
+  beatAt, beatProgress, documentHeightFor, footerRiseAt, scrollToT, WORLD_UNITS_PER_VIEWPORT,
 } from './about-scrub';
 import { DESTINATIONS } from '../three/world';
 
@@ -73,5 +73,34 @@ describe('beatProgress', () => {
 
   it('is 1 at the very end rather than restarting', () => {
     expect(beatProgress(1, path)).toBe(1);
+  });
+});
+
+describe('footerRiseAt', () => {
+  it('is zero for the whole corridor until the last beat', () => {
+    expect(footerRiseAt(0, path)).toBe(0);
+    expect(footerRiseAt(path.tForBeat('contact'), path)).toBe(0);
+  });
+
+  it('reaches 1 at the very end', () => {
+    expect(footerRiseAt(1, path)).toBeCloseTo(1, 6);
+  });
+
+  it('ramps across the last beat rather than switching', () => {
+    const ai = path.tForBeat('ai');
+    const mid = footerRiseAt((path.tForBeat('contact') + ai) / 2 + (1 - ai) / 2, path);
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(1);
+  });
+
+  it('is monotonic and stays in 0..1', () => {
+    let prev = -Infinity;
+    for (let i = 0; i <= 200; i++) {
+      const v = footerRiseAt(i / 200, path);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+      expect(v).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = v;
+    }
   });
 });
