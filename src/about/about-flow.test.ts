@@ -172,16 +172,52 @@ describe('initAboutFlow', () => {
     flow.destroy();
   });
 
-  it('places the ferro once per beat, not once per frame', () => {
+  it('keeps the blob out of the corridor until it arrives', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);
     flow.enter(parent);
-    const calls = () => (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.calls.length;
-    const afterEnter = calls();
-    flow.setScrollForTest(0.201);
-    flow.setScrollForTest(0.202);
-    flow.setScrollForTest(0.203);
-    expect(calls()).toBeLessThanOrEqual(afterEnter + 1);
+    flow.setScrollForTest(0.3); // before FERRO_ARRIVE_T
+    expect(deps.ferroEl!.style.opacity).toBe('0');
+    flow.destroy();
+  });
+
+  it('fades it up and places it once it arrives', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mockClear();
+    flow.setScrollForTest(0.6);
+    expect(Number(deps.ferroEl!.style.opacity)).toBeCloseTo(1, 3);
+    expect(deps.ferro!.placeAt).toHaveBeenCalled();
+    flow.destroy();
+  });
+
+  it('moves it every frame now, not once per beat', () => {
+    // The blob travels a path; gating on beat changes would freeze it between
+    // markers. The tween is off instead (instant), or each frame would restart
+    // a tween that never lands.
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mockClear();
+    flow.setScrollForTest(0.60);
+    flow.setScrollForTest(0.61);
+    flow.setScrollForTest(0.62);
+    const calls = (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls[calls.length - 1][1]).toEqual({ instant: true });
+    flow.destroy();
+  });
+
+  it('gives a different rect at different points on the path', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.60);
+    const a = (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.lastCall![0];
+    flow.setScrollForTest(0.95);
+    const b = (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.lastCall![0];
+    expect(a).not.toEqual(b);
     flow.destroy();
   });
 
@@ -574,7 +610,11 @@ describe('initAboutFlow', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);
     flow.enter(parent);
-    flow.setScrollForTest(0.3); // well inside the night range — cursor on dark
+    // Inside the night range (cursor on dark) AND past FERRO_ARRIVE_T (fade >
+    // 0), so the placeAt assertion below reflects a visible, placeable blob —
+    // t=0.3 (this test's original value) is night but pre-arrival, where
+    // apply() correctly skips placeAt because there's nothing to place yet.
+    flow.setScrollForTest(0.5);
     flow.pause();
     // What the takeover's unconditional close-out to 'world' does before
     // resume() is called (main.ts's onModeChange) — exactly the state

@@ -11,6 +11,8 @@ import { shouldLeaveCorridor, workWallFadeAt } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
 import { atCorridorEnd, createGate, feedGate } from './about-gate';
 import { buildFooter } from '../page2d/footer';
+import { projectToRect } from './about-project';
+import { ferroWorldAt, ferroFadeAt, FERRO_RADIUS } from './about-ferro-path';
 
 /**
  * The About corridor's controller — the only stateful module in src/about/.
@@ -26,9 +28,6 @@ import { buildFooter } from '../page2d/footer';
 
 /** Beats where the blob passes IN FRONT of the copy. Everything else is behind. */
 const IN_FRONT: ReadonlySet<BeatId> = new Set<BeatId>(['anchor', 'transition', 'lander', 'team', 'ai']);
-
-/** Blob size as a fraction of the viewport's smaller dimension. */
-const FERRO_FRACTION = 0.42;
 
 /**
  * Duration of the return flight home (returnHome), in seconds. Long enough to
@@ -179,6 +178,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   const path: AboutPath = buildAboutPath(new THREE.Vector3(0, 0, anchorRest));
   const pose: CameraPose = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 
+  // Scratch for the ferro's per-frame world position and its fixed anchor —
+  // module-scoped so apply() (called every frame) never allocates.
+  const ferroScratch = new THREE.Vector3();
+  const anchorPos = new THREE.Vector3(0, 0, anchorRest);
+
   let doc: AboutDocument | null = null;
   let open = false;
   let paused = false;
@@ -211,19 +215,22 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   // opaque WebGL canvas is hidden outright rather than left covering --ground.
   const bgCanvas = (): HTMLElement | null => document.querySelector<HTMLElement>('#bg-canvas');
 
-  const centredRect = (): { x: number; y: number; w: number; h: number } => {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const side = Math.min(vw, vh) * FERRO_FRACTION;
-    return { x: (vw - side) / 2, y: (vh - side) / 2, w: side, h: side };
-  };
-
+  /**
+   * The blob's stacking, not its position — z-index only. It flips per beat
+   * (does THIS beat's copy need to sit in front of the blob or not), which is
+   * a wholly separate axis from where the blob sits on screen (apply()'s job
+   * now, every frame). Gated on lastBeat so it toggles a class once per beat
+   * change rather than writing it every frame for no reason.
+   *
+   * Bug fix (first QA pass): on beats where the blob must not cross the
+   * corridor's type, this parks it at z-index 0 — below the contact
+   * takeover's 20 — so a modal opened from one of those beats doesn't sit
+   * under an opaque blob that's since vanished from view. See pause()'s own
+   * comment for the report that led to this.
+   */
   const applyBeat = (beat: BeatId): void => {
     if (beat === lastBeat) return;
     lastBeat = beat;
-    // Once per beat, never per frame: placeAt tweens, and re-issuing it every
-    // frame restarts that tween and fights the blob's own drift.
-    void deps.ferro?.placeAt(centredRect());
     deps.ferroEl?.classList.toggle('ferro-stage--behind', !IN_FRONT.has(beat));
   };
 
@@ -249,6 +256,26 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // this is the only writer rather than a fight with it.
     deps.world.setAnchoredFade(workWallFadeAt(t, path));
 
+    // The blob travels its own measured path now, projected through the
+    // corridor camera into the rect placeAt wants. Every frame, not once per
+    // beat: it is moving continuously, and `instant` because a tween
+    // re-issued each frame would restart and never land (see placeAt's own
+    // doc). ferroEl.style.opacity is also written by the return flight
+    // (applyReturn) — safe only because the scroll/resize/wheel listeners are
+    // detached for that flight's duration, so apply() cannot run concurrently
+    // with it.
+    const fade = ferroFadeAt(t);
+    if (deps.ferroEl) deps.ferroEl.style.opacity = String(fade);
+    if (fade > 0) {
+      const rect = projectToRect(
+        ferroWorldAt(t, anchorPos, ferroScratch),
+        FERRO_RADIUS,
+        deps.camera,
+        { w: window.innerWidth, h: window.innerHeight },
+      );
+      if (rect) void deps.ferro?.placeAt(rect, { instant: true });
+    }
+
     applyBeat(beatAt(t, path));
   };
 
@@ -273,10 +300,9 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // the hidden camera, exactly the hold this pair exists to prevent.
     if (!open || paused) return;
     doc?.resize(window.innerHeight);
-    if (!deps.reducedMotion) {
-      onScroll();
-      if (lastBeat) void deps.ferro?.placeAt(centredRect(), { instant: true });
-    }
+    // onScroll() re-runs apply(), which re-places the ferro (instantly) as
+    // one of its ordinary per-frame writes now — no separate re-place needed.
+    if (!deps.reducedMotion) onScroll();
   };
 
   /**
@@ -699,9 +725,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       // ferro placement so a dark beat's cursor/ferro don't sit wrong until
       // the next genuine beat change. Idempotent for the camera — apply(t)
       // re-samples the same `t` pause() never touched, so position/quaternion
-      // don't move. lastBeat is cleared first because applyBeat() otherwise
-      // early-returns on "beat === lastBeat" and skips the ferro placeAt/
-      // behind-class work entirely when the beat hasn't actually changed.
+      // don't move. apply(t) re-places the ferro unconditionally (every
+      // frame now, not gated on the beat), but lastBeat is still cleared
+      // first because applyBeat() otherwise early-returns on "beat ===
+      // lastBeat" and skips the behind-class toggle when the beat hasn't
+      // actually changed.
       deps.ferro?.show();
       lastBeat = null;
       apply(t);
