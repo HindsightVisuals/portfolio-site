@@ -396,3 +396,18 @@ Four separate errors in the plan's own briefs were caught this pass. Two general
   called `updateMatrixWorld(true)`, so it passed against a fresh matrix while production projected
   through a stale one — size and position a frame apart, every frame. The per-task reviews could not
   see it: one owned the pure function, the other owned the call site, and the bug lived in the seam.
+
+---
+
+## Reference — igloo.inc
+
+Adam, 2026-08-25: *"this site is doing a lot of what I want through the about flow."*
+
+<https://www.igloo.inc/?ref=threejsresources>
+
+Parked deliberately — flagged "for later", not as a task. Worth a proper look before the lander
+beat, since that is the next piece of About being built and the reference is about the *flow*
+rather than any single beat. When picking it up, be specific about which qualities are wanted
+(pacing, the way content enters, the camera's relationship to the copy, material treatment) rather
+than treating it as a whole-cloth target — the corridor's own grammar is already established and
+the useful question is which of its choices to revisit against this.
