@@ -126,6 +126,12 @@ export interface WorldLayer extends StageLayer {
   setTileHover(slug: string | null): void;
   setTileColor(slug: string, on: boolean): void;
   setTileStroke(slug: string, px: number): void;
+  /** Freeze spine re-anchoring and hide the anchored screens (About corridor). */
+  setAboutMode(v: boolean): void;
+  /** Test seam: how many anchored roots are currently visible. */
+  anchoredVisibleCount(): number;
+  /** Test seam: the anchored roots' current z positions, in declaration order. */
+  anchoredPositionsZ(): number[];
   destroy(): void;
 }
 
@@ -281,6 +287,7 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
   anchored.push({ root: homeMock, anchorZ: homeAnchorZ, setFade: () => {} });
 
   let velocitySource: () => number = () => 0;
+  let aboutMode = false;
 
   return {
     camera,
@@ -372,26 +379,50 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
       });
     },
     update(dt: number): void {
-      for (const s of anchored) {
-        // The home mock's position is only correct at the moment it's shown;
-        // re-anchoring it mid-flight while it's on screen pops it visibly
-        // across the wrap (see antipodal Home<->About flight). Freeze it
-        // while visible — it re-anchors only once hidden again. Screens
-        // (never toggled invisible) always re-anchor as before.
-        if (s.root === homeMock && s.root.visible) continue;
-        s.root.position.z = nearestWrapped(s.anchorZ, camera.position.z);
-      }
-      // materialize screens (not the home mock — flight-only, treatment B managed)
-      for (const s of anchored) {
-        if (s.root === homeMock) continue;
-        const dist = Math.abs(camera.position.z - s.root.position.z);
-        const a = materializeAmount(dist);
-        s.root.visible = a > 0.01;
-        const sc = 1 - MATERIALIZE_SCALE * (1 - a);
-        s.root.scale.setScalar(sc);
-        s.setFade(a);
+      if (!aboutMode) {
+        for (const s of anchored) {
+          // The home mock's position is only correct at the moment it's shown;
+          // re-anchoring it mid-flight while it's on screen pops it visibly
+          // across the wrap (see antipodal Home<->About flight). Freeze it
+          // while visible — it re-anchors only once hidden again. Screens
+          // (never toggled invisible) always re-anchor as before.
+          if (s.root === homeMock && s.root.visible) continue;
+          s.root.position.z = nearestWrapped(s.anchorZ, camera.position.z);
+        }
+        // materialize screens (not the home mock — flight-only, treatment B managed)
+        for (const s of anchored) {
+          if (s.root === homeMock) continue;
+          const dist = Math.abs(camera.position.z - s.root.position.z);
+          const a = materializeAmount(dist);
+          s.root.visible = a > 0.01;
+          const sc = 1 - MATERIALIZE_SCALE * (1 - a);
+          s.root.scale.setScalar(sc);
+          s.setFade(a);
+        }
       }
       atmosphere.update(dt, velocitySource(), camera.position.z);
+    },
+    setAboutMode(v: boolean): void {
+      if (v === aboutMode) return;
+      aboutMode = v;
+      if (v) {
+        // Hidden outright, not faded. The corridor climbs 31 units off the
+        // spine, where materializeAmount's z-only distance is meaningless — a
+        // screen 4 units away in z but 31 away in y would fade in at full
+        // strength beside you.
+        for (const s of anchored) {
+          s.root.visible = false;
+          s.setFade(0);
+        }
+      }
+      // Exiting needs no restore pass: the next update() re-anchors and
+      // re-fades every root from the camera's actual position.
+    },
+    anchoredVisibleCount(): number {
+      return anchored.filter((s) => s.root.visible).length;
+    },
+    anchoredPositionsZ(): number[] {
+      return anchored.map((s) => s.root.position.z);
     },
     render(renderer: THREE.WebGLRenderer): void {
       renderer.render(scene, camera);

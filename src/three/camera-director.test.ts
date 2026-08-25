@@ -17,6 +17,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import gsap from 'gsap';
+import * as THREE from 'three';
 import { initCameraDirector, type CameraDirector } from './camera-director';
 import type { Destination } from './world';
 import type { DestId } from '../routes';
@@ -313,5 +314,47 @@ describe('camera director', () => {
       expect(c.position.x).toBeCloseTo(0, 6);
       d.destroy();
     });
+  });
+});
+
+describe('setSuspended', () => {
+  it('stops writing the camera so another controller can own it', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const director = initCameraDirector(camera, DESTINATIONS, {});
+    director.update(0.016);
+    director.setSuspended(true);
+    camera.position.set(1, 2, 3);
+    director.feedScroll(500);
+    director.update(0.016);
+    expect(camera.position.toArray()).toEqual([1, 2, 3]);
+    director.destroy();
+  });
+
+  it('resumes from wherever it left off, without a jump', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const director = initCameraDirector(camera, DESTINATIONS, {});
+    director.jumpTo('about');
+    const z = camera.position.z;
+    director.setSuspended(true);
+    director.update(0.016);
+    director.setSuspended(false);
+    director.update(0.016);
+    expect(camera.position.z).toBeCloseTo(z, 6);
+    director.destroy();
+  });
+
+  it('swallows scroll while suspended rather than banking momentum', () => {
+    // Without this, every wheel event during the About scrub accumulates
+    // velocity that fires the instant the corridor is exited.
+    const camera = new THREE.PerspectiveCamera();
+    const director = initCameraDirector(camera, DESTINATIONS, {});
+    director.jumpTo('about');
+    const z = camera.position.z;
+    director.setSuspended(true);
+    for (let i = 0; i < 40; i++) director.feedScroll(400);
+    director.setSuspended(false);
+    director.update(0.016);
+    expect(camera.position.z).toBeCloseTo(z, 3);
+    director.destroy();
   });
 });

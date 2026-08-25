@@ -47,6 +47,12 @@ export interface CameraDirector {
   feedScroll(pixels: number): void;
   setPointer(nx: number, ny: number): void;
   update(dt: number): void;
+  /**
+   * Hand the camera to another controller (the About scrub). While suspended,
+   * update() writes nothing and scroll is swallowed — banking momentum through
+   * a scrub of several thousand pixels would fire the whole lot on exit.
+   */
+  setSuspended(v: boolean): void;
   onArrive(cb: (id: DestId) => void): () => void;
   onDepart(cb: (dest: DestId) => void): () => void;
   getVelocity(): number;
@@ -82,6 +88,7 @@ export function initCameraDirector(
   // to wait on.
   let lastScrollAt = -Infinity;
   let mode: Mode = 'free';
+  let suspended = false;
   let settleTween: gsap.core.Tween | null = null;
   let lateralTween: gsap.core.Tween | null = null;
   let pendingFlyResolve: (() => void) | null = null;
@@ -274,6 +281,7 @@ export function initCameraDirector(
     },
 
     feedScroll(pixels: number): void {
+      if (suspended) return;
       if (mode === 'flying') return;
       if (focusState === 'focused') {
         focusState = focusReducer(focusState, 'scroll');
@@ -329,6 +337,7 @@ export function initCameraDirector(
     },
 
     update(dt: number): void {
+      if (suspended) return;
       const before = state.z;
       if (mode === 'free') {
         state.z = state.z + velocity * dt;
@@ -384,6 +393,20 @@ export function initCameraDirector(
 
     isFocused(): boolean {
       return focusState === 'focused';
+    },
+
+    setSuspended(v: boolean): void {
+      if (v === suspended) return;
+      suspended = v;
+      if (v) {
+        // Park cleanly rather than leaving a tween writing the camera behind
+        // the scrub's back.
+        killSettle();
+        lateralTween?.kill();
+        lateralTween = null;
+        velocity = 0;
+        mode = 'free';
+      }
     },
 
     destroy(): void {
