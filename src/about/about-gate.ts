@@ -10,8 +10,10 @@
  * dead, and with an ordinary trigger you would fall out of the page by
  * accident.
  *
- * PLACEHOLDER: the threshold value and the indicator's treatment await Adam's
- * Figma. The mechanism here is real; the number is a guess.
+ * PLACEHOLDER: the threshold VALUE awaits Adam's Figma — the mechanism here is
+ * real; the number is a guess. The indicator's treatment no longer does: it
+ * shipped from Figma 110:473 (about-document.ts builds it, about.css dresses
+ * it).
  */
 
 /** How much scroll past the footer arms the return. */

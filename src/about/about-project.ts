@@ -14,6 +14,16 @@ import { worldPerPx } from '../three/framing';
  * Returns null rather than a rect when there is nothing sensible to draw — the
  * point is behind the camera, or the viewport has no size yet. A mirrored ghost
  * behind the viewer is the failure mode this exists to prevent.
+ *
+ * PRECONDITION: the camera's world matrix must already be up to date for the
+ * pose you want to project through. `world.project(camera)` consumes
+ * `camera.matrixWorldInverse`, which nothing refreshes on its own —
+ * WebGLRenderer.render() updates it, but that happens on the NEXT rAF, after
+ * the corridor has written this frame's pose. Getting this wrong is not merely
+ * one frame late, it is internally INCONSISTENT: `depth` below is read
+ * straight off the fresh `camera.position`/`camera.quaternion`, so the blob's
+ * SIZE would come from this frame and its POSITION from the last one. Callers
+ * must call `camera.updateMatrixWorld()` first (about-flow.ts's apply() does).
  */
 export function projectToRect(
   world: THREE.Vector3,

@@ -37,6 +37,7 @@ afterEach(() => {
   document.documentElement.style.removeProperty('--ground');
   document.documentElement.style.removeProperty('--ink');
   document.documentElement.style.removeProperty('--footer-rise');
+  document.documentElement.style.removeProperty('--gate-show');
   document.querySelector('#bg-canvas')?.remove();
 });
 
@@ -179,6 +180,13 @@ describe('initAboutFlow', () => {
     flow.enter(parent);
     flow.setScrollForTest(0.3); // before FERRO_ARRIVE_T
     expect(deps.ferroEl!.style.opacity).toBe('0');
+    // M7: opacity alone is only half the claim. apply() SKIPS the projection
+    // entirely below the fade threshold — a transparent blob still being
+    // placed every frame would burn a projection and a placeAt per frame for
+    // a third of the corridor, and the skip is the thing this test's title
+    // actually promises. Never cleared: enter()'s own apply(0) is below the
+    // threshold too, so a single call from either point is a failure.
+    expect(deps.ferro!.placeAt).not.toHaveBeenCalled();
     flow.destroy();
   });
 
@@ -493,6 +501,133 @@ describe('initAboutFlow', () => {
     flow.exit();
     expect(document.documentElement.style.getPropertyValue('--footer-rise')).toBe('');
     flow.destroy();
+  });
+
+  // --- CRITICAL 2, part 1: the gate panel painted from the first frame ---
+  //
+  // Nothing gated the indicator's APPEARANCE on t. It is position: fixed with
+  // a solid #121212 panel, a border and a label, it mounts at enter(), and the
+  // placeholder's self-hiding property (opacity from --gate) did not survive
+  // into the real component — so a dark bar reading "keep scrolling to return
+  // home" sat across the bottom of the day-lit anchor and the whole climb,
+  // announcing an action unavailable for 99% of the scroll. footerRiseAt is an
+  // exact fit for when it IS available and needs no new state.
+  it('keeps the gate indicator invisible until the footer beat brings it in', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    const root = document.documentElement;
+    flow.enter(parent);
+    // Written from the very first apply(), not merely absent: an undefined
+    // property leans on about.css's `, 0` fallback, which is the belt to this
+    // brace, not a substitute for it.
+    expect(root.style.getPropertyValue('--gate-show')).toBe('0');
+    flow.setScrollForTest(0.5); // mid-climb — nothing to push against yet
+    expect(root.style.getPropertyValue('--gate-show')).toBe('0');
+    flow.setScrollForTest(1);
+    expect(Number(root.style.getPropertyValue('--gate-show'))).toBeCloseTo(1, 3);
+    flow.destroy();
+  });
+
+  it('clears the gate reveal on exit, like every other shared property', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    flow.exit();
+    expect(document.documentElement.style.getPropertyValue('--gate-show')).toBe('');
+    flow.destroy();
+  });
+
+  // --- CRITICAL 2, part 2: a stale fill rode back up the corridor ---
+  //
+  // --gate is only WRITTEN while atCorridorEnd(t), so pushing the indicator to
+  // half and then scrolling back up froze the green fill at 50% for the rest
+  // of the corridor — and left the accumulator half-armed, so returning to the
+  // end needed only half a push to fly you home.
+  it('resets the gate when you leave the end, rather than freezing the fill', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    const root = parent.querySelector<HTMLElement>('.about-doc')!;
+
+    flow.setScrollForTest(1);
+    flow.feedGateForTest(GATE_THRESHOLD_PX / 2);
+    expect(Number(root.style.getPropertyValue('--gate'))).toBeCloseTo(0.5, 6);
+
+    flow.setScrollForTest(0.5); // back up the corridor
+    expect(root.style.getPropertyValue('--gate')).toBe('');
+
+    // And the accumulator went with the fill: half a push at the end is still
+    // only half, not the second half of an already-armed gate.
+    flow.setScrollForTest(1);
+    flow.feedGateForTest(GATE_THRESHOLD_PX / 2);
+    expect(Number(root.style.getPropertyValue('--gate'))).toBeCloseTo(0.5, 6);
+    expect(flow.isOpen()).toBe(true);
+    flow.destroy();
+  });
+
+  // --- IMPORTANT 1: the projection read last frame's camera matrix ---
+  //
+  // world.project(camera) consumes camera.matrixWorldInverse, which only
+  // WebGLRenderer.render() refreshes — on the NEXT rAF, after apply() has
+  // written the new pose. Worse than one frame late, it was internally
+  // inconsistent: projectToRect derives the blob's SIZE from
+  // camera.position/quaternion (fresh) and its POSITION from the matrix
+  // (stale), so the two sat a frame apart every frame. Nothing in production
+  // ever calls updateMatrixWorld on this camera; apply() has to.
+  it('refreshes the camera matrix before projecting the blob', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.6); // past FERRO_ARRIVE_T, so the projection runs
+    // Where the camera actually is this frame, inverted — what the projection
+    // must have gone through.
+    const fresh = new THREE.Matrix4()
+      .compose(deps.camera.position, deps.camera.quaternion, deps.camera.scale)
+      .invert();
+    // Not identity: the corridor has genuinely moved the camera, so a stale
+    // (never-updated) matrixWorldInverse would be visibly wrong, not merely
+    // imprecise.
+    expect(deps.camera.position.length()).toBeGreaterThan(1);
+    fresh.elements.forEach((v, i) => {
+      expect(deps.camera.matrixWorldInverse.elements[i]).toBeCloseTo(v, 6);
+    });
+    flow.destroy();
+  });
+
+  // --- M6: the projection measured the window, not the canvas ---
+  //
+  // The camera's image is framed by the canvas box. The corridor is the one
+  // place on this site with a scrollbar (html.about-open { overflow: auto }),
+  // and window.innerWidth includes that gutter while #bg-canvas is width:
+  // 100%, which excludes it — so this is exactly where the two diverge.
+  it('projects through the canvas box, not the window', () => {
+    const deps = makeDeps();
+    const placeAt = deps.ferro!.placeAt as ReturnType<typeof vi.fn>;
+    const rectAt = (): { w: number } => placeAt.mock.calls.at(-1)![0] as { w: number };
+
+    // Window first, with no canvas to measure.
+    const windowOnly = initAboutFlow(deps);
+    windowOnly.enter(parent);
+    windowOnly.setScrollForTest(0.6);
+    const fromWindow = rectAt().w;
+    windowOnly.destroy();
+
+    // Then a canvas with a deliberately different box. The blob's side is
+    // 2r / worldPerPx(depth, fov, h), and worldPerPx is inversely
+    // proportional to h — so the rect scales by exactly the height ratio,
+    // wherever on screen the blob happens to sit at this t.
+    const canvas = document.createElement('canvas');
+    canvas.id = 'bg-canvas';
+    document.body.appendChild(canvas);
+    Object.defineProperty(canvas, 'clientWidth', { value: 1009, configurable: true });
+    Object.defineProperty(canvas, 'clientHeight', { value: 600, configurable: true });
+    const withCanvas = initAboutFlow(deps);
+    withCanvas.enter(parent);
+    withCanvas.setScrollForTest(0.6);
+    expect(rectAt().w / fromWindow).toBeCloseTo(600 / window.innerHeight, 6);
+    expect(window.innerHeight).not.toBe(600); // or the assertion above is vacuous
+    withCanvas.destroy();
   });
 
   // T2: the last uncovered ordering path in this module — resize -> doc.resize
@@ -892,6 +1027,90 @@ describe('initAboutFlow', () => {
     expect(Number(deps.ferroEl!.style.opacity)).toBeGreaterThan(0);
     flow.stepReturnForTest(1);
     expect(deps.ferroEl!.style.opacity).toBe('');
+    flow.destroy();
+  });
+
+  // --- IMPORTANT 3: --footer-rise snapped to nothing at the end of the flight ---
+  //
+  // releaseSharedState() REMOVES the property, and only at p >= 1 — the last
+  // frame of the 1.6s return. The gate only arms at the corridor's end, so
+  // every designed exit starts fully risen: the wordmark and nav held top:
+  // 50px for the whole flight and then jumped half a viewport back to centre
+  // in a single frame over the Home view, with nothing left fading to cover
+  // it. applyReturn already interpolates; the chrome rides down with it.
+  it('rides the chrome home with the camera instead of snapping at the door', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    const root = document.documentElement;
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    expect(Number(root.style.getPropertyValue('--footer-rise'))).toBeCloseTo(1, 3);
+
+    void flow.returnHome();
+    flow.stepReturnForTest(0.5);
+    const mid = Number(root.style.getPropertyValue('--footer-rise'));
+    expect(root.style.getPropertyValue('--footer-rise')).not.toBe('');
+    expect(mid).toBeLessThan(1);
+    expect(mid).toBeGreaterThan(0);
+
+    flow.stepReturnForTest(0.9);
+    const late = Number(root.style.getPropertyValue('--footer-rise'));
+    expect(late).toBeLessThan(mid);
+    // Effectively home by the time the flight lands, so removing the property
+    // at p >= 1 has nothing left to snap.
+    expect(late).toBeLessThan(0.1);
+    // The gate panel rides down on the same ramp — it belongs to the footer.
+    expect(Number(root.style.getPropertyValue('--gate-show'))).toBeCloseTo(late, 6);
+
+    flow.stepReturnForTest(1);
+    expect(root.style.getPropertyValue('--footer-rise')).toBe('');
+    expect(root.style.getPropertyValue('--gate-show')).toBe('');
+    flow.destroy();
+  });
+
+  // --- IMPORTANT 4: pause()/resume() were reachable during the flight ---
+  //
+  // An earlier ruling held that the two writers of ferroEl.style.opacity could
+  // not collide "because the listeners are detached during the flight". True
+  // of listeners — but pause() and resume() are DIRECT method calls from
+  // main.ts, fired by the contact emblem, which lives in .chrome and stays
+  // clickable for the whole flight, and `open` stays true until p >= 1. So
+  // resume() re-attached the scroll listener, called apply(t) — writing
+  // ferroEl.style.opacity against the running tween — and called
+  // scrollDocumentTo(t), firing the listener it had just re-attached.
+  it('ignores pause and resume while the return flight is in the air', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    void flow.returnHome();
+    flow.stepReturnForTest(0.2);
+    const midFlight = deps.ferroEl!.style.opacity;
+    expect(Number(midFlight)).toBeGreaterThan(0);
+    expect(Number(midFlight)).toBeLessThan(1);
+
+    // jsdom reports a zero scroll range, so scrollDocumentTo is a no-op there
+    // — stub the range to make resume()'s scroll write observable at all.
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 5000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    try {
+      flow.pause();
+      flow.resume();
+      // The tween's value survives untouched — apply() never ran.
+      expect(deps.ferroEl!.style.opacity).toBe(midFlight);
+      // And the document was never yanked back under the flight.
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally {
+      scrollTo.mockRestore();
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+    }
+
+    // The flight still lands normally afterwards.
+    flow.stepReturnForTest(1);
+    expect(flow.isOpen()).toBe(false);
     flow.destroy();
   });
 

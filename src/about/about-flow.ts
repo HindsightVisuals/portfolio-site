@@ -201,6 +201,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   const homePos = new THREE.Vector3(0, 0, HOME_REST_Z);
   const homeQuat = new THREE.Quaternion();
   let returnResolve: (() => void) | null = null;
+  // The chrome's lift at the instant the flight departs, so applyReturn can
+  // interpolate it back down rather than dropping it (see there). Captured
+  // rather than recomputed from `t` per tick because `t` is frozen for the
+  // flight's duration and the flight, not the scrub, owns this now.
+  let fromRise = 0;
 
   // `html, body { overflow: hidden; height: 100% }` (base.css) otherwise pins
   // window.scrollY at 0 and scrollHeight at innerHeight for the whole site —
@@ -214,6 +219,38 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   // experience (spec: "what remains when the canvas is removed") — so the
   // opaque WebGL canvas is hidden outright rather than left covering --ground.
   const bgCanvas = (): HTMLElement | null => document.querySelector<HTMLElement>('#bg-canvas');
+
+  // Scratch for projectionViewport below — apply() calls it every frame, and
+  // this module does not allocate per frame (see the ferro/return scratch
+  // above).
+  const viewportScratch = { w: 0, h: 0 };
+
+  /**
+   * The box the corridor's camera actually renders into.
+   *
+   * The WORLD CANVAS's box, not the window's. The corridor is the one place on
+   * this site with a scrollbar (`html.about-open { overflow: auto }`,
+   * about.css) and window.innerWidth INCLUDES that gutter while `#bg-canvas`
+   * is `width: 100%`, which excludes it — the same ~15px mismatch base.css's
+   * own #bg-canvas comment records for the canvas-vs-stage case. Projecting
+   * through the window's width while the image is framed by the canvas's drove
+   * the blob off-centre by up to ~8px, and only inside the corridor, which is
+   * exactly where it is visible.
+   *
+   * Falls back to the window when the canvas cannot be measured — it is absent
+   * under reduced motion's hidden-canvas class only in the sense of being
+   * display: none (zero box), and jsdom reports zero for every element. A zero
+   * viewport would make projectToRect return null and simply stop placing the
+   * blob, which is a worse failure than a 15px offset.
+   */
+  const projectionViewport = (): { w: number; h: number } => {
+    const c = bgCanvas();
+    const w = c?.clientWidth ?? 0;
+    const h = c?.clientHeight ?? 0;
+    viewportScratch.w = w > 0 ? w : window.innerWidth;
+    viewportScratch.h = h > 0 ? h : window.innerHeight;
+    return viewportScratch;
+  };
 
   /**
    * The blob's stacking, not its position — z-index only. It flips per beat
@@ -261,27 +298,62 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // beat: it is moving continuously, and `instant` because a tween
     // re-issued each frame would restart and never land (see placeAt's own
     // doc). ferroEl.style.opacity is also written by the return flight
-    // (applyReturn) — safe only because the scroll/resize/wheel listeners are
-    // detached for that flight's duration, so apply() cannot run concurrently
-    // with it.
+    // (applyReturn) — safe because the scroll/resize/wheel listeners are
+    // detached for that flight's duration AND pause()/resume(), the two direct
+    // callers that could re-enter apply() from main.ts, refuse to run while it
+    // is in the air (see their guards).
     const fade = ferroFadeAt(t);
     if (deps.ferroEl) deps.ferroEl.style.opacity = String(fade);
     if (fade > 0) {
+      // The camera's own matrix, THIS frame. `world.project(camera)` consumes
+      // camera.matrixWorldInverse, and nothing else here refreshes it:
+      // WebGLRenderer.render() does, but not until the next rAF — so without
+      // this, the two lines above wrote a new pose and the projection below
+      // then ran through LAST frame's matrix. Worse than one frame late, it
+      // was internally inconsistent: projectToRect derives the blob's SIZE
+      // from camera.position/quaternion (fresh) and its POSITION from the
+      // matrix (stale), so size and position sat a frame apart every frame.
+      deps.camera.updateMatrixWorld();
       const rect = projectToRect(
         ferroWorldAt(t, anchorPos, ferroScratch),
         FERRO_RADIUS,
         deps.camera,
-        { w: window.innerWidth, h: window.innerHeight },
+        projectionViewport(),
       );
       if (rect) void deps.ferro?.placeAt(rect, { instant: true });
     }
 
     applyBeat(beatAt(t, path));
 
+    const rise = footerRiseAt(t, path);
     // The chrome (.wordmark/.site-nav/margin notes, base.css) reads this to
     // lift itself out of the rising footer's way across the corridor's last
     // beat — see footerRiseAt's own doc for why nothing else compresses.
-    document.documentElement.style.setProperty('--footer-rise', String(footerRiseAt(t, path)));
+    document.documentElement.style.setProperty('--footer-rise', String(rise));
+    // The gate indicator's visibility (about.css), on the same ramp and for
+    // the same reason: the panel belongs to the footer, so it fades up with
+    // it rather than sitting painted across the bottom of every beat from the
+    // first frame of enter(). Its own property rather than a second reader of
+    // --footer-rise: the chrome's lift and the panel's reveal are separate
+    // concerns that happen to share a ramp today, and retiming one must not
+    // silently retime the other. Cleared in releaseSharedState() with the
+    // rest.
+    document.documentElement.style.setProperty('--gate-show', String(rise));
+
+    // Reset the gate the moment you leave the end.
+    //
+    // feedGateAt only WRITES --gate while atCorridorEnd(t), so pushing the
+    // indicator to 50% and then scrolling back up used to freeze the green
+    // fill at 50% for the rest of the corridor — and leave the accumulator
+    // half-armed, so a later return to the end needed only half a push. The
+    // gate measures intent against the end of the page; leaving the end
+    // withdraws it, exactly as feedGate's own backward drain does. Guarded on
+    // the accumulator so this is a no-op on all but the one frame that
+    // crosses back out, rather than a per-frame style write.
+    if (!atCorridorEnd(t) && gate.accumulated !== 0) {
+      gate.accumulated = 0;
+      doc?.root.style.removeProperty('--gate');
+    }
   };
 
   const onScroll = (): void => {
@@ -346,6 +418,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // lingering value would still be the first thing the chrome reads,
     // pre-apply(0), the next time the corridor opens.
     document.documentElement.style.removeProperty('--footer-rise');
+    // Same again for the gate indicator's reveal (about.css reads it with a
+    // `, 0` fallback). On this list, not merely left to go stale, because
+    // that is exactly how the three leaks this function exists to prevent got
+    // in — one per review round.
+    document.documentElement.style.removeProperty('--gate-show');
     bgCanvas()?.classList.remove('about-canvas-hidden');
     // Restored unconditionally, even though apply() (the only caller of
     // setInvertAmount/setInk/setOnDark) never runs under reduced motion —
@@ -427,6 +504,21 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     const fade = 1 - Math.min(1, Math.max(0, p) / RETURN_FADE_P);
     if (doc) doc.root.style.opacity = String(fade);
     if (deps.ferroEl) deps.ferroEl.style.opacity = String(fade);
+    // Ride the chrome home with the camera instead of dropping it at the door.
+    //
+    // The gate only arms at the corridor's END, so the flight always starts
+    // with the footer fully risen and the chrome parked at the top of the
+    // viewport. --footer-rise used to be REMOVED, and only at p >= 1 — so on
+    // the designed exit the wordmark and nav held top: 50px for the entire
+    // 1.6s and then jumped half a viewport back to centre in a single frame,
+    // over the Home view, with nothing fading to cover it. Interpolating it
+    // down here is the whole fix: the chrome descends as the camera flies.
+    // Off the EASED e, not raw p, so it tracks the camera's own curve rather
+    // than merely finishing at the same time. releaseSharedState() below still
+    // removes both properties at p >= 1 — by then they read 0 anyway, so
+    // there is nothing left to snap.
+    document.documentElement.style.setProperty('--footer-rise', String(fromRise * (1 - e)));
+    document.documentElement.style.setProperty('--gate-show', String(fromRise * (1 - e)));
     if (p >= 1) {
       open = false;
       paused = false;
@@ -466,6 +558,10 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     if (!open) return Promise.resolve();
     fromPos.copy(deps.camera.position);
     fromQuat.copy(deps.camera.quaternion);
+    // Where the chrome is sitting as the flight departs — applyReturn walks it
+    // back to 0 across the flight. Read from the path rather than from the DOM
+    // so it is the same number apply() last wrote, not a re-parsed string.
+    fromRise = footerRiseAt(t, path);
     window.removeEventListener('scroll', onScroll);
     // Also detached here, not just in applyReturn's p>=1 branch: onResize
     // and onWheel stay attached for the corridor's whole open lifetime
@@ -701,7 +797,21 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       feedGateAt(deltaPx);
     },
     pause(): void {
-      if (!open || paused) return;
+      // `returnResolve` is the in-flight flag: non-null for exactly as long as
+      // the return flight is running (doReturnHome sets it, applyReturn's
+      // p >= 1 branch clears it).
+      //
+      // Unlike the listeners — which doReturnHome detaches — pause() and
+      // resume() are DIRECT method calls from main.ts, fired by the contact
+      // emblem, which lives in .chrome and stays clickable for the whole
+      // flight; `open` does not go false until p >= 1. So without this guard,
+      // clicking the emblem mid-flight ran pause() and then resume() against
+      // the running tween: resume() re-attached the scroll listener, called
+      // apply(t) — which writes ferroEl.style.opacity, the very property the
+      // flight is tweening — and called scrollDocumentTo(t), firing the
+      // listener it had just re-attached. The flight owns the corridor while
+      // it is in the air; there is nothing here to hold.
+      if (!open || paused || returnResolve) return;
       paused = true;
       window.removeEventListener('scroll', onScroll);
       // Give the blob's stacking back. On the beats where it must not cross the
@@ -719,7 +829,10 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     },
 
     resume(): void {
-      if (!open || !paused) return;
+      // Guarded on the flight for the same reason pause() is — see there. This
+      // is the half that actually did the damage: apply() and scrollDocumentTo
+      // both fight the tween.
+      if (!open || !paused || returnResolve) return;
       paused = false;
       window.addEventListener('scroll', onScroll, { passive: true });
       deps.scrollNav?.setMode('about');

@@ -87,12 +87,6 @@ html.about-open .chrome {
     padding: 4rem 0;
     display: block;
   }
-
-  /* The gate is never fed in this mode (about-flow.ts's onWheel returns
-   * early), so an indicator that could never fill would be a lie. */
-  .about-gate {
-    display: none;
-  }
 }
 
 /* The footer gate's indicator, per Figma 110:473. It is fixed to the viewport
@@ -120,6 +114,26 @@ html.about-open .chrome {
   border-radius: 4px;
   pointer-events: none;
   z-index: 2;
+  /* The panel is only relevant AT the footer, and it must not be painted
+   * anywhere else in the corridor.
+   *
+   * The placeholder this replaced self-hid: its width AND its opacity were
+   * both calc(var(--gate, 0) * …), so at zero there was nothing drawn. This
+   * component has no such property — at --gate: 0 the panel, its border and
+   * its hatched track are all fully painted and only the green fill is
+   * zero-width. Left ungated, a dark bar with "keep scrolling to return home"
+   * therefore sat across the bottom of every beat, over the day-lit anchor and
+   * through the whole climb, announcing an action unavailable for 99% of the
+   * scroll.
+   *
+   * --gate-show (about-flow.ts, footerRiseAt) is 0 until the 'contact' beat
+   * and 1 at the corridor's end — the same ramp the chrome lifts on, so the
+   * panel arrives exactly as the footer does. Opacity rather than display, so
+   * it FADES in across that beat instead of appearing in one frame; the panel
+   * is already pointer-events: none, so a fully transparent one is inert.
+   * The `, 0` fallback matters: --gate-show is undefined everywhere outside
+   * the corridor, and a bare var() would invalidate the declaration. */
+  opacity: var(--gate-show, 0);
 }
 
 .about-gate-label {
@@ -150,4 +164,24 @@ html.about-open .chrome {
   border-radius: 2px;
   background: #61e891;
   width: calc(var(--gate, 0) * 100%);
+}
+
+/* Reduced motion: the gate is never fed (about-flow.ts's onWheel returns
+ * early), so an indicator that could never fill would be a lie — and worse,
+ * the panel is position: fixed, so it would sit pinned to the viewport at 0%
+ * over a plain scrolling document for the whole read, telling the reader to
+ * keep scrolling to return home when scrolling there does nothing.
+ *
+ * BELOW the block above, not folded into the reduced-motion @media near the
+ * top of this file, which is where it shipped: a media query adds NO
+ * specificity, so the later unconditional `.about-gate { … display: flex … }`
+ * beat it on source order and the hide was inert in the built bundle. Source
+ * order is the entire fix — do not move this back up. `display`, not the
+ * opacity ramp above, because there is nothing to fade here: --gate-show is
+ * never written in this mode either (apply() never runs), so the panel must be
+ * gone outright rather than merely transparent. */
+@media (prefers-reduced-motion: reduce) {
+  .about-gate {
+    display: none;
+  }
 }
