@@ -87,18 +87,67 @@ html.about-open .chrome {
     padding: 4rem 0;
     display: block;
   }
+
+  /* The gate is never fed in this mode (about-flow.ts's onWheel returns
+   * early), so an indicator that could never fill would be a lie. */
+  .about-gate {
+    display: none;
+  }
 }
 
-/* The footer gate's indicator. Placeholder treatment — the mechanism is real,
- * the look awaits Adam's Figma. --gate is 0..1, written per wheel event. */
-.about-doc::after {
-  content: '';
+/* The footer gate's indicator, per Figma 110:473. It is fixed to the viewport
+ * rather than flowing with the footer, so it stays reachable while you push
+ * against the end. --gate is 0..1, written per wheel event by about-flow.ts.
+ *
+ * The hatch is a CSS gradient rather than the mock's exported PNG: it is a
+ * specifiable 45-degree stripe, not an icon, and a gradient stays crisp at any
+ * width with no tiling seam. Space Mono stands in for the mock's Galix Mono,
+ * which the site does not ship. */
+.about-gate {
   position: fixed;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  width: calc(var(--gate, 0) * 100%);
-  background: var(--ink);
-  opacity: calc(var(--gate, 0) * 0.6);
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  width: min(1272px, calc(100vw - 160px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 24px;
+  background: #121212;
+  border: 1px solid #6b6b6b;
+  border-radius: 4px;
   pointer-events: none;
+  z-index: 2;
+}
+
+.about-gate-label {
+  margin: 0;
+  width: 100%;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: normal;
+  color: #bdbdbd;
+}
+
+.about-gate-track {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+  border: 1px solid #6f6f6f;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    45deg,
+    #1c1c1c 0 6px,
+    #121212 6px 12px
+  );
+}
+
+.about-gate-fill {
+  height: 20px;
+  border-radius: 2px;
+  background: #61e891;
+  width: calc(var(--gate, 0) * 100%);
 }

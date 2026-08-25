@@ -61,6 +61,21 @@ export function mountAboutDocument(
   // gate is scroll pushed against it.
   if (footer) sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!.appendChild(footer());
 
+  // The scroll-gate indicator. --gate (0..1) is written per wheel event by
+  // about-flow.ts; this only presents it. See about.css for the fill mapping.
+  const gate = document.createElement('div');
+  gate.className = 'about-gate';
+  const gateLabel = document.createElement('p');
+  gateLabel.className = 'about-gate-label';
+  gateLabel.textContent = 'keep scrolling to return home';
+  const gateTrack = document.createElement('div');
+  gateTrack.className = 'about-gate-track';
+  const gateFill = document.createElement('div');
+  gateFill.className = 'about-gate-fill';
+  gateTrack.appendChild(gateFill);
+  gate.append(gateLabel, gateTrack);
+  sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!.appendChild(gate);
+
   /**
    * Height per beat, proportional to that beat's span of the path.
    *

@@ -83,4 +83,15 @@ describe('mountAboutDocument', () => {
     doc.destroy();
     parent.remove();
   });
+
+  it('mounts the gate indicator in the last beat, with its label', () => {
+    const { doc, parent } = mount();
+    const last = doc.sectionFor('ai');
+    const gate = last.querySelector('.about-gate');
+    expect(gate).not.toBeNull();
+    expect(gate!.textContent).toContain('keep scrolling to return home');
+    expect(gate!.querySelector('.about-gate-fill')).not.toBeNull();
+    doc.destroy();
+    parent.remove();
+  });
 });
