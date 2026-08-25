@@ -123,6 +123,17 @@ body {
   right: 76px;
 }
 
+/* The About footer beat lifts the chrome out of the rising footer's way
+ * (about-flow.ts writes --footer-rise, 0..1). The bottom margin notes rise
+ * with the footer's edge. The 276px is the world band the mockup (Figma
+ * 110:2) leaves above the footer; 100px keeps the notes clear of its edge by
+ * the same 50px inset they use at rest. The fallback matters: --footer-rise
+ * is undefined everywhere outside the corridor's last beat. */
+.margin-note--bl,
+.margin-note--br {
+  bottom: calc(50px + (100vh - 276px - 100px) * var(--footer-rise, 0));
+}
+
 /* The one interactive item in the margins. A real button so it is
  * keyboard-reachable and picks up the cursor's hover swell; the underline is
  * the affordance the mock draws. */
@@ -186,6 +197,17 @@ body {
 
 .site-nav a:hover {
   text-decoration: underline;
+}
+
+/* The About footer beat lifts the chrome out of the rising footer's way
+ * (about-flow.ts writes --footer-rise, 0..1). The nav travels to the top of
+ * the viewport — the position it already holds on the 2D pages, where
+ * .nav2d is sticky at top: 0 — as the corridor's last beat plays out. The
+ * fallback matters: --footer-rise is undefined everywhere else, and a bare
+ * var() here would invalidate the whole declaration site-wide. */
+.wordmark,
+.site-nav {
+  top: calc(50% - (50% - 50px) * var(--footer-rise, 0));
 }
 
 /* --- tagline --- */

@@ -36,6 +36,7 @@ afterEach(() => {
   document.documentElement.classList.remove('about-open');
   document.documentElement.style.removeProperty('--ground');
   document.documentElement.style.removeProperty('--ink');
+  document.documentElement.style.removeProperty('--footer-rise');
   document.querySelector('#bg-canvas')?.remove();
 });
 
@@ -466,6 +467,31 @@ describe('initAboutFlow', () => {
     expect(deps.cursor!.setOnDark).toHaveBeenLastCalledWith(false);
     expect(document.documentElement.style.getPropertyValue('--ground')).toBe('');
     expect(document.documentElement.style.getPropertyValue('--ink')).toBe('');
+    flow.destroy();
+  });
+
+  // The chrome (.wordmark/.site-nav/margin notes, base.css) reads this custom
+  // property to lift itself out of the rising footer's way. Written every
+  // frame alongside --ground/--ink so the fallback in every CSS reference
+  // never has to cover a stale value while the corridor is genuinely open.
+  it('writes the footer rise as the corridor reaches its end', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.5);
+    expect(document.documentElement.style.getPropertyValue('--footer-rise')).toBe('0');
+    flow.setScrollForTest(1);
+    expect(Number(document.documentElement.style.getPropertyValue('--footer-rise'))).toBeCloseTo(1, 3);
+    flow.destroy();
+  });
+
+  it('clears the footer rise on exit, like every other shared property', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    flow.exit();
+    expect(document.documentElement.style.getPropertyValue('--footer-rise')).toBe('');
     flow.destroy();
   });
 

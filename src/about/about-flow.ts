@@ -5,7 +5,7 @@ import { DESTINATIONS, HOME_REST_Z } from '../three/world';
 import { mountAboutDocument, type AboutDocument } from './about-document';
 import { buildAboutPath, type AboutPath, type CameraPose } from './about-path';
 import { paletteAt, DAY_INK } from './about-palette';
-import { beatAt, scrollToT } from './about-scrub';
+import { beatAt, footerRiseAt, scrollToT } from './about-scrub';
 import { ABOUT_MARKERS, type BeatId } from './about-markers';
 import { shouldLeaveCorridor, workWallFadeAt } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
@@ -277,6 +277,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     }
 
     applyBeat(beatAt(t, path));
+
+    // The chrome (.wordmark/.site-nav/margin notes, base.css) reads this to
+    // lift itself out of the rising footer's way across the corridor's last
+    // beat — see footerRiseAt's own doc for why nothing else compresses.
+    document.documentElement.style.setProperty('--footer-rise', String(footerRiseAt(t, path)));
   };
 
   const onScroll = (): void => {
@@ -307,10 +312,10 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
 
   /**
    * Restore every piece of shared, site-wide state the corridor's apply()
-   * (and the CSS class it flips) can have driven — the --ground/--ink
-   * escape hatch, the WebGL background invert, the atmosphere ink, the
-   * cursor's on-dark treatment, and, on the animated path only, the ferro
-   * blob, scrollNav's mode and the world's About flag.
+   * (and the CSS class it flips) can have driven — the --ground/--ink/
+   * --footer-rise escape hatches, the WebGL background invert, the atmosphere
+   * ink, the cursor's on-dark treatment, and, on the animated path only, the
+   * ferro blob, scrollNav's mode and the world's About flag.
    *
    * Extracted so exit() and returnHome() share one restore list instead of
    * two hand-maintained copies: three separate leaks (setInvertAmount,
@@ -336,6 +341,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // (briefly, pre-apply(0)) the NEXT time the corridor opens.
     document.documentElement.style.removeProperty('--ground');
     document.documentElement.style.removeProperty('--ink');
+    // Same reasoning: undefined everywhere outside the corridor (every CSS
+    // reference carries a `, 0` fallback for exactly that reason), but a
+    // lingering value would still be the first thing the chrome reads,
+    // pre-apply(0), the next time the corridor opens.
+    document.documentElement.style.removeProperty('--footer-rise');
     bgCanvas()?.classList.remove('about-canvas-hidden');
     // Restored unconditionally, even though apply() (the only caller of
     // setInvertAmount/setInk/setOnDark) never runs under reduced motion —
