@@ -74,3 +74,22 @@ describe('paletteAt', () => {
     }
   });
 });
+
+describe('nightAmount', () => {
+  it('is 1 at both ends of the corridor and 0 at capabilities', () => {
+    expect(paletteAt(0, path).nightAmount).toBeCloseTo(1, 6);
+    expect(paletteAt(1, path).nightAmount).toBeCloseTo(1, 6);
+    expect(paletteAt(path.tForBeat('capabilities'), path).nightAmount).toBeCloseTo(0, 6);
+  });
+
+  it('agrees with onDark at the midpoint, and is continuous where onDark is not', () => {
+    // onDark is a boolean that flips; nightAmount is the ramp behind it. The
+    // WebGL ground needs the ramp, the cursor needs the boolean.
+    let prev = paletteAt(0, path).nightAmount;
+    for (let i = 1; i <= 400; i++) {
+      const cur = paletteAt(i / 400, path).nightAmount;
+      expect(Math.abs(cur - prev)).toBeLessThan(0.05);
+      prev = cur;
+    }
+  });
+});

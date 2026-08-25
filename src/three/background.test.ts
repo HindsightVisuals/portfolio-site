@@ -168,3 +168,16 @@ describe('clampParallax', () => {
     }
   });
 });
+
+describe('invert amount', () => {
+  it('is continuous in the shader, not thresholded', async () => {
+    // The old shader read `if (uInvert > 0.5) lum = 1.0 - lum;` — a binary
+    // flip. Continuous travel puts the palette crossfade in the middle of the
+    // move, where a flip reads as a cut.
+    const src = await import('node:fs').then((fs) =>
+      fs.readFileSync('src/three/background.ts', 'utf8'),
+    );
+    expect(src).toContain('mix(lum, 1.0 - lum');
+    expect(src).not.toContain('if (uInvert > 0.5)');
+  });
+});

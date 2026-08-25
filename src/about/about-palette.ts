@@ -51,6 +51,9 @@ export interface AboutPalette {
    * axis.
    */
   textInk: string;
+  /** 0 = full day, 1 = full night. The continuous ramp behind `onDark`, for
+   *  driving the WebGL ground (background.setInvertAmount). */
+  nightAmount: number;
 }
 
 /**
@@ -107,5 +110,6 @@ export function paletteAt(t: number, path: AboutPath): AboutPalette {
     // ground crosses mid-grey.
     onDark: d < 0.5,
     textInk: `#${mixedText.getHexString()}`,
+    nightAmount: 1 - d,
   };
 }

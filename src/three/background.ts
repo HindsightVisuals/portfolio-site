@@ -213,7 +213,9 @@ void main() {
   if (uDebug > 0.5) lum = 1.0 - texture2D(uState, vUv).g * 3.0; // raw sim, no zoom
   // The case study page inverts the site palette, so the same sim has to read
   // as a light pattern on a dark ground rather than the other way round.
-  if (uInvert > 0.5) lum = 1.0 - lum;
+  // Continuous, not a flip. The About corridor crossfades the ground while the
+  // camera is travelling, and a threshold here reads as a cut mid-move.
+  lum = mix(lum, 1.0 - lum, clamp(uInvert, 0.0, 1.0));
   // Masked surfaces carry their shape in the alpha channel, so the letterforms
   // ARE the output rather than something composited over it afterwards. They
   // also get their own tone ramp: the page gradient above is built for a
@@ -289,6 +291,8 @@ export interface BackgroundLayer extends StageLayer {
    * setMaskTone to move a masked surface between grounds.
    */
   setInvert(on: boolean): void;
+  /** 0 = normal, 1 = fully inverted; clamped. The continuous form of setInvert. */
+  setInvertAmount(t: number): void;
   /**
    * Tone ramp for a MASKED surface: `ground` where the field is empty, `ink`
    * where the pattern is, both 0..1 luminance. Defaults to the case study
@@ -708,6 +712,9 @@ export function initBackgroundLayer(
     },
     setInvert(on: boolean): void {
       viewMaterial.uniforms.uInvert.value = on ? 1 : 0;
+    },
+    setInvertAmount(t: number): void {
+      viewMaterial.uniforms.uInvert.value = Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0;
     },
     setMaskTone(ground: number, ink: number): void {
       if (!Number.isFinite(ground) || !Number.isFinite(ink)) return;
