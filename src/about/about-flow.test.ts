@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { DESTINATIONS } from '../three/world';
+import { DAY_INK } from './about-palette';
 import { initAboutFlow, type AboutFlowDeps } from './about-flow';
 
 const makeDeps = (over: Partial<AboutFlowDeps> = {}): AboutFlowDeps => ({
@@ -234,6 +235,36 @@ describe('initAboutFlow', () => {
     expect(canvas.classList.contains('about-canvas-hidden')).toBe(true);
     flow.exit();
     expect(canvas.classList.contains('about-canvas-hidden')).toBe(false);
+    flow.destroy();
+  });
+
+  // Round 2 (post-review): background.setInvert and atmosphere.setInk are
+  // SHARED, site-wide state — every page renders through the same background
+  // layer and atmosphere — but apply() drives both to their night values and
+  // exit() never put them back. paletteAt returns onDark: true at BOTH t=0
+  // and t=1, so leaving the corridor by any route except mid-capabilities
+  // (nav click, arrow key, the contact emblem, or simply scrolling back to
+  // the top) left uInvert=1 and the atmosphere ink pinned at NIGHT_INK for
+  // every other page until a reload.
+  it('restores the background invert to false on exit, even from a dark beat', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.3); // well inside the night range (before clientWall's ramp)
+    expect(deps.background!.setInvert).toHaveBeenLastCalledWith(true);
+    flow.exit();
+    expect(deps.background!.setInvert).toHaveBeenLastCalledWith(false);
+    flow.destroy();
+  });
+
+  it('restores the atmosphere ink to DAY_INK on exit, even from a dark beat', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.3); // well inside the night range (before clientWall's ramp)
+    expect(deps.atmosphere.setInk).not.toHaveBeenLastCalledWith(DAY_INK);
+    flow.exit();
+    expect(deps.atmosphere.setInk).toHaveBeenLastCalledWith(DAY_INK);
     flow.destroy();
   });
 });

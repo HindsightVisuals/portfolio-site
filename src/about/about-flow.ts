@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { DESTINATIONS } from '../three/world';
 import { mountAboutDocument, type AboutDocument } from './about-document';
 import { buildAboutPath, type AboutPath, type CameraPose } from './about-path';
-import { paletteAt } from './about-palette';
+import { paletteAt, DAY_INK } from './about-palette';
 import { beatAt, scrollToT } from './about-scrub';
 import type { BeatId } from './about-markers';
 
@@ -196,6 +196,17 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       doc = null;
       lastBeat = null;
       t = 0;
+      // Restored unconditionally, even though apply() (the only caller of
+      // setInvert/setInk) never runs under reduced motion — background and
+      // atmosphere are SHARED, site-wide state (every page renders through
+      // the same background layer and atmosphere), and paletteAt returns
+      // onDark: true at BOTH t=0 and t=1. Leaving the corridor by any route
+      // except mid-capabilities — nav click, arrow key, the contact emblem,
+      // or simply scrolling back to the top — would otherwise leave
+      // uInvert=1 and the atmosphere ink pinned at NIGHT_INK for every other
+      // page until a reload.
+      deps.background?.setInvert(false);
+      deps.atmosphere.setInk(DAY_INK);
       if (deps.reducedMotion) return;
       deps.ferro?.hide();
       deps.ferroEl?.classList.remove('ferro-stage--behind');
