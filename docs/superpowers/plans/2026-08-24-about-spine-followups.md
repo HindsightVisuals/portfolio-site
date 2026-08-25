@@ -337,3 +337,62 @@ rather than fixed.
 Also worth an eye during QA: the corridor's document is still natively scrollable during the return
 flight (the listeners are detached but `html.about-open` remains), so a wheel during those 1.6 s
 scrolls the fading document under the flight. Cosmetic.
+
+---
+
+# QA Pass — follow-ups (2026-08-25)
+
+The third plan, from Adam's first browser QA. Two of his five items were fixed immediately
+(`2494e94`); the other three became this pass.
+
+## The one thing waiting on Adam
+
+**The ferro's arrival flies off screen, twice.** From the client wall it fades up as a small dot,
+leaves frame off the **top**, returns, sweeps down and leaves off the **bottom** at full opacity for
+~350px of scroll, then re-enters and settles. From the capabilities beat onward it is correct and
+holds at both beats exactly as the Blender keys intend.
+
+**The keyframes are not the problem.** They were sampled at frames 157-177, which sit inside the
+camera's 55-frame pitch-down — and the corridor's path **linearly slerps** that pitch from 179.9 to
+89.9 degrees where the Blender file **eases** it. So during exactly the window the blob arrives, the
+camera it is projected through is not the camera those frames were measured against.
+
+The fix is camera markers between f149 and f204 matching the file's easing, which would make the
+whole climb more faithful, not just the blob. Adam chose to see it in the browser before deciding.
+
+## Parked after the final fix wave
+
+- **The HUD notes clear the footer by 100px, not the intended 50px.** Arithmetic slip: the leading
+  `50px` in the calc already supplies the inset. The exact term is `(100vh - 276px)`. Left
+  deliberately, because **the 276px it is measured against is itself wrong** — it is the world band
+  from a 1920x1080 Figma frame, but the real footer is content-sized (~1802px) and covers the
+  viewport at every height. Decide both numbers together, by eye, once the footer has its own design.
+- **The gate panel stays in the accessibility tree while invisible.** Not a regression — it was
+  equally reachable before, when it was also visible — but now sighted users do not see it and screen
+  readers still announce "keep scrolling to return home" for the whole corridor. Minimal fix: a
+  keyword-valued `--gate-vis` driving `visibility`, which removes the subtree from the a11y tree and
+  preserves the opacity fade. Cheaper than plumbing `aria-hidden`.
+- **The canvas-box measurement is correct but inert, and two comments are false because of it.**
+  `stage.ts` calls `renderer.setSize(innerWidth, innerHeight)` with `updateStyle` defaulting true,
+  writing an **inline** `style.width` on `#bg-canvas` that beats `base.css`'s `width: 100%`. So the
+  world canvas lays out at `innerWidth` while `.ferro-stage` is the narrower `100%` — **the ~15px
+  world-vs-blob mismatch is still live.** `projectionViewport()`'s comment and `base.css`'s
+  `#bg-canvas` comment both currently assert otherwise. (`ferro-stage.ts` already passes
+  `setSize(..., false)`, which is why its own `width: 100%` governs.)
+  **If anyone fixes `stage.ts`, `world.resize()`'s `camera.aspect` must move in the same commit** —
+  today window, canvas box and renderer size all agree; change one and projection and aspect diverge.
+- **The green fill cuts rather than fades** when you scroll back up from the end — no `transition`,
+  so a half-full bar empties in one frame while the panel is still near-opaque.
+- The gate panel's `width: min(1272px, calc(100vw - 160px))` is invented, not from Figma `110:473`.
+
+## Two brief errors worth carrying forward
+
+Four separate errors in the plan's own briefs were caught this pass. Two generalise:
+
+- **A shared module-level scratch vector** meant two calls without an `into` argument returned the
+  same aliased object. This is the *same* bug caught in the spine plan's tests and then reintroduced
+  here. If a function returns a scratch by default, its tests must pass distinct `into`s.
+- **A test harness that put the camera in a state production never has.** `about-project.test.ts`
+  called `updateMatrixWorld(true)`, so it passed against a fresh matrix while production projected
+  through a stale one — size and position a frame apart, every frame. The per-task reviews could not
+  see it: one owned the pure function, the other owned the call site, and the bug lived in the seam.
