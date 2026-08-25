@@ -1,7 +1,7 @@
 import gsap from 'gsap';
 import type * as THREE from 'three';
 import type { DestId } from '../routes';
-import type { Destination } from './world';
+import { HOME_REST_Z, type Destination } from './world';
 import { focusReducer, type FocusState } from './focus';
 import { nearestWrapped, resolveSnapTargetLooped, sameSpot, wrapDelta, SPINE_PERIOD } from './loop';
 import { shouldSnapNow } from './snap';
@@ -341,6 +341,13 @@ export function initCameraDirector(
       const before = state.z;
       if (mode === 'free') {
         state.z = state.z + velocity * dt;
+        // Home is the top of the page. The loop closes through the About
+        // corridor now, so travelling backwards past Home would run through
+        // the empty space where About and Contact used to stand.
+        if (state.z > HOME_REST_Z) {
+          state.z = HOME_REST_Z;
+          velocity = 0;
+        }
         velocity *= Math.exp(-DAMPING_RATE * dt);
         // Settle the moment the wheel goes quiet, rather than waiting for
         // momentum to decay past SNAP_BELOW on its own (which took well over a

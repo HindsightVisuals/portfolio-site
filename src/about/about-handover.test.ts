@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ENTER_EPS, shouldEnterCorridor, shouldLeaveCorridor } from './about-handover';
+import { SPINE_PERIOD } from '../three/loop';
 
 const REST = -26;
 
@@ -36,6 +37,24 @@ describe('shouldEnterCorridor', () => {
 
   it('never enters when already open', () => {
     expect(shouldEnterCorridor({ open: true, cameraZ: REST, restZ: REST, deltaPx: 120 })).toBe(false);
+  });
+
+  it('is wrap-unaware: a far-side lap position does not read as "at the rest"', () => {
+    // The spine loops every SPINE_PERIOD units, and cameraZ here is unwrapped.
+    // REST + SPINE_PERIOD (214, when REST = -26) is the SAME physical spot as
+    // the Work rest one lap around, but this predicate compares raw numbers,
+    // so it does not recognise it as such.
+    //
+    // This is not a bug in isolation — camera-director's backward clamp at
+    // HOME_REST_Z (see camera-director.ts `update`, and
+    // camera-director.test.ts "backward clamp at Home") keeps state.z from
+    // ever reaching a value this large by scrolling backward from Home. If
+    // that clamp is ever removed, this predicate would silently fail to
+    // enter the corridor from what is visually the Work wall — scrolling
+    // forward there would instead travel back toward Home. Do not remove the
+    // clamp without revisiting this.
+    const wrappedRest = REST + SPINE_PERIOD;
+    expect(shouldEnterCorridor({ open: false, cameraZ: wrappedRest, restZ: REST, deltaPx: 120 })).toBe(false);
   });
 
   it('ignores a zero or non-finite delta', () => {

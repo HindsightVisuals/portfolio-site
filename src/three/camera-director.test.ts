@@ -19,7 +19,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import gsap from 'gsap';
 import * as THREE from 'three';
 import { initCameraDirector, type CameraDirector } from './camera-director';
-import type { Destination } from './world';
+import { HOME_REST_Z, type Destination } from './world';
 import type { DestId } from '../routes';
 
 const SPACING = 60;
@@ -391,6 +391,28 @@ describe('setSuspended', () => {
 
     expect(camera.position.x).toBeCloseTo(baseX, 6);
     expect(camera.position.y).toBeCloseTo(baseY, 6);
+    director.destroy();
+  });
+});
+
+describe('backward clamp at Home', () => {
+  it('does not travel behind Home', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const director = initCameraDirector(camera, DESTINATIONS, {});
+    director.jumpTo('home');
+    for (let i = 0; i < 30; i++) director.feedScroll(-400);
+    for (let i = 0; i < 60; i++) director.update(0.016);
+    expect(camera.position.z).toBeLessThanOrEqual(HOME_REST_Z + 1e-6);
+    director.destroy();
+  });
+
+  it('still travels forward freely', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const director = initCameraDirector(camera, DESTINATIONS, {});
+    director.jumpTo('home');
+    director.feedScroll(400);
+    director.update(0.016);
+    expect(camera.position.z).toBeLessThan(HOME_REST_Z);
     director.destroy();
   });
 });
