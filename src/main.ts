@@ -560,7 +560,17 @@ if (lab === 'ferro') {
           await takeover.close();
           await afterTakeoverHistoryUnwind();
         }
-        history.pushState({ dest: 'contact' }, '', withBase('/contact'));
+        // Bypasses router.navigate() (the wipe needs the push and the open to
+        // be ordered its own way — see the class doc above), so it must tell
+        // the router about the push directly: without this, router.currentPath
+        // stays stale at whatever page was current before contact opened, and
+        // when Escape's history.back() unwinds the takeover's OWN marker back
+        // onto this /contact entry, onPop's "did the path actually change"
+        // guard sees a mismatch, treats it as a fresh navigation, and
+        // re-enters the About corridor on top of the now-closed takeover.
+        const contactPath = withBase('/contact');
+        history.pushState({ dest: 'contact' }, '', contactPath);
+        router.notePush(contactPath);
         const ferroStageEl = document.querySelector<HTMLElement>('.ferro-stage');
         await openContact({
           transition: {

@@ -255,6 +255,15 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
         // IS hidden, though (C3) — otherwise it still covers the page and
         // --ground is never actually seen.
         bgCanvas()?.classList.add('about-canvas-hidden');
+        // A deep link into a beat (e.g. /contact) still has to land there:
+        // apply() is deliberately not called (there is no camera to move, and
+        // `t` must stay 0 here — the leave-listener guard in onWheel keys off
+        // reducedMotion precisely so it never reads a nonzero `t`), but the
+        // BROWSER's own scroll is the only "position" reduced motion has, so
+        // it has to be set directly from startT the same way the non-reduced
+        // branch below sets it from the camera's t.
+        const range = document.documentElement.scrollHeight - window.innerHeight;
+        if (range > 0) window.scrollTo(0, range * Math.min(1, Math.max(0, startT)));
         return;
       }
 

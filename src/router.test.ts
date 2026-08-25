@@ -1,23 +1,21 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { initCameraDirector, type CameraDirector } from './three/camera-director';
-import type { Destination } from './three/world';
+import { DESTINATIONS } from './three/world';
 import { initRouter } from './router';
 
-// Mirrors the REAL DESTINATIONS shape (home + work only — About and Contact
-// are corridor positions, not entries here) rather than a synthetic fixture,
-// since the exact bug this suite guards against (F6/Ruling on
+// The REAL DESTINATIONS (home + work only — About and Contact are corridor
+// positions, not entries here), not a synthetic fixture: the exact bug this
+// suite guards against (F6/Ruling on
 // docs/superpowers/sdd/2026-08-24-continuous-flow/progress.md) is specific to
-// that shrunk list: flyTo/jumpTo reject or no-op for ids DESTINATIONS doesn't
-// contain.
-const DESTINATIONS: Destination[] = [
-  { id: 'home', anchorZ: 0, cameraZ: 34 },
-  { id: 'work', anchorZ: -60, cameraZ: -26 },
-];
+// that shrunk list — flyTo/jumpTo reject or no-op for ids DESTINATIONS
+// doesn't contain — and camera-director.test.ts's OWN synthetic 4-entry
+// fixture is exactly why the original bug slipped through the suite.
+const HOME_Z = DESTINATIONS.find((d) => d.id === 'home')!.cameraZ;
 
 /** camera-director only ever touches `.position`, so a plain vector will do. */
 function makeCamera(): { position: { x: number; y: number; z: number } } {
-  return { position: { x: 0, y: 0, z: 34 } };
+  return { position: { x: 0, y: 0, z: HOME_Z } };
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asCamera = (c: ReturnType<typeof makeCamera>): any => c;
@@ -136,6 +134,34 @@ describe('initRouter — About/Contact routing', () => {
     director.jumpTo('work');
     expect(window.location.pathname).toBe('/work');
 
+    router.destroy();
+  });
+
+  it('notePush keeps onPop\'s "did the path actually change" guard honest after an out-of-band pushState', () => {
+    setPath('/');
+    const director = makeDirector();
+    const seen: Array<'about' | 'contact'> = [];
+    const router = initRouter(director, {
+      reducedMotion: true,
+      onCorridorRoute: (dest) => seen.push(dest),
+    });
+
+    // Mirrors activateContactWipe (main.ts): a raw history.pushState the
+    // router never sees, immediately followed by notePush so the router's
+    // own bookkeeping matches reality — exactly the discipline documented on
+    // Router.notePush and Router.ignoreNextArrival.
+    window.history.pushState({ dest: 'contact' }, '', '/contact');
+    router.notePush('/contact');
+
+    // The takeover then pushes its own marker on the SAME URL (no path
+    // change — router.ts's onPop already special-cases `state.takeover`,
+    // irrelevant to what's being tested here) and Escape's close() unwinds
+    // it with one history.back(), landing right back on /contact — the same
+    // path notePush just recorded. Nothing actually changed; onPop must
+    // recognize that and not re-enter the corridor.
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { dest: 'contact' } }));
+
+    expect(seen).toEqual([]);
     router.destroy();
   });
 });

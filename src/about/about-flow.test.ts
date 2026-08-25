@@ -78,6 +78,66 @@ describe('initAboutFlow', () => {
     flow.destroy();
   });
 
+  // Bug found in review (fix round): a /contact deep link under reduced
+  // motion used to mount the document scrolled to the top regardless of
+  // startT, because apply() — the only thing that ever reads startT — never
+  // runs in this mode (see the reduced-motion branch of enter()). The only
+  // "position" reduced motion has is the browser's own scroll, so startT has
+  // to drive that directly. jsdom always reports zero-size elements (see the
+  // setScrollForTest doc comment above), so scrollHeight/innerHeight are
+  // stubbed here to force the `range > 0` branch that a real, scrollable
+  // document would take.
+  it('scrolls the document to match startT under reduced motion', () => {
+    const deps = makeDeps({ reducedMotion: true });
+    const flow = initAboutFlow(deps);
+    // documentElement.scrollHeight has no OWN property in jsdom by default
+    // (falls through to its built-in getter, which reports 0); window.innerHeight
+    // DOES — capture and restore that one's original descriptor rather than
+    // deleting it, same discipline as the resize test further down this file.
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 5000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    try {
+      flow.enter(parent, 0.5);
+      expect(scrollTo).toHaveBeenCalledWith(0, (5000 - 1000) * 0.5);
+    } finally {
+      flow.destroy();
+      scrollTo.mockRestore();
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+    }
+  });
+
+  it('clamps startT before scrolling under reduced motion, same as the camera path', () => {
+    const deps = makeDeps({ reducedMotion: true });
+    const flow = initAboutFlow(deps);
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 5000, configurable: true });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    try {
+      flow.enter(parent, 4); // way past 1 — must clamp, not overshoot the doc
+      expect(scrollTo).toHaveBeenCalledWith(0, 5000 - 1000);
+    } finally {
+      flow.destroy();
+      scrollTo.mockRestore();
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+    }
+  });
+
+  it('never advances t under reduced motion, even with a nonzero startT', () => {
+    // t must stay 0 in this mode — the leave-listener guard (about-flow.ts's
+    // onWheel) relies on it never reading a nonzero t while reducedMotion is
+    // true; apply() must not run here regardless of startT.
+    const deps = makeDeps({ reducedMotion: true });
+    const flow = initAboutFlow(deps);
+    flow.enter(parent, 0.8608); // the contact beat's t, for concreteness
+    expect(flow.t()).toBe(0);
+    flow.destroy();
+  });
+
   it('defaults to the top when no t is given', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);

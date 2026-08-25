@@ -28,6 +28,16 @@ export interface Router {
    * wherever the camera just arrived" reaction must not run this once.
    */
   ignoreNextArrival(): void;
+  /**
+   * Record a history push made OUTSIDE this router (e.g. the contact wipe's
+   * own raw `history.pushState('/contact')` before it opens the takeover),
+   * so `onPop`'s "did the underlying page actually change" guard compares
+   * against the real current path instead of a stale one. Call this
+   * immediately after the push it corresponds to — same discipline as
+   * ignoreNextArrival, just for the URL side of this router's bookkeeping
+   * rather than the arrival side.
+   */
+  notePush(path: string): void;
   destroy(): void;
 }
 
@@ -140,6 +150,9 @@ export function initRouter(director: CameraDirector, opts: InitRouterOpts): Rout
     },
     ignoreNextArrival(): void {
       ignoreArrival = true;
+    },
+    notePush(path: string): void {
+      currentPath = path;
     },
     navigateToProject(slug: string, navOpts?: { abbreviated?: boolean }): Promise<void> {
       const path = pathForSlug(slug);
