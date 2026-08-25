@@ -1,0 +1,179 @@
+/* src/styles/footer.css
+ * The shared page footer (footer.ts, Figma 62:381) and the archival tag chip
+ * (tag-strip.ts) it uses for its email/social labels.
+ *
+ * Extracted from case-study.css: this footer now mounts in TWO places — the
+ * case study takeover (dark, lazy-loaded) and the About corridor's last beat
+ * (eager, part of the main bundle) — so its own rules need to load wherever
+ * footer.ts does, without dragging in the whole case-study stylesheet (curtain,
+ * hero, strip rail, neighbour cards) that used to come along with it.
+ *
+ * --cs-ink/--cs-line get a REAL definition here, scoped to .cs-footer itself,
+ * rather than relying on the ambient tokens .case-study defines (case-study.css)
+ * — the About corridor's document is never inside a .case-study element, so
+ * those tokens would otherwise read as unset there. Same values case-study.css
+ * uses, so a case study's own footer is unaffected — the definition on
+ * .cs-footer simply wins over nothing, not over a conflicting ancestor value.
+ *
+ * Figma draws this frame at 1.38x (1.38px rules, 12px tags against the hero's
+ * 9px). Rules are rendered at 1px here because a fractional hairline renders
+ * inconsistently across DPRs; the type sizes are kept and made fluid. */
+
+/* --- archival tag chip ---------------------------------------------------
+ * Figma: 1px #676767, 2px radius, 8px/5px padding, 9px mono, 1.26px tracking. */
+.cs-tags {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cs-tag {
+  border: 1px solid var(--cs-line);
+  border-radius: 2px;
+  padding: 5px 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.26px;
+  color: var(--cs-ink);
+  white-space: nowrap;
+}
+
+/* --- footer ---------------------------------------------------------------
+ * A ruled grid, not a stack: every group sits inside a hairline box so the
+ * block reads as a spec sheet. Two bands — contact on black, site nav on
+ * #191919 — closed by a green meta strip. */
+.cs-footer {
+  --cs-ink: #ffffff;
+  --cs-line: #676767;
+  --f-rule: #2f2f2f;
+  padding: 0;
+}
+
+.cs-fband {
+  padding: clamp(20px, 1.9vw, 36px) clamp(20px, 1.9vw, 36px) clamp(18px, 1.7vw, 33px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(32px, 4vw, 76px);
+}
+
+.cs-fband--contact {
+  background: #000;
+}
+
+/* The nav band sits a shade off black, which is what separates the two. */
+.cs-fband--nav {
+  background: #191919;
+  gap: clamp(24px, 2.2vw, 41px);
+}
+
+/* The hairline box every group is drawn in. */
+.cs-frule {
+  border: 1px solid var(--f-rule);
+}
+
+.cs-footer-heading {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: clamp(38px, 6.9vw, 132px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--cs-ink);
+}
+
+.cs-fcontact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.cs-fcells {
+  display: flex;
+  gap: clamp(24px, 3.5vw, 66px);
+  align-items: stretch;
+  flex: 0 1 auto;
+}
+
+.cs-fcell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+}
+
+.cs-fcell--wide {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Email, socials and site nav all share one type treatment: Loos Extended
+ * Bold, uppercase, 24px at 1920. */
+.cs-flink {
+  font-family: var(--font-wordmark);
+  font-weight: 700;
+  font-size: clamp(14px, 1.25vw, 24px);
+  line-height: 1.05;
+  text-transform: uppercase;
+  color: var(--cs-ink);
+  text-decoration: none;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cs-flink:hover,
+.cs-flink:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.cs-fmark {
+  flex: 0 0 auto;
+  width: clamp(72px, 8.6vw, 165px);
+  height: auto;
+  opacity: 0.85;
+}
+
+/* Its own box, with a lighter rule than the rest of the grid. */
+.cs-favailability {
+  margin: 0;
+  border: 1px solid #565656;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: clamp(11px, 0.73vw, 14px);
+  color: var(--cs-ink);
+}
+
+.cs-fstrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-family: var(--font-mono);
+  font-size: clamp(11px, 0.73vw, 14px);
+  letter-spacing: 0.14em;
+  /* The one spot of colour on the page — the site's accent green. */
+  color: #61e891;
+}
+
+@media (max-width: 900px) {
+  .cs-fcontact-row,
+  .cs-fcells {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cs-fstrip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .cs-fmark {
+    align-self: flex-end;
+  }
+}

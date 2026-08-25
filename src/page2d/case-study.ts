@@ -6,6 +6,7 @@ import { tileStillUrl } from '../work/tiles';
 import { revealSections } from './reveal';
 import { buildCurtain } from './curtain';
 import { buildFooter } from './footer';
+import { tagStrip } from './tag-strip';
 
 export interface CaseStudyOpts {
   reducedMotion: boolean;
@@ -22,25 +23,6 @@ export interface CaseStudyOpts {
    * instead of the viewport-root fallback. See reveal.ts.
    */
   deferReveal?: boolean;
-}
-
-/**
- * The archival tag chip — 9px mono, 1.26px tracking, hairline #676767 box.
- * Figma uses it in the title block, the hero and the footer, so it lives here
- * once rather than being rebuilt per section.
- */
-function tag(text: string): HTMLSpanElement {
-  const el = document.createElement('span');
-  el.className = 'cs-tag';
-  el.textContent = text;
-  return el;
-}
-
-export function tagStrip(...labels: string[]): HTMLDivElement {
-  const strip = document.createElement('div');
-  strip.className = 'cs-tags';
-  strip.append(...labels.map(tag));
-  return strip;
 }
 
 /** A `label:` / value pair in the hero's meta card. Values may be a list. */

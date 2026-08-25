@@ -11,12 +11,6 @@ import { shouldLeaveCorridor } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
 import { createGate, feedGate } from './about-gate';
 import { buildFooter } from '../page2d/footer';
-// The footer's classes (.cs-footer, .cs-fband, ...) are unscoped top-level
-// selectors defined here, not nested under .case-study — case-study.ts pulls
-// this in for its own footer the same way, and nothing else in the corridor's
-// own bundle (about.css) has ever needed to. Without it the corridor's footer
-// renders unstyled until some OTHER page has happened to load this file first.
-import '../styles/case-study.css';
 
 /**
  * The About corridor's controller — the only stateful module in src/about/.

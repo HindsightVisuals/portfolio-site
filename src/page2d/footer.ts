@@ -1,5 +1,6 @@
+import '../styles/footer.css';
 import { withBase } from '../routes';
-import { tagStrip } from './case-study';
+import { tagStrip } from './tag-strip';
 
 export interface FooterOpts {
   /** Footer site nav. */

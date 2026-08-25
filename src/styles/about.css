@@ -61,6 +61,10 @@ html.about-open .chrome {
   /* height is written per-beat in px by about-document.ts — do not set it here */
   box-sizing: border-box;
   display: flex;
+  /* Without this, flex's default row direction sits the heading and the
+   * last beat's mounted footer side by side as squeezed siblings instead of
+   * stacked — a structural defect, not a look awaiting Adam's Figma pass. */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
