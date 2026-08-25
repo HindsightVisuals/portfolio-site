@@ -91,8 +91,27 @@ body {
 
 .corner-mark.tl { top: 48px; left: 48px; }
 .corner-mark.tr { top: 48px; right: 48px; }
-.corner-mark.bl { bottom: 48px; left: 48px; }
-.corner-mark.br { bottom: 48px; right: 48px; }
+
+/* The bottom marks ride up with the About footer beat, same as
+ * .margin-note--bl/--br below — Adam's QA: "the pluses from the commms is a
+ * 3D... should be up with the text as well." Without this they stayed pinned
+ * at the viewport edge while the marginalia they sit beside lifted away from
+ * them.
+ *
+ * Same rise term as the notes (see .margin-note--bl/--br's comment for what
+ * 276px/50px mean), so the two travel together at the same rate — only the
+ * resting offset differs, 48px here vs 50px there, which is the 2px the marks
+ * sit lower than the notes at rest and is preserved by rising both by the
+ * same amount. The `, 0` fallback is mandatory here for the same reason as
+ * everywhere else in this file: these are unscoped site-wide selectors, and
+ * --footer-rise is undefined outside the corridor's last beat. */
+.corner-mark.bl,
+.corner-mark.br {
+  bottom: calc(48px + (100vh - 276px + 50px) * var(--footer-rise, 0));
+}
+
+.corner-mark.bl { left: 48px; }
+.corner-mark.br { right: 48px; }
 
 /* --- marginalia -----------------------------------------------------------
  * The small chrome text from the hi-fi mock, set beside each corner mark
@@ -206,20 +225,25 @@ body {
 }
 
 /* The About footer beat lifts the chrome out of the rising footer's way
- * (about-flow.ts writes --footer-rise, 0..1). The nav travels to the top of
- * the viewport — the position it already holds on the 2D pages, where
- * .nav2d is sticky at top: 0 — as the corridor's last beat plays out.
+ * (about-flow.ts writes --footer-rise, 0..1). The nav travels toward the top
+ * of the viewport as the corridor's last beat plays out.
  *
- * 32px, not 50px: both of these carry translateY(-50%), so this value is
- * where their CENTRE lands, and .nav2d is a 64px band whose own contents
- * (.nav2d-wordmark, .nav2d-links) sit at top: 50% of it — dead centre, 32px
- * down. Landing at 50px put the corridor's chrome ~18px below where the same
- * chrome sits on every 2D page, which is the whole point of the move. The
- * fallback matters: --footer-rise is undefined everywhere else, and a bare
- * var() here would invalidate the whole declaration site-wide. */
+ * It used to travel all the way to a 32px centre — matching where the same
+ * chrome sits on the 2D pages' .nav2d band (a 64px band whose contents sit at
+ * top: 50%, i.e. 32px down). Adam's QA: that lands the nav ON TOP of the top
+ * furniture instead of below it — .corner-mark.tl/.tr sit at top: 48px (a
+ * 16px mark, so a 48-64px band) and .margin-note--tl sits at top: 50px (13px
+ * text, so a ~50-63px band), and a 32px centre overlaps both.
+ *
+ * 100px clears both comfortably: it sits ~36-37px below their lower edges,
+ * enough room to read as a deliberate landing spot rather than a value that
+ * only just squeaks past them. Both .wordmark and .site-nav carry
+ * translateY(-50%), so this value is where their CENTRE lands, same as
+ * before. The fallback matters: --footer-rise is undefined everywhere else,
+ * and a bare var() here would invalidate the whole declaration site-wide. */
 .wordmark,
 .site-nav {
-  top: calc(50% - (50% - 32px) * var(--footer-rise, 0));
+  top: calc(50% - (50% - 100px) * var(--footer-rise, 0));
 }
 
 /* --- tagline --- */

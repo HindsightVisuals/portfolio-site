@@ -78,6 +78,39 @@ html.about-open .chrome {
   opacity: 0.5;
 }
 
+/* The shared footer (page2d/footer.ts, footer.css) mounts full-bleed here,
+ * unlike .about-beat's other children. Adam's QA: "the actual footer should
+ * be 100vw effectively looking like a 2D page... with the world still
+ * visible as a band above" — confirmed with him that only the HORIZONTAL
+ * extent changes, not a full-viewport takeover.
+ *
+ * .about-beat is `align-items: center` (a centred flex column), which
+ * shrink-wraps a child with no explicit width to its content's size instead
+ * of filling the row — that's what left the world showing down both sides of
+ * the footer. align-self overrides that for the footer alone; the beat's
+ * heading and the fixed gate panel are untouched. */
+.about-beat > .cs-footer {
+  align-self: stretch;
+}
+
+/* The footer's own bands (.cs-fband, footer.css) still carry their own
+ * padding — that stays untouched so the vertical rhythm and the case study's
+ * own mount of this component are unaffected. This only replaces the
+ * HORIZONTAL component of that padding, and only here: .cs-fband has no
+ * .about-beat ancestor on a case study page, so that rule never matches
+ * there.
+ *
+ * The gutter is the case study page's own --cs-gutter (case-study.css,
+ * clamp(16px, 1.25vw, 24px)) — "the margin we use on the case study page",
+ * per Adam. footer.css redeclares that token on .cs-footer itself rather
+ * than relying on .case-study ancestry, the same self-contained pattern
+ * --cs-ink/--cs-line already use there, because this mount point is never
+ * inside a .case-study element. */
+.about-beat .cs-fband {
+  padding-left: var(--cs-gutter);
+  padding-right: var(--cs-gutter);
+}
+
 /* Reduced motion: no canvas, so the document is all there is. Sections stop
  * being scroll geometry and collapse to their content. */
 @media (prefers-reduced-motion: reduce) {

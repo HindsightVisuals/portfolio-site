@@ -20,7 +20,8 @@ const read = (name: string): string =>
 
 const about = read('about.css');
 const base = read('base.css');
-const page2d = read('page2d.css');
+const footer = read('footer.css');
+const caseStudy = read('case-study.css');
 
 /** The body of the first top-level (column-0) rule with this exact selector. */
 const ruleBody = (css: string, selector: string): string => {
@@ -104,19 +105,101 @@ describe('base.css — the chrome the corridor lifts', () => {
     expect(noteBottomFromTop).toBeLessThan(FOOTER_EDGE_FROM_TOP);
   });
 
-  // M5. Both selectors carry translateY(-50%), so this value is where their
-  // CENTRE lands — and the 2D nav's contents centre in a 64px band, at 32px.
-  // 50px put the corridor's chrome ~18px below where the same chrome sits on
-  // every other page, which is the entire point of the move.
-  it('lands the chrome where the 2D nav actually sits', () => {
+  // M5, revised post-QA. The chrome used to travel to a 32px centre — dead
+  // centre of the 2D nav's 64px band — but Adam's QA on the built corridor
+  // found that lands the nav ON TOP of the top furniture instead of below
+  // it: .corner-mark.tl/.tr sit at top: 48px (a 16px mark, so a 48-64px
+  // band) and .margin-note--tl sits at top: 50px (13px text, so a ~50-63px
+  // band), and a 32px centre overlaps both. This pins the fix instead: the
+  // landing centre must clear both floors, with comfortable room rather than
+  // barely squeaking past them.
+  it('lands the chrome below the top corner marks and the margin note, not on top of them', () => {
     const rule = ruleBody(base, '.wordmark,\n.site-nav');
     const landing = /top:\s*calc\(50% - \(50% - (\d+)px\) \* var\(--footer-rise, 0\)\)/.exec(rule)?.[1];
     expect(landing, 'the chrome no longer travels off --footer-rise at all').toBeTruthy();
 
-    // Derived, not asserted as a magic number: .nav2d is the band, and its
-    // children sit at top: 50% of it.
-    const bandH = /\n\.nav2d\s*\{[^}]*height:\s*(\d+)px/.exec(page2d)?.[1];
-    expect(bandH).toBe('64');
-    expect(Number(landing)).toBe(Number(bandH) / 2);
+    // Derived, not asserted as magic numbers: the top furniture's own bottom
+    // edges are the floors this value has to clear.
+    const markTop = Number(/\n\.corner-mark\.tl\s*\{\s*top:\s*(\d+)px/.exec(base)?.[1]);
+    const markSize = Number(/\n\.corner-mark\s*\{[^}]*height:\s*(\d+)px/.exec(base)?.[1]);
+    const noteTop = Number(/\n\.margin-note--tl\s*\{\s*top:\s*(\d+)px/.exec(base)?.[1]);
+    const noteFontSize = Number(/\n\.margin-note\s*\{[^}]*font-size:\s*(\d+)px/.exec(base)?.[1]);
+    const markBottomEdge = markTop + markSize; // 48 + 16 = 64
+    const noteBottomEdge = noteTop + noteFontSize; // 50 + 13 = 63
+
+    expect(Number(landing)).toBeGreaterThan(markBottomEdge);
+    expect(Number(landing)).toBeGreaterThan(noteBottomEdge);
+    // Comfortable room, not a bare clear — the whole QA complaint was a value
+    // that only just avoided (in fact didn't avoid) this furniture.
+    expect(Number(landing) - Math.max(markBottomEdge, noteBottomEdge)).toBeGreaterThanOrEqual(20);
+  });
+
+  // Adam's QA: "the pluses from the commms is a 3D... should be up with the
+  // text as well." The bottom corner marks have to rise with the same term
+  // the bottom margin notes already use, or they stay pinned to the viewport
+  // edge while the text beside them lifts away.
+  it('rises the bottom corner marks with the same term as the margin notes beside them', () => {
+    const notesTerm = /bottom:\s*calc\(50px \+ \(([^)]*)\) \* var\(--footer-rise, 0\)\)/.exec(
+      ruleBody(base, '.margin-note--bl,\n.margin-note--br'),
+    )?.[1];
+    expect(notesTerm, 'the margin notes no longer rise off --footer-rise at all').toBeTruthy();
+
+    const marksRule = ruleBody(base, '.corner-mark.bl,\n.corner-mark.br');
+    const marks = /bottom:\s*calc\(48px \+ \(([^)]*)\) \* var\(--footer-rise, 0\)\)/.exec(marksRule);
+    expect(marks, 'the corner marks no longer rise off --footer-rise at all').not.toBeNull();
+
+    // Same rise term, so the marks and the notes travel at the same rate —
+    // only the resting offset (48 here vs 50 there) is allowed to differ,
+    // preserving the 2px the marks sit lower than the notes at rest.
+    expect(marks![1]).toBe(notesTerm);
+
+    // Resting state (--footer-rise: 0) must compute to exactly today's value.
+    expect(marksRule).toMatch(/bottom:\s*calc\(48px \+ \([^)]*\) \* var\(--footer-rise, 0\)\)/);
+  });
+
+  // Left/right must still be set per side — only `bottom` was meant to move
+  // to the shared rise rule.
+  it('keeps the corner marks pinned to their own horizontal edge', () => {
+    expect(base).toMatch(/\n\.corner-mark\.bl\s*\{\s*left:\s*48px;?\s*\}/);
+    expect(base).toMatch(/\n\.corner-mark\.br\s*\{\s*right:\s*48px;?\s*\}/);
+  });
+});
+
+describe('the footer full-bleed in the About corridor (footer.css / about.css)', () => {
+  // Adam's QA: "the actual footer should be 100vw effectively looking like a
+  // 2D page." .about-beat's `align-items: center` shrink-wraps a child with
+  // no explicit width instead of filling the row, which is what left the
+  // world showing down both sides of the footer.
+  it('stretches the footer past .about-beat centring instead of shrink-wrapping it', () => {
+    const rule = ruleBody(about, '.about-beat > .cs-footer');
+    expect(rule).toMatch(/align-self:\s*stretch/);
+  });
+
+  // "The container for the content should be full width too, with the margin
+  // we use on the case study page" — .cs-fband is that container, and
+  // --cs-gutter is that margin. Scoped to `.about-beat .cs-fband` so the
+  // shared, unscoped `.cs-fband` rule in footer.css — which the case study's
+  // own mount also uses — is never touched.
+  it('gives the footer bands the case study gutter, only inside the corridor', () => {
+    const rule = ruleBody(about, '.about-beat .cs-fband');
+    expect(rule).toMatch(/padding-left:\s*var\(--cs-gutter\)/);
+    expect(rule).toMatch(/padding-right:\s*var\(--cs-gutter\)/);
+
+    // The shared rule in footer.css must be untouched — that's what keeps
+    // the case study's own footer unaffected.
+    const sharedRule = ruleBody(footer, '.cs-fband');
+    expect(sharedRule).not.toMatch(/var\(--cs-gutter\)/);
+  });
+
+  // footer.css can't rely on `.case-study` ancestry (the corridor's mount is
+  // never inside one), so it has to self-declare --cs-gutter — the same
+  // pattern --cs-ink/--cs-line already use there. Pinned equal to
+  // case-study.css's own value so the two mounts agree on what "the case
+  // study page's own gutter" actually is.
+  it('self-declares --cs-gutter on .cs-footer, matching case-study.css exactly', () => {
+    const footerValue = /--cs-gutter:\s*([^;]+);/.exec(ruleBody(footer, '.cs-footer'))?.[1].trim();
+    const caseStudyValue = /--cs-gutter:\s*([^;]+);/.exec(ruleBody(caseStudy, '.case-study'))?.[1].trim();
+    expect(footerValue).toBeTruthy();
+    expect(footerValue).toBe(caseStudyValue);
   });
 });
