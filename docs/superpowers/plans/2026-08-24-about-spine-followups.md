@@ -226,3 +226,114 @@ it, then plan it.
   independently noticeable yet, likely because the beats are empty.
 - **Depth cues** — "the only things giving the illusion of 3d space at the moment are the floating
   dots." Expected: the beats are empty and the lander's grass is a later plan.
+
+---
+
+# Continuous Flow — follow-ups (2026-08-25)
+
+The second plan turned the site into one long page. Same rules as above: everything here was found,
+judged real, and deliberately not fixed.
+
+## A. Your QA checklist for this pass
+
+Foreground window, hard reload. Ordered by what I most expect to be wrong.
+
+- [ ] **Scroll from the Work wall into the corridor and watch the tiles.** They should *fade* over
+      the first stretch of the climb. A one-frame disappearance means the new fade isn't working.
+      Then scroll back up and watch them return.
+- [ ] **Push through the footer gate and keep watching for two seconds after.** You should see the
+      document fade, the camera fly, and then stay at Home. If you end up at the Work wall, the
+      director handover regressed.
+- [ ] **Check the gate arms at all, at your actual display scaling.** Scroll to the very bottom and
+      keep pushing. Windows at 125/150% was making `t` max out at ~0.9999 so the gate could never
+      fire; that's fixed with an epsilon, but it's worth confirming on your machine specifically.
+- [ ] **Open contact mid-corridor, scroll hard inside the modal, close it.** You should come back to
+      the same beat. Then scroll one notch — if the camera jumps elsewhere, the scroll resync failed.
+- [ ] **Arrow keys inside the corridor.** They now step through beats; a backward step at the top
+      exits. ArrowUp at Home should do nothing.
+- [ ] **Click the footer's three nav buttons.** All three still cut — judge how bad `work` is, since
+      it jumps from 31 units up and pitched.
+- [ ] **Short viewport (~700px) and a wide one.** The footer is ~1802px inside a one-viewport
+      section, so it overflows. Watch whether the beat headings arrive *ahead* of the camera.
+- [ ] **Watch the address bar for a whole loop.** Scrolling into the corridor leaves it at `/work`.
+- [ ] **Reduced motion:** `/contact` should land you at the contact beat; the canvas should be
+      hidden; backward scroll must not unmount the document.
+- [ ] **A case study page.** It's the least-protected surface in the whole branch — 147 lines moved
+      out of it and 165 lines of CSS relocated, with zero tests covering it. Check the footer and the
+      big COMMMS mark above it.
+
+## B. The one structural thing I'd do before beat content
+
+**`about-flow.ts` is 575 lines doing fourteen jobs** — path, camera writes, palette fan-out, beat
+detection, DOM lifecycle, scroll lock, three listeners, enter/exit, pause/resume, the gate, a GSAP
+tween, footer nav, the shared-state release, and three test seams. `AboutFlowDeps` has eleven
+members. The final reviewer put it well: it has been *documented* into coherence rather than
+*structured* into it, which is why it still reads fine and why nobody noticed the mass.
+
+The evidence it has outgrown itself is the return-flight bug. `returnHome` is a camera-and-director
+handover living in a module whose director dependency was typed `{ setSuspended }` — it could not
+express what the move required, so it shipped doing half of it.
+
+Suggested split, before the five content plans mount into it: `about-presentation.ts` (apply/palette
+/beat), `about-session.ts` (the open/paused/t state machine and its listeners — which turns the
+guard table into one switch instead of six hand-copied conditionals), `about-return.ts` (the flight,
+owning both ends of the handover), leaving `about-flow.ts` as wiring.
+
+## C. Deferred, with why
+
+- **The footer nav's three buttons all cut.** `work` calls `exit()`, which cuts from the pitched end
+  pose — the exact move the spec forbids for the gate. Consistent with the pre-existing
+  backward-scroll exit convention, so it's a convention problem, not a new regression.
+- **`onFooterNav('work')` leaves the URL at `/about`.** Same pre-existing convention.
+- **Entering the corridor by scrolling doesn't set the URL** — it stays `/work`. Arguably right: the
+  corridor's `t = 0` *is* the Work rest, and pushing `/about` on a scroll gesture would spam history.
+- **The last section has no overflow containment** while its height is forced to one viewport. A
+  700px viewport reproduced a 41px overflow. Will get worse once beat content lands.
+- **`exit()` doesn't zero the director's `lateral`.** `syncTo` does, on the `returnHome` path only.
+  If the corridor is ever entered from a focused tile, that offset surfaces on the first tick out.
+  Not observed today.
+- **Keyboard can't arm the footer gate.** Arrows give a way out of the corridor but not a way to
+  close the loop forward.
+- **The two-rest invariant is unasserted.** T13's backward clamp is only correct because Home is the
+  numeric maximum of a two-entry `DESTINATIONS`. Add a rest above 34 and the wrap hole reopens
+  silently.
+- **`loop.test.ts` and `snap.test.ts`** still carry `RESTS = [34, -26, -86, -146]` commented
+  `// home, work, about, contact` — legitimately synthetic fixtures, but the comments now describe a
+  spine that doesn't exist.
+- **Dead code confirmed unreachable:** `world.ts`'s label-plane branch and `makeLabelTexture`
+  (deleting them also retires the `document.fonts` jsdom workaround); `main.ts`'s
+  `hit.dest === 'about'` pick branch; `main.ts`'s `onArrive('contact')` handler.
+- **`RETURN_FADE_P = 0.45` and `GATE_END_EPS = 1e-3`** are reasoned but unverified by eye.
+
+## D. A note on how the two Criticals got through
+
+Both were found only by the whole-plan review, and both are the same shape: the pre-flight scan pairs
+tasks by **named symbol** handoff (`workRest`, `setInvertAmount`, `buildFooter`). Neither Critical
+had a symbol — one was the director's *private* `state.z`, the other was the world's visibility flag
+versus the corridor's new anchor. Both rows were marked "clean" in the scan and both are where the
+bugs lived.
+
+The lesson for the next plan: alongside "what does task B consume from task A", ask **"what invariant
+does this task rely on that no parameter carries?"**
+
+## E. Two things parked at the very end
+
+Found by the re-review of the final fix wave, after the no-second-fix-wave line. Both recorded
+rather than fixed.
+
+- **The reduced-motion return path leaks an inline `opacity: 0` onto the ferro element.**
+  `applyReturn` writes it unconditionally; `releaseSharedState()` early-returns under reduced motion
+  *before* clearing it. Inline beats `.ferro-stage--hidden`, so a later `ferro.show()` would leave
+  the blob invisible on every 2D page for the rest of the session. **Unreachable today** — the gate
+  runs through `onWheel`, which is gated on `!reducedMotion`, and `returnHome()` has no other
+  production caller. One line: move the `removeProperty('opacity')` above that early return.
+
+- **Clicking a nav link during the 1.6 s return flight lands you at Home, whatever you clicked.**
+  Nothing kills the tween and `.chrome` stays clickable above the fading document, so `onDepart`
+  fires `exit()`, then the still-running tween finishes and runs teardown a second time — including
+  `syncTo(HOME_REST_Z)`, which kills the new navigation's settle. The race predates this wave;
+  `syncTo` only changed where you come to rest. Narrow window, deliberate gesture.
+
+Also worth an eye during QA: the corridor's document is still natively scrollable during the return
+flight (the listeners are detached but `html.about-open` remains), so a wheel during those 1.6 s
+scrolls the fading document under the flight. Cosmetic.
