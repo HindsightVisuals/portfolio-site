@@ -404,6 +404,18 @@ export function initCameraDirector(
         killSettle();
         lateralTween?.kill();
         lateralTween = null;
+        // Zeroed outright, not folded into `lateral` (foldPeek): a later task
+        // resets the camera pose outright on About exit, so there is nothing
+        // for a folded offset to be consistent with. Left running, or left
+        // non-zero, this would reappear as a small camera jump on the first
+        // update() after resume — peek only reaches camera.position through
+        // the gated update() below, so leaving it running doesn't break the
+        // "writes nothing while suspended" guarantee, but it does leave stale
+        // state waiting to surface.
+        peekTween?.kill();
+        peekTween = null;
+        peek.x = 0;
+        peek.y = 0;
         velocity = 0;
         mode = 'free';
       }

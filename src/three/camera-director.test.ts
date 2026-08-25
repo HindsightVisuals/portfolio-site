@@ -318,6 +318,17 @@ describe('camera director', () => {
 });
 
 describe('setSuspended', () => {
+  // Needed only by the peek-parking test below, which scrubs the global
+  // timeline to put a peek tween mid-flight before suspending — see the
+  // 'camera director' describe's identical comment for why sleeping the
+  // ticker is what makes that deterministic.
+  beforeAll(() => {
+    gsap.ticker.sleep();
+  });
+  afterAll(() => {
+    gsap.ticker.wake();
+  });
+
   it('stops writing the camera so another controller can own it', () => {
     const camera = new THREE.PerspectiveCamera();
     const director = initCameraDirector(camera, DESTINATIONS, {});
@@ -355,6 +366,31 @@ describe('setSuspended', () => {
     director.setSuspended(false);
     director.update(0.016);
     expect(camera.position.z).toBeCloseTo(z, 3);
+    director.destroy();
+  });
+
+  it('parks a live peek so it does not reappear as a jump on resume', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const director = initCameraDirector(camera, DESTINATIONS, {});
+    director.jumpTo('about');
+    const baseX = camera.position.x;
+    const baseY = camera.position.y;
+
+    director.peekTo(5, 3);
+    // Put the peek tween mid-flight (non-zero) before suspending, so this
+    // test actually exercises the parking rather than trivially passing
+    // because the tween never got anywhere.
+    const t = gsap.globalTimeline.time();
+    gsap.globalTimeline.time(t + 0.3);
+    director.update(0.016);
+    expect(camera.position.x).not.toBeCloseTo(baseX, 3);
+
+    director.setSuspended(true);
+    director.setSuspended(false);
+    director.update(0.016);
+
+    expect(camera.position.x).toBeCloseTo(baseX, 6);
+    expect(camera.position.y).toBeCloseTo(baseY, 6);
     director.destroy();
   });
 });

@@ -410,7 +410,13 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
         // spine, where materializeAmount's z-only distance is meaningless — a
         // screen 4 units away in z but 31 away in y would fade in at full
         // strength beside you.
+        //
+        // homeMock is skipped, matching the materialize pass above: its
+        // visibility is treatment-B managed (setHomeMockVisible), and that
+        // pass never restores it, so force-hiding it here would strand it
+        // hidden with no path back to visible.
         for (const s of anchored) {
+          if (s.root === homeMock) continue;
           s.root.visible = false;
           s.setFade(0);
         }

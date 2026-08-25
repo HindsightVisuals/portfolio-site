@@ -43,4 +43,15 @@ describe('world about mode', () => {
     expect(world.anchoredPositionsZ()).toEqual(before);
     world.destroy();
   });
+
+  it('does not force-hide a visible homeMock, which is treatment-B managed and not spine dressing', () => {
+    const world = initWorld({ reducedMotion: true });
+    world.setHomeMockVisible(true);
+    world.setAboutMode(true);
+    // Only homeMock should remain visible: About mode's hide pass must skip
+    // it, exactly as the ordinary materialize pass does, or nothing in the
+    // normal update path will ever make it visible again.
+    expect(world.anchoredVisibleCount()).toBe(1);
+    world.destroy();
+  });
 });
