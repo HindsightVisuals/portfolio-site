@@ -50,4 +50,15 @@ describe('projectToRect', () => {
   it('returns null for a degenerate viewport rather than Infinity', () => {
     expect(projectToRect(new THREE.Vector3(0, 0, -10), 0.49, cam(), { w: 0, h: 0 })).toBeNull();
   });
+
+  it('sizes by view-space depth, not straight-line distance, off-axis', () => {
+    // Same z (equal depth from the camera), different x. A distanceTo-based
+    // implementation would find the off-axis point farther away and shrink
+    // it; depth-based sizing keeps them equal, because neither is any deeper
+    // than the other.
+    const c = cam();
+    const onAxis = projectToRect(new THREE.Vector3(0, 0, -10), 0.49, c, VP)!;
+    const offAxis = projectToRect(new THREE.Vector3(5, 0, -10), 0.49, c, VP)!;
+    expect(offAxis.w).toBeCloseTo(onAxis.w, 6);
+  });
 });

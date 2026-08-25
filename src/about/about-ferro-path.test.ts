@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { DESTINATIONS } from '../three/world';
-import { FERRO_ARRIVE_T, FERRO_RADIUS, ferroFadeAt, ferroWorldAt } from './about-ferro-path';
+import { FERRO_ARRIVE_T, FERRO_RADIUS, ferroFadeAt, ferroWorldAt, frameToT } from './about-ferro-path';
 
 const ANCHOR = new THREE.Vector3(0, 0, DESTINATIONS.find((d) => d.id === 'work')!.cameraZ);
 
@@ -13,9 +13,9 @@ describe('ferroFadeAt', () => {
   });
 
   it('fades up across the descent, not instantly', () => {
-    // f157 -> f165 is t 0.479 -> 0.521. The fade shares that span with the
-    // drop, so arriving and appearing are one move.
-    const mid = ferroFadeAt((0.479 + 0.521) / 2);
+    // f157 -> f165. The fade shares that span with the drop, so arriving and
+    // appearing are one move.
+    const mid = ferroFadeAt((frameToT(157) + frameToT(165)) / 2);
     expect(mid).toBeGreaterThan(0.1);
     expect(mid).toBeLessThan(0.9);
   });
@@ -36,16 +36,16 @@ describe('ferroFadeAt', () => {
 
 describe('ferroWorldAt', () => {
   it('drops from above onto the mezzanine', () => {
-    // Blender z 27.3 -> 18.2 becomes Three y, so it descends.
-    const early = ferroWorldAt(0.479, ANCHOR);
-    const settled = ferroWorldAt(0.582, ANCHOR);
+    // Blender z 27.3 (f157) -> 18.2 (f177) becomes Three y, so it descends.
+    const early = ferroWorldAt(frameToT(157), ANCHOR);
+    const settled = ferroWorldAt(frameToT(177), ANCHOR);
     expect(early.y).toBeGreaterThan(settled.y);
   });
 
   it('holds still through the capabilities beat', () => {
     // f177 and f209 are the same measured point — the blob waits for you there.
-    const a = ferroWorldAt(0.582, ANCHOR, new THREE.Vector3());
-    const b = ferroWorldAt(0.747, ANCHOR, new THREE.Vector3());
+    const a = ferroWorldAt(frameToT(177), ANCHOR, new THREE.Vector3());
+    const b = ferroWorldAt(frameToT(209), ANCHOR, new THREE.Vector3());
     expect(a.distanceTo(b)).toBeCloseTo(0, 3);
   });
 
@@ -56,9 +56,9 @@ describe('ferroWorldAt', () => {
   });
 
   it('is anchored like the camera path — relative to the Work rest, not absolute Blender', () => {
-    // The first keyframe is Blender y 36.840 against the anchor marker's 29.74,
-    // so it sits 7.1 Blender units forward of the rest: 7.1 * 1.7 = 12.07.
-    const p = ferroWorldAt(0.479, ANCHOR, new THREE.Vector3());
+    // The first keyframe (f157) is Blender y 36.840 against the anchor marker's
+    // 29.74, so it sits 7.1 Blender units forward of the rest: 7.1 * 1.7 = 12.07.
+    const p = ferroWorldAt(frameToT(157), ANCHOR, new THREE.Vector3());
     expect(p.z).toBeCloseTo(ANCHOR.z - 12.07, 1);
   });
 

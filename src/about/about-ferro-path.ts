@@ -23,7 +23,7 @@ import { ABOUT_MARKERS } from './about-markers';
 const FIRST = ABOUT_MARKERS[0];
 const LAST = ABOUT_MARKERS[ABOUT_MARKERS.length - 1];
 /** Frames to `t`, the same mapping the camera path uses. */
-const frameToT = (f: number): number => (f - FIRST.frame) / (LAST.frame - FIRST.frame);
+export const frameToT = (f: number): number => (f - FIRST.frame) / (LAST.frame - FIRST.frame);
 
 interface Key { t: number; x: number; y: number; z: number }
 
@@ -51,19 +51,6 @@ const FERRO_VISIBLE_T = KEYS[1].t;
 export const FERRO_RADIUS = 0.29 * BLENDER_TO_WORLD;
 
 /**
- * Tolerance, in `t`, for snapping a query onto a measured keyframe.
- *
- * Callers derive `t` from `frame` via division (see frameToT), so a query
- * meant for an exact frame can land a few ten-thousandths short of that key's
- * `t` from float rounding. Inside a fast-moving segment that shortfall reads
- * as a real position error rather than the rounding noise it is — most
- * visibly at the start of a hold, where the segment just before it is not
- * flat. Snapping anything this close directly onto the key it's aimed at
- * fixes that without touching the measured values themselves.
- */
-const T_EPSILON = 1e-3;
-
-/**
  * Its world position at `t`, anchored the way the camera path is: offsets from
  * the anchor marker, so Blender's absolute placement is discarded.
  */
@@ -74,12 +61,7 @@ export function ferroWorldAt(t: number, anchor: THREE.Vector3, into?: THREE.Vect
   let a = KEYS[0];
   let b = KEYS[KEYS.length - 1];
   let local = 1;
-
-  const snapped = KEYS.find((k) => Math.abs(clamped - k.t) <= T_EPSILON);
-  if (snapped) {
-    a = b = snapped;
-    local = 0;
-  } else if (clamped <= KEYS[0].t) {
+  if (clamped <= KEYS[0].t) {
     a = b = KEYS[0];
     local = 0;
   } else {
