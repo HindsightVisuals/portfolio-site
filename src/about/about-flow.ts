@@ -46,7 +46,7 @@ export interface AboutFlowDeps {
    * and setScrollForTest below), so this is simply never read in that mode —
    * the canvas itself is hidden there instead (see enter/exit).
    */
-  background: { setInvert(on: boolean): void } | null;
+  background: { setInvertAmount(t: number): void } | null;
   setGround(css: string): void;
   /**
    * Writes `--ink` (body text; also read directly by several `.chrome`
@@ -127,11 +127,9 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     deps.setTextInk(palette.textInk);
     deps.atmosphere.setInk(palette.ink);
     deps.cursor?.setOnDark(palette.onDark);
-    // Known limitation, out of scope to fix here: setInvert is binary, so the
-    // WebGL ground snaps at the crossfade midpoint (palette.onDark's flip)
-    // rather than dimming continuously alongside the CSS --ground crossfade.
-    // Continuous dimming needs a new uniform in background.ts.
-    deps.background?.setInvert(palette.onDark);
+    // Continuous, not a flip: nightAmount ramps alongside the CSS --ground
+    // crossfade instead of snapping at its midpoint (palette.onDark's flip).
+    deps.background?.setInvertAmount(palette.nightAmount);
 
     applyBeat(beatAt(t, path));
   };
@@ -207,19 +205,19 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       lastBeat = null;
       t = 0;
       // Restored unconditionally, even though apply() (the only caller of
-      // setInvert/setInk/setOnDark) never runs under reduced motion —
+      // setInvertAmount/setInk/setOnDark) never runs under reduced motion —
       // background, atmosphere and the cursor are all SHARED, site-wide state
       // (every page renders through the same background layer/atmosphere,
       // and shares the one cursor), and paletteAt returns onDark: true at
       // BOTH t=0 and t=1. Leaving the corridor by any route except
       // mid-capabilities — nav click, arrow key, the contact emblem, or
-      // simply scrolling back to the top — would otherwise leave uInvert=1,
-      // the atmosphere ink pinned at NIGHT_INK, and the cursor stuck in its
-      // white-on-dark treatment on the pale world, for every other page until
-      // a reload (or, for the cursor, until the next mousemove — it used to
-      // self-heal via processHover's own setOnDark call, until the I1 fix
-      // made about-flow the sole owner of the cursor while open).
-      deps.background?.setInvert(false);
+      // simply scrolling back to the top — would otherwise leave uInvert
+      // nonzero, the atmosphere ink pinned at NIGHT_INK, and the cursor stuck
+      // in its white-on-dark treatment on the pale world, for every other
+      // page until a reload (or, for the cursor, until the next mousemove —
+      // it used to self-heal via processHover's own setOnDark call, until the
+      // I1 fix made about-flow the sole owner of the cursor while open).
+      deps.background?.setInvertAmount(0);
       deps.atmosphere.setInk(DAY_INK);
       deps.cursor?.setOnDark(false);
       if (deps.reducedMotion) return;

@@ -14,7 +14,7 @@ const makeDeps = (over: Partial<AboutFlowDeps> = {}): AboutFlowDeps => ({
   ferro: { placeAt: vi.fn().mockResolvedValue(undefined), show: vi.fn(), hide: vi.fn() },
   ferroEl: document.createElement('div'),
   cursor: { setOnDark: vi.fn() },
-  background: { setInvert: vi.fn() },
+  background: { setInvertAmount: vi.fn() },
   setGround: vi.fn(),
   setTextInk: vi.fn(),
   reducedMotion: false,
@@ -211,16 +211,40 @@ describe('initAboutFlow', () => {
   });
 
   // C3: the WebGL background is opaque (#bg-canvas has no alpha), so --ground
-  // is otherwise never seen. setInvert flips the unmasked field's ground dark
-  // in step with the palette's cursor.setOnDark, using the same onDark flag.
+  // is otherwise never seen. setInvertAmount dims the unmasked field's ground
+  // continuously, driven by the palette's nightAmount ramp.
   it('drives the WebGL background invert from the palette', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);
-    flow.enter(parent); // apply(0): t=0 is night — onDark true
-    expect(deps.background!.setInvert).toHaveBeenCalledWith(true);
-    (deps.background!.setInvert as ReturnType<typeof vi.fn>).mockClear();
+    flow.enter(parent); // apply(0): t=0 is full night — nightAmount 1
+    expect(deps.background!.setInvertAmount).toHaveBeenCalledWith(1);
+    (deps.background!.setInvertAmount as ReturnType<typeof vi.fn>).mockClear();
     flow.setScrollForTest(1);
-    expect(deps.background!.setInvert).toHaveBeenCalled();
+    expect(deps.background!.setInvertAmount).toHaveBeenCalled();
+    flow.destroy();
+  });
+
+  it('drives the ground continuously, not as a flip', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    const seen = new Set<number>();
+    for (let i = 0; i <= 20; i++) {
+      flow.setScrollForTest(i / 20);
+      seen.add((deps.background!.setInvertAmount as ReturnType<typeof vi.fn>).mock.lastCall![0]);
+    }
+    // A binary flip would only ever produce 0 and 1.
+    expect(seen.size).toBeGreaterThan(3);
+    flow.destroy();
+  });
+
+  it('restores the ground on exit', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.3);
+    flow.exit();
+    expect(deps.background!.setInvertAmount).toHaveBeenLastCalledWith(0);
     flow.destroy();
   });
 
@@ -253,9 +277,9 @@ describe('initAboutFlow', () => {
     const flow = initAboutFlow(deps);
     flow.enter(parent);
     flow.setScrollForTest(0.3); // well inside the night range (before clientWall's ramp)
-    expect(deps.background!.setInvert).toHaveBeenLastCalledWith(true);
+    expect(deps.background!.setInvertAmount).toHaveBeenLastCalledWith(1);
     flow.exit();
-    expect(deps.background!.setInvert).toHaveBeenLastCalledWith(false);
+    expect(deps.background!.setInvertAmount).toHaveBeenLastCalledWith(0);
     flow.destroy();
   });
 
@@ -305,7 +329,7 @@ describe('initAboutFlow', () => {
     flow.enter(parent);
     flow.setScrollForTest(0.3); // well inside the night range
     flow.exit();
-    expect(deps.background!.setInvert).toHaveBeenLastCalledWith(false);
+    expect(deps.background!.setInvertAmount).toHaveBeenLastCalledWith(0);
     expect(deps.atmosphere.setInk).toHaveBeenLastCalledWith(DAY_INK);
     expect(deps.cursor!.setOnDark).toHaveBeenLastCalledWith(false);
     expect(document.documentElement.style.getPropertyValue('--ground')).toBe('');
