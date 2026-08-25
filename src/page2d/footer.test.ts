@@ -29,4 +29,22 @@ describe('buildFooter', () => {
     // the case study and the end of the About corridor.
     expect(() => buildFooter({ onNav: vi.fn() })).not.toThrow();
   });
+
+  // Fix round (post-review): the prior version of this test only checked
+  // "doesn't throw" — nothing pinned the actual rendered text. Assert the
+  // meta strip omits the page-number segment entirely rather than rendering
+  // the literal string "PG undefined / 08", since the corridor (the only
+  // other caller this signature enables) will always mount this footer
+  // without a projectOrder.
+  it('omits the page-number segment from the meta strip when there is no project to name', () => {
+    const el = buildFooter({ onNav: vi.fn() });
+    const stripText = Array.from(el.querySelectorAll('.cs-fstrip span')).map((span) => span.textContent);
+    expect(stripText).toEqual(['© 2026 · A. TARR', 'END OF FILE', 'click anywhere to mute']);
+  });
+
+  it('includes the page-number segment when projectOrder is given, matching the case study exactly', () => {
+    const el = buildFooter({ onNav: vi.fn(), projectOrder: 3 });
+    const stripText = Array.from(el.querySelectorAll('.cs-fstrip span')).map((span) => span.textContent);
+    expect(stripText).toEqual(['© 2026 · A. TARR', 'END OF FILE  ·  PG 03 / 08', 'click anywhere to mute']);
+  });
 });

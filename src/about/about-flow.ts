@@ -77,7 +77,12 @@ export interface AboutFlow {
    * rest with the corridor unmounted.
    */
   pause(): void;
-  /** Give the wheel back to the corridor. Safe to call when never paused. */
+  /**
+   * Give the wheel back to the corridor, and re-assert the current beat's
+   * palette/cursor/ferro so whatever paused it (contact's own close-out to
+   * 'world') doesn't leave those in the wrong, light-world state. Safe to
+   * call when never paused.
+   */
   resume(): void;
   isOpen(): boolean;
   /** Test/debug seam: the current path parameter. */
@@ -166,7 +171,14 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   };
 
   const onResize = (): void => {
-    if (!open) return;
+    // Gated on paused too, same reasoning as onWheel below: this listener
+    // stays attached for the corridor's whole open lifetime (pause() only
+    // detaches 'scroll'), and it calls onScroll()/apply() directly — a plain
+    // function call, not routed through the removed 'scroll' listener — so
+    // without this guard a window resize while the contact modal covers a
+    // paused corridor would still recompute t from window.scrollY and move
+    // the hidden camera, exactly the hold this pair exists to prevent.
+    if (!open || paused) return;
     doc?.resize(window.innerHeight);
     if (!deps.reducedMotion) {
       onScroll();
@@ -243,7 +255,16 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   // it. There is no corridor to leave under reduced motion — the document IS
   // the experience, and the browser owns its scroll.
   const onWheel = (e: WheelEvent): void => {
-    if (!open || deps.reducedMotion) return;
+    // Gated on paused: this listener stays attached for the corridor's whole
+    // open lifetime (pause() only detaches 'scroll'), and wheel events bubble
+    // to window from inside the contact takeover too (it doesn't stop
+    // propagation). Without this guard, scrolling backward inside the modal
+    // while the corridor sits at t near 0 would call exit() BEHIND the modal
+    // — clearing open/paused and releasing the director — and resume() would
+    // then no-op on close, landing the user in 'world' instead of back in
+    // the corridor. Exactly the bug this task exists to fix, reintroduced via
+    // the one listener pause() doesn't touch.
+    if (!open || paused || deps.reducedMotion) return;
     if (shouldLeaveCorridor({ open, t, deltaPx: normalizeWheelDelta(e.deltaY, e.deltaMode) })) exit();
   };
 
@@ -309,6 +330,24 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       paused = false;
       window.addEventListener('scroll', onScroll, { passive: true });
       deps.scrollNav?.setMode('about');
+      // Reduced motion has no camera/palette/ferro beats to restore (apply()
+      // is never called on this path — see enter()'s reduced-motion branch),
+      // so there is nothing to re-assert here either.
+      if (deps.reducedMotion) return;
+      // Whatever paused the corridor (the contact takeover) unconditionally
+      // resets shared, site-wide state on its own way back to 'world' —
+      // cursor?.setOnDark(false), ferro?.hide() — since every OTHER close of
+      // that takeover really does return to the plain light world. A resumed
+      // corridor is not that: re-apply the current beat's palette, cursor and
+      // ferro placement so a dark beat's cursor/ferro don't sit wrong until
+      // the next genuine beat change. Idempotent for the camera — apply(t)
+      // re-samples the same `t` pause() never touched, so position/quaternion
+      // don't move. lastBeat is cleared first because applyBeat() otherwise
+      // early-returns on "beat === lastBeat" and skips the ferro placeAt/
+      // behind-class work entirely when the beat hasn't actually changed.
+      deps.ferro?.show();
+      lastBeat = null;
+      apply(t);
     },
     isOpen: () => open,
     t: () => t,

@@ -243,10 +243,6 @@ if (lab === 'ferro') {
         // see the scroll handler below, which owns the pause from then on.
         if (mode === 'world') stage.setPaused(false);
         if (mode === 'world') {
-          // Give the wheel back to a paused corridor — a no-op when the
-          // corridor was never paused (every takeover close routes through
-          // here, not just contact's).
-          aboutFlow.resume();
           // Back to the light world; the wall hover takes over from here.
           cursor?.setOnDark(false);
           activeRevealCleanup?.();
@@ -263,6 +259,15 @@ if (lab === 'ferro') {
           activeBehind = null;
           activeEmblem?.destroy();
           activeEmblem = null;
+          // Give the wheel back to a paused corridor — a no-op when the
+          // corridor was never paused (every takeover close routes through
+          // here, not just contact's). LAST: resume() re-applies the current
+          // beat's palette/cursor/ferro, and it must win over the light-world
+          // defaults just set above (cursor?.setOnDark(false), ferro?.hide()
+          // near the top of this callback) rather than being stomped by them
+          // — otherwise resuming mid-corridor from a dark beat would strand
+          // the cursor light and the ferro hidden until the next beat change.
+          aboutFlow.resume();
         }
       },
     });

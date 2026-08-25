@@ -506,4 +506,87 @@ describe('initAboutFlow', () => {
     expect(flow.isOpen()).toBe(false);
     flow.destroy();
   });
+
+  // Fix round (post-review): pause() only ever detached the 'scroll' listener.
+  // 'wheel' stays attached for the corridor's whole open lifetime, and wheel
+  // events bubble to window from inside the contact takeover too (it never
+  // calls stopPropagation) — so scrolling backward inside the modal while the
+  // corridor sits at t=0 used to call exit() BEHIND the modal, reintroducing
+  // the exact bug this task exists to fix (resume() would then no-op on
+  // close, since open/paused were already cleared by that stray exit()).
+  it('pause blocks a backward wheel scroll from leaving the corridor behind the modal', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent); // t = 0 — exactly the position shouldLeaveCorridor requires
+    const z = deps.camera.position.z;
+    flow.pause();
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
+    expect(flow.isOpen()).toBe(true);
+    expect(flow.t()).toBe(0);
+    expect(deps.camera.position.z).toBeCloseTo(z, 6);
+    expect(deps.director.setSuspended).not.toHaveBeenLastCalledWith(false);
+    flow.destroy();
+  });
+
+  // Fix round (post-review): 'resize' also stays attached for the whole open
+  // lifetime, and onResize() calls onScroll()/apply() as a plain function
+  // call — not routed through the removed 'scroll' listener — so a window
+  // resize while paused used to recompute t from window.scrollY and move the
+  // hidden camera regardless.
+  it('pause blocks a window resize from recomputing t and moving the camera', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.42);
+    const z = deps.camera.position.z;
+    flow.pause();
+
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    const originalScrollY = Object.getOwnPropertyDescriptor(window, 'scrollY')!;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 900 });
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 550 });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 2000 });
+    try {
+      window.dispatchEvent(new Event('resize'));
+      expect(flow.t()).toBeCloseTo(0.42, 6);
+      expect(deps.camera.position.z).toBeCloseTo(z, 6);
+    } finally {
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+      Object.defineProperty(window, 'scrollY', originalScrollY);
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+    }
+    flow.destroy();
+  });
+
+  // Fix round (post-review): resume() must re-assert the current beat's
+  // palette/cursor/ferro, not just hand the wheel back — whatever paused the
+  // corridor (the contact takeover) unconditionally resets that shared state
+  // on its own way back to 'world' (cursor?.setOnDark(false), ferro?.hide()),
+  // since every OTHER close of that takeover really does return to the plain
+  // light world. Without this, resuming from a dark beat left the cursor
+  // light and the ferro hidden until the next genuine beat change (applyBeat
+  // early-returns on beat === lastBeat, so scrolling within the same beat
+  // doesn't fix it either).
+  it('resume re-asserts the current beat, undoing a light-world reset made while paused', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.3); // well inside the night range — cursor on dark
+    flow.pause();
+    // What the takeover's unconditional close-out to 'world' does before
+    // resume() is called (main.ts's onModeChange) — exactly the state
+    // resume() must override, not merely leave alone.
+    deps.cursor!.setOnDark(false);
+    deps.ferro!.hide();
+    (deps.cursor!.setOnDark as ReturnType<typeof vi.fn>).mockClear();
+    (deps.ferro!.show as ReturnType<typeof vi.fn>).mockClear();
+    const placeAtCallsBefore = (deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    flow.resume();
+
+    expect(deps.cursor!.setOnDark).toHaveBeenLastCalledWith(true);
+    expect(deps.ferro!.show).toHaveBeenCalled();
+    expect((deps.ferro!.placeAt as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(placeAtCallsBefore);
+    flow.destroy();
+  });
 });
