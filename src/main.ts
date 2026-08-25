@@ -52,6 +52,7 @@ import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
 import { initAboutFlow } from './about/about-flow';
+import { corridorTForRoute } from './about/about-scrub';
 import { shouldEnterCorridor } from './about/about-handover';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
@@ -190,7 +191,18 @@ if (lab === 'ferro') {
         director.setPointer((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
       });
     }
-    const router = initRouter(director, { reducedMotion });
+    // onCorridorRoute closes over `enterCorridor` and `router`, both defined
+    // further down in this same function — safe because this callback is
+    // never actually invoked until a real popstate or router.navigate() call
+    // happens, long after initSite() has finished running top to bottom
+    // (router.ts's own boot navigation deliberately excludes 'about'/
+    // 'contact' from the call that could reach this during construction —
+    // see its comment). Same forward-reference pattern already used below
+    // for `aboutFlow` inside the scrollNav callback.
+    const router = initRouter(director, {
+      reducedMotion,
+      onCorridorRoute: (dest) => enterCorridor(dest),
+    });
 
     // Leaving the corridor on a backward scroll at its very top is handled
     // inside about-flow.ts itself (its own 'wheel' listener, added in
@@ -574,28 +586,46 @@ if (lab === 'ferro') {
       if (director.isFocused() && slug === slugForPath(location.pathname)) void openCaseStudy(slug);
       else navToProject(slug);
     };
-    // The contact SUMMON is gone with the RD mark. Contact is a real routed
-    // page now, entered through the beat 2-4 transition, so the ordering bug
-    // that forced the summon to leave the URL alone no longer applies: the
-    // route is pushed at the START of the transition rather than by onArrive
-    // ~2s later, which is what used to land /contact on top of the takeover's
-    // own history marker and kill the back button. See
+    // The contact SUMMON is gone with the RD mark. The contact TAKEOVER page
+    // (openContact() above, the full form) is a real routed page, entered
+    // through the nav emblem's wipe transition (activateContactWipe, below):
+    // the route is pushed at the START of the transition rather than by
+    // onArrive ~2s later, which is what used to land /contact on top of the
+    // takeover's own history marker and kill the back button. See
     // docs/superpowers/specs/2026-08-21-contact-flow-architecture.md §7.
     //
-    // Until Plan 3 builds the nav emblem that triggers that transition, /contact
-    // is entered by the router flying the camera to the contact screen and
-    // opening the page on arrival (see the director.onArrive handler below) —
-    // openContact() above is that page. Contact as a place in the world is
-    // otherwise untouched: the footer, the nav and a /contact deep link all
-    // still fly the camera to its screen, so the scroll loop still closes.
+    // A plain /contact route — the nav, the footer, or a deep link, anything
+    // that ISN'T the emblem wipe — no longer opens that takeover at all: it
+    // is a corridor position now (enterCorridor below), same as /about. The
+    // director.onArrive('contact' -> openContact()) handler further down is
+    // accordingly dead: 'contact' can no longer be an id the director itself
+    // arrives at (DESTINATIONS dropped it), so that branch never runs. Left
+    // in place rather than widening this task's diff to remove it.
 
-    const activateAbout = (): void => {
+    /**
+     * The pair every About/Contact entry point performs: park the camera on
+     * the Work rest — the corridor's own t = 0 — and hand off to the scroll
+     * corridor at the route's beat. Written once, reused everywhere: this is
+     * also the router's onCorridorRoute target (wired above), so a popstate
+     * or a router.navigate('about'|'contact') lands here too.
+     *
+     * router.ignoreNextArrival() must be armed immediately before jumpTo, not
+     * speculatively earlier — jumpTo('work') fires the director's arrive
+     * callbacks SYNCHRONOUSLY, and one of them is the router's own URL sync,
+     * which would otherwise see "arrived at work" and rewrite whatever route
+     * (/about or /contact) got the user here back to /work.
+     */
+    const enterCorridor = (dest: 'about' | 'contact'): void => {
       if (takeover.isOpen() || aboutFlow.isOpen()) return;
-      // No flight and no arrival — About is not a destination any more. Put the
-      // camera on the Work rest and hand straight to the corridor.
+      router.ignoreNextArrival();
       director.jumpTo('work');
-      aboutFlow.enter(document.body);
+      aboutFlow.enter(document.body, corridorTForRoute(aboutFlow.path(), dest));
     };
+    // About's own entry points (nav link, canvas tile, the keyboard screen
+    // proxy) all go through the router so the URL updates too — router.navigate
+    // now handles 'about' (and 'contact') correctly instead of the broken
+    // flyTo lookup this used to reach.
+    const activateAbout = (): void => router.navigate('about');
 
     // nav2d notch: close the live-canvas window once the takeover body scrolls
     // past the threshold, reopen it at the top. Capture phase because scroll
@@ -716,16 +746,15 @@ if (lab === 'ferro') {
     // wordmark's home button is picked up by the same wiring. .chrome stays
     // fixed above the corridor throughout, so the nav "About" link and the
     // "learn more" margin button (data-nav="about") are both clickable while
-    // the corridor is already open — router.navigate('about') is a now-broken
-    // destination lookup besides, so 'about' routes through activateAbout()
-    // instead, which no-ops while already open.
+    // the corridor is already open — router.navigate('about') now routes
+    // through enterCorridor (via onCorridorRoute), which no-ops while already
+    // open, same as the rest of this handler's dests going through go().
     for (const el of document.querySelectorAll<HTMLElement>('.chrome [data-nav]')) {
       el.addEventListener('click', (e) => {
         e.preventDefault();
         if (takeover.isOpen()) return; // a takeover covers the chrome; its own navbar handles nav
         const dest = el.dataset.nav as DestId;
-        if (dest === 'about') activateAbout();
-        else router.navigate(dest);
+        router.navigate(dest);
       });
     }
 
@@ -865,23 +894,19 @@ if (lab === 'ferro') {
 
     const bootDest = destForPath(location.pathname) ?? 'home';
 
-    // Reduced motion CUTS instead of flying: initRouter's boot navigation calls
-    // director.jumpTo(), which emits arrive synchronously — before the
-    // /contact onArrive handler above was registered. A /contact deep link
-    // would therefore never open its page for reduced-motion users. Normal
-    // motion is unaffected: the ~2s flight lands long after registration, and
-    // the page must wait for it rather than opening instantly, which is why
-    // this is gated.
-    if (reducedMotion && bootDest === 'contact' && !takeover.isOpen()) void openContact();
-
-    // /about deep link: About is not a destination on the spine any more —
-    // router.ts's own boot navigation for 'about' is a now-broken lookup
-    // (out of scope here; see the plan). Put the camera on the Work rest and
-    // hand straight to the corridor, same as activateAbout() — no flight, no
-    // arrival, no visible fly-in on a deep link.
-    if (bootDest === 'about' && !takeover.isOpen()) {
-      director.jumpTo('work');
-      aboutFlow.enter(document.body);
+    // /about and /contact deep links: neither is a destination on the spine
+    // any more — router.ts's own boot navigation deliberately skips both (it
+    // runs during initRouter(), before aboutFlow exists below). Route them
+    // through the router now that it does: router.navigate() is a no-op push
+    // (the URL is already right — it's how bootDest got this value) that
+    // hands straight to enterCorridor via onCorridorRoute. No flight, no
+    // arrival, no visible fly-in on a deep link. This also supersedes the
+    // old reduced-motion-only `/contact` special case that used to open the
+    // contact TAKEOVER page here — /contact is a corridor position for a
+    // plain route now, same as /about; the takeover page is reached only
+    // through the nav emblem's wipe (activateContactWipe), untouched by this.
+    if ((bootDest === 'about' || bootDest === 'contact') && !takeover.isOpen()) {
+      router.navigate(bootDest);
     }
 
     // intro is a single-shot writer racing bindHomeVisibility; kill it the moment

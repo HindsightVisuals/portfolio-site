@@ -71,6 +71,8 @@ export interface AboutFlow {
   isOpen(): boolean;
   /** Test/debug seam: the current path parameter. */
   t(): number;
+  /** The corridor's camera path — routing needs it to resolve a beat to a t. */
+  path(): AboutPath;
   /**
    * Drive the scrub directly, bypassing the DOM.
    *
@@ -275,6 +277,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     exit,
     isOpen: () => open,
     t: () => t,
+    path: () => path,
     setScrollForTest(next: number): void {
       if (!open || deps.reducedMotion) return;
       apply(Math.min(1, Math.max(0, next)));

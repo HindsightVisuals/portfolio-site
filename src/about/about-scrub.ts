@@ -55,3 +55,14 @@ export function beatProgress(t: number, path: AboutPath): number {
   const b = path.tForBeat(ABOUT_MARKERS[i + 1].id);
   return b > a ? Math.min(1, Math.max(0, (t - a) / (b - a))) : 0;
 }
+
+/**
+ * Where a route lands inside the corridor.
+ *
+ * About and Contact stopped being destinations the camera flies to; they are
+ * scroll positions in one continuous page. Contact is reachable two ways — here
+ * as a place in the flow, and as a modal over anything via the nav emblem.
+ */
+export function corridorTForRoute(path: AboutPath, dest: 'about' | 'contact'): number {
+  return dest === 'contact' ? path.tForBeat('contact') : 0;
+}

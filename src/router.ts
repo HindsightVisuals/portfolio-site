@@ -2,13 +2,36 @@ import type { CameraDirector } from './three/camera-director';
 import { destForPath, pathForDest, pathForSlug, slugForPath, type DestId } from './routes';
 import { tileFocusTarget } from './three/world';
 
+export interface InitRouterOpts {
+  reducedMotion: boolean;
+  /**
+   * About and Contact are corridor scroll positions now, not destinations the
+   * camera flies to — DESTINATIONS no longer lists them, so flyTo would reject
+   * and jumpTo would silently no-op. Called instead of touching the director,
+   * so whoever owns that corridor can jump the camera to its own anchor and
+   * scrub to the right place itself. This router never needs to know what a
+   * corridor is — only that these two ids are somebody else's to handle.
+   */
+  onCorridorRoute?(dest: 'about' | 'contact'): void;
+}
+
 export interface Router {
   navigate(id: DestId): void;
   navigateToProject(slug: string, opts?: { abbreviated?: boolean }): Promise<void>;
+  /**
+   * One-shot: skip this router's own URL sync for the very next arrival the
+   * director reports. For a caller that is about to move the camera onto a
+   * REST this router tracks (e.g. anchoring on Work to hand off to a corridor
+   * that owns a different route) for a reason that has nothing to do with
+   * actually being on that page — the caller owns the URL for that case and
+   * has already set it correctly, so the router's own "sync the URL to
+   * wherever the camera just arrived" reaction must not run this once.
+   */
+  ignoreNextArrival(): void;
   destroy(): void;
 }
 
-export function initRouter(director: CameraDirector, opts: { reducedMotion: boolean }): Router {
+export function initRouter(director: CameraDirector, opts: InitRouterOpts): Router {
   // The pathname the router last knew about (from a push it made, or a
   // popstate it acted on). A popstate landing on the SAME pathname has
   // nothing for us to react to — notably, the takeover controller
@@ -19,7 +42,24 @@ export function initRouter(director: CameraDirector, opts: { reducedMotion: bool
   // pointless flight back to a tile the camera never left.
   let currentPath = window.location.pathname;
 
+  // Armed by ignoreNextArrival(); consumed by the very next onArrive fire.
+  let ignoreArrival = false;
+
   const go = (id: DestId, abbreviated: boolean): void => {
+    if (id === 'about' || id === 'contact') {
+      // Not a flight: the URL is the one piece of this that IS ours to keep
+      // current (onCorridorRoute's caller owns everything else). Push only if
+      // it isn't already right — a deep link or a popstate landing here has
+      // the browser's own URL already correct, and pushing again would add a
+      // redundant history entry.
+      const path = pathForDest(id);
+      if (destForPath(window.location.pathname) !== id) {
+        window.history.pushState({ dest: id }, '', path);
+      }
+      currentPath = path;
+      opts.onCorridorRoute?.(id);
+      return;
+    }
     if (opts.reducedMotion) director.jumpTo(id);
     else void director.flyTo(id, { abbreviated });
   };
@@ -51,6 +91,10 @@ export function initRouter(director: CameraDirector, opts: { reducedMotion: bool
   // focused-and-framed" from "arrived at work via defocus-settle" needs more
   // state than this router tracks today.
   const offArrive = director.onArrive((id) => {
+    if (ignoreArrival) {
+      ignoreArrival = false;
+      return;
+    }
     const path = pathForDest(id);
     if (destForPath(window.location.pathname) !== id) {
       window.history.pushState({ dest: id }, '', path);
@@ -80,12 +124,22 @@ export function initRouter(director: CameraDirector, opts: { reducedMotion: bool
     void goToProject(bootSlug, true);
   } else {
     const initial = destForPath(window.location.pathname);
-    if (initial && initial !== 'home') go(initial, true);
+    // 'about'/'contact' are deliberately excluded here even though go()
+    // itself now knows how to hand them to onCorridorRoute: that callback is
+    // wired to code (the corridor) that is constructed later than this
+    // router is, elsewhere in boot. Calling it from here, synchronously
+    // during construction, would reach through to state that doesn't exist
+    // yet. The corridor's own boot path calls router.navigate() once it's
+    // ready instead, well after this constructor returns — see main.ts.
+    if (initial && initial !== 'home' && initial !== 'about' && initial !== 'contact') go(initial, true);
   }
 
   return {
     navigate(id: DestId): void {
       go(id, false);
+    },
+    ignoreNextArrival(): void {
+      ignoreArrival = true;
     },
     navigateToProject(slug: string, navOpts?: { abbreviated?: boolean }): Promise<void> {
       const path = pathForSlug(slug);
