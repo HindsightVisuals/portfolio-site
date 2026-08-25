@@ -6,6 +6,8 @@ import { buildAboutPath, type AboutPath, type CameraPose } from './about-path';
 import { paletteAt, DAY_INK } from './about-palette';
 import { beatAt, scrollToT } from './about-scrub';
 import type { BeatId } from './about-markers';
+import { shouldLeaveCorridor } from './about-handover';
+import { normalizeWheelDelta } from '../home/wheel';
 
 /**
  * The About corridor's controller — the only stateful module in src/about/.
@@ -158,6 +160,78 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     }
   };
 
+  // Named top-level (not an object-literal method) so onWheel below — also
+  // top-level, needing no `this` — can call it directly.
+  const exit = (): void => {
+    if (!open) return;
+    open = false;
+    document.documentElement.classList.remove(ABOUT_OPEN_CLASS);
+    // Cleared, not merely left to go stale: the --ground/--ink-scoped rules
+    // only apply while about-open is set, so this is belt-and-braces — but
+    // a lingering inline value would otherwise be the first thing painted
+    // (briefly, pre-apply(0)) the NEXT time the corridor opens.
+    document.documentElement.style.removeProperty('--ground');
+    document.documentElement.style.removeProperty('--ink');
+    bgCanvas()?.classList.remove('about-canvas-hidden');
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('wheel', onWheel);
+    doc?.destroy();
+    doc = null;
+    lastBeat = null;
+    t = 0;
+    // Restored unconditionally, even though apply() (the only caller of
+    // setInvertAmount/setInk/setOnDark) never runs under reduced motion —
+    // background, atmosphere and the cursor are all SHARED, site-wide state
+    // (every page renders through the same background layer/atmosphere,
+    // and shares the one cursor), and paletteAt returns onDark: true at
+    // BOTH t=0 and t=1. Leaving the corridor by any route except
+    // mid-capabilities — nav click, arrow key, the contact emblem, or
+    // simply scrolling back to the top — would otherwise leave uInvert
+    // nonzero, the atmosphere ink pinned at NIGHT_INK, and the cursor stuck
+    // in its white-on-dark treatment on the pale world, for every other
+    // page until a reload (or, for the cursor, until the next mousemove —
+    // it used to self-heal via processHover's own setOnDark call, until the
+    // I1 fix made about-flow the sole owner of the cursor while open).
+    deps.background?.setInvertAmount(0);
+    deps.atmosphere.setInk(DAY_INK);
+    deps.cursor?.setOnDark(false);
+    if (deps.reducedMotion) return;
+    deps.ferro?.hide();
+    deps.ferroEl?.classList.remove('ferro-stage--behind');
+    deps.scrollNav?.setMode('world');
+    deps.world.setAboutMode(false);
+    // Cut the camera back to the About rest before handing it back.
+    // Nothing else in this codebase ever writes camera.quaternion —
+    // camera-director.ts only ever writes position — so once the corridor
+    // pitches the camera to look upward, nothing else will ever level it
+    // again unless this does. The director also resumes from its own
+    // remembered state.z (this same anchorRest), while the camera has
+    // travelled along the whole path; resetting position here keeps the
+    // director's remembered state consistent with where the camera actually
+    // is. This is a cut, matching the hard transition a closing 2D takeover
+    // already performs.
+    deps.camera.position.set(0, 0, anchorRest);
+    deps.camera.quaternion.identity();
+    // Released LAST: the director resumes writing the camera from here, and
+    // it must not do so while the world is still in About mode.
+    deps.director.setSuspended(false);
+  };
+
+  // Backward scroll at the very top of the corridor hands the camera back —
+  // needed as its own listener because scrollNav (main.ts) is put into
+  // 'about' mode on enter() below and deliberately feeds the director
+  // nothing. Gated on reducedMotion directly: under reduced motion `t` never
+  // leaves 0 (apply() never runs there — see onScroll above), so without this
+  // gate shouldLeaveCorridor would see t: 0 on every visit and any backward
+  // scroll would unmount the document out from under someone simply reading
+  // it. There is no corridor to leave under reduced motion — the document IS
+  // the experience, and the browser owns its scroll.
+  const onWheel = (e: WheelEvent): void => {
+    if (!open || deps.reducedMotion) return;
+    if (shouldLeaveCorridor({ open, t, deltaPx: normalizeWheelDelta(e.deltaY, e.deltaMode) })) exit();
+  };
+
   return {
     enter(parent: HTMLElement, startT = 0): void {
       if (open) return;
@@ -169,6 +243,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       doc = mountAboutDocument(parent, path, window.innerHeight);
       window.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('resize', onResize);
+      window.addEventListener('wheel', onWheel, { passive: true });
 
       if (deps.reducedMotion) {
         // No camera, no WebGL beats — the document is the whole experience.
@@ -197,61 +272,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       }
     },
 
-    exit(): void {
-      if (!open) return;
-      open = false;
-      document.documentElement.classList.remove(ABOUT_OPEN_CLASS);
-      // Cleared, not merely left to go stale: the --ground/--ink-scoped rules
-      // only apply while about-open is set, so this is belt-and-braces — but
-      // a lingering inline value would otherwise be the first thing painted
-      // (briefly, pre-apply(0)) the NEXT time the corridor opens.
-      document.documentElement.style.removeProperty('--ground');
-      document.documentElement.style.removeProperty('--ink');
-      bgCanvas()?.classList.remove('about-canvas-hidden');
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onResize);
-      doc?.destroy();
-      doc = null;
-      lastBeat = null;
-      t = 0;
-      // Restored unconditionally, even though apply() (the only caller of
-      // setInvertAmount/setInk/setOnDark) never runs under reduced motion —
-      // background, atmosphere and the cursor are all SHARED, site-wide state
-      // (every page renders through the same background layer/atmosphere,
-      // and shares the one cursor), and paletteAt returns onDark: true at
-      // BOTH t=0 and t=1. Leaving the corridor by any route except
-      // mid-capabilities — nav click, arrow key, the contact emblem, or
-      // simply scrolling back to the top — would otherwise leave uInvert
-      // nonzero, the atmosphere ink pinned at NIGHT_INK, and the cursor stuck
-      // in its white-on-dark treatment on the pale world, for every other
-      // page until a reload (or, for the cursor, until the next mousemove —
-      // it used to self-heal via processHover's own setOnDark call, until the
-      // I1 fix made about-flow the sole owner of the cursor while open).
-      deps.background?.setInvertAmount(0);
-      deps.atmosphere.setInk(DAY_INK);
-      deps.cursor?.setOnDark(false);
-      if (deps.reducedMotion) return;
-      deps.ferro?.hide();
-      deps.ferroEl?.classList.remove('ferro-stage--behind');
-      deps.scrollNav?.setMode('world');
-      deps.world.setAboutMode(false);
-      // Cut the camera back to the About rest before handing it back.
-      // Nothing else in this codebase ever writes camera.quaternion —
-      // camera-director.ts only ever writes position — so once the corridor
-      // pitches the camera to look upward, nothing else will ever level it
-      // again unless this does. The director also resumes from its own
-      // remembered state.z (this same anchorRest), while the camera has
-      // travelled along the whole path; resetting position here keeps the
-      // director's remembered state consistent with where the camera actually
-      // is. This is a cut, matching the hard transition a closing 2D takeover
-      // already performs.
-      deps.camera.position.set(0, 0, anchorRest);
-      deps.camera.quaternion.identity();
-      // Released LAST: the director resumes writing the camera from here, and
-      // it must not do so while the world is still in About mode.
-      deps.director.setSuspended(false);
-    },
-
+    exit,
     isOpen: () => open,
     t: () => t,
     setScrollForTest(next: number): void {
@@ -259,7 +280,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       apply(Math.min(1, Math.max(0, next)));
     },
     destroy(): void {
-      if (open) this.exit();
+      if (open) exit();
     },
   };
 }

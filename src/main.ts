@@ -52,8 +52,7 @@ import { isDarkTile } from './work/tiles';
 import { initHoverPanel } from './work/hover-panel';
 import { initWorkHover } from './work/work-hover';
 import { initAboutFlow } from './about/about-flow';
-import { shouldEnterCorridor, shouldLeaveCorridor } from './about/about-handover';
-import { normalizeWheelDelta } from './home/wheel';
+import { shouldEnterCorridor } from './about/about-handover';
 
 // Module-level input mode tracking; Task 12's takeover controller will update
 // inputMode and call scrollNav.setMode() — keep both names greppable for future refactors.
@@ -193,18 +192,16 @@ if (lab === 'ferro') {
     }
     const router = initRouter(director, { reducedMotion });
 
-    // Backward scroll at the very top of the corridor hands the camera back.
-    // Needed as its own listener because scrollNav is in 'about' mode by then
-    // and deliberately feeds the director nothing.
-    window.addEventListener('wheel', (e) => {
-      if (shouldLeaveCorridor({
-        open: aboutFlow.isOpen(),
-        t: aboutFlow.t(),
-        deltaPx: normalizeWheelDelta(e.deltaY, e.deltaMode),
-      })) {
-        aboutFlow.exit();
-      }
-    }, { passive: true });
+    // Leaving the corridor on a backward scroll at its very top is handled
+    // inside about-flow.ts itself (its own 'wheel' listener, added in
+    // enter()/removed in exit()) — not here. It used to be a second,
+    // always-on listener in this file, but that ran even under reduced
+    // motion, where the closure `t` about-flow.ts tracks internally never
+    // leaves 0 (apply() never runs there) — so shouldLeaveCorridor saw
+    // t: 0 on every visit and any backward scroll unmounted the document a
+    // reduced-motion visitor was simply reading. about-flow.ts already knows
+    // its own reducedMotion flag directly, so it is the one place that can
+    // gate this correctly.
 
     // --- 2D takeover wiring (Task 12): the DOM side of the signature journey ---
     const workRest = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ;

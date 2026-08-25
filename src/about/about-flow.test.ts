@@ -280,6 +280,23 @@ describe('initAboutFlow', () => {
     flow.destroy();
   });
 
+  // Bug found in review: under reduced motion apply() never runs, so the
+  // closure `t` about-flow.ts tracks internally stays 0 for the whole visit.
+  // An unguarded backward-scroll listener would see shouldLeaveCorridor's
+  // {open: true, t: 0, ...} on every wheel tick and unmount the document out
+  // from under someone simply reading it. There is no corridor to leave under
+  // reduced motion — the document IS the experience, and the browser owns its
+  // scroll — so the listener must gate on reducedMotion directly.
+  it('a reduced-motion corridor survives a backward scroll', () => {
+    const deps = makeDeps({ reducedMotion: true });
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: -120 }));
+    expect(flow.isOpen()).toBe(true);
+    expect(parent.querySelector('main.about-doc')).not.toBeNull();
+    flow.destroy();
+  });
+
   // Round 2 (post-review): background.setInvert and atmosphere.setInk are
   // SHARED, site-wide state — every page renders through the same background
   // layer and atmosphere — but apply() drives both to their night values and
