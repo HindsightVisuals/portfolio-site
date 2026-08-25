@@ -668,6 +668,18 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       if (!open || paused) return;
       paused = true;
       window.removeEventListener('scroll', onScroll);
+      // Give the blob's stacking back. On the beats where it must not cross the
+      // corridor's type, applyBeat parks it at z-index 0 — BELOW the takeover's
+      // 20 — so a contact modal opened from one of those beats covered it
+      // entirely. Adam, on the first QA pass: "I was on the start a project
+      // beat, and when I hit the contact form, the ferro was gone." The contact
+      // beat is one of the three behind-beats, along with clientWall and
+      // capabilities.
+      //
+      // While something else covers the corridor, the corridor does not own
+      // where the blob sits. resume() restores it: it clears lastBeat and
+      // re-applies, which re-runs this same toggle from the current beat.
+      deps.ferroEl?.classList.remove('ferro-stage--behind');
     },
 
     resume(): void {

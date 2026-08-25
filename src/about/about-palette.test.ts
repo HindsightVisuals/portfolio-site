@@ -17,9 +17,30 @@ const ANCHOR_Z = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ; // -26
 const path = buildAboutPath(new THREE.Vector3(0, 0, ANCHOR_Z));
 
 describe('paletteAt', () => {
-  it('is night at the start of the corridor', () => {
-    expect(paletteAt(0, path).ground).toBe(NIGHT_GROUND);
-    expect(paletteAt(0, path).onDark).toBe(true);
+  // t = 0 is the WORK REST — the camera is still standing in the lit world, so
+  // the corridor's mouth is DAY and dims to night by the transition beat.
+  // Returning night here made entering the corridor a white-to-black step.
+  it('is day at the corridor mouth — the camera is still in the lit world', () => {
+    expect(paletteAt(0, path).ground).toBe(DAY_GROUND);
+    expect(paletteAt(0, path).onDark).toBe(false);
+  });
+
+  it('has reached night by the transition beat', () => {
+    const p = paletteAt(path.tForBeat('transition'), path);
+    expect(p.ground).toBe(NIGHT_GROUND);
+    expect(p.onDark).toBe(true);
+  });
+
+  it('darkens monotonically across the run-up, with no step at the mouth', () => {
+    const trans = path.tForBeat('transition');
+    let prev = -Infinity;
+    for (let i = 0; i <= 40; i++) {
+      const night = paletteAt((trans * i) / 40, path).nightAmount;
+      expect(night).toBeGreaterThanOrEqual(prev - 1e-9);
+      prev = night;
+    }
+    // The whole point of the ramp: nothing to step over at the very first sample.
+    expect(paletteAt(0, path).nightAmount).toBeCloseTo(0, 6);
   });
 
   it('is day at the capabilities beat', () => {
@@ -45,14 +66,14 @@ describe('paletteAt', () => {
   });
 
   it('moves ink with the ground so atmosphere stays legible on both', () => {
-    expect(paletteAt(0, path).ink).toBeCloseTo(NIGHT_INK, 6);
+    expect(paletteAt(path.tForBeat('transition'), path).ink).toBeCloseTo(NIGHT_INK, 6);
     expect(paletteAt(path.tForBeat('capabilities'), path).ink).toBeCloseTo(DAY_INK, 6);
   });
 
   // C2: text on the night ground was going near-invisible — .about-beat-heading
   // and .chrome both read var(--ink), which nothing was driving.
   it('moves textInk with the ground — pale at night, the site default by day', () => {
-    expect(paletteAt(0, path).textInk).toBe(NIGHT_TEXT_INK);
+    expect(paletteAt(path.tForBeat('transition'), path).textInk).toBe(NIGHT_TEXT_INK);
     expect(paletteAt(path.tForBeat('capabilities'), path).textInk).toBe(DAY_TEXT_INK);
   });
 
@@ -77,7 +98,7 @@ describe('paletteAt', () => {
 
 describe('nightAmount', () => {
   it('is 1 at both ends of the corridor and 0 at capabilities', () => {
-    expect(paletteAt(0, path).nightAmount).toBeCloseTo(1, 6);
+    expect(paletteAt(path.tForBeat('transition'), path).nightAmount).toBeCloseTo(1, 6);
     expect(paletteAt(1, path).nightAmount).toBeCloseTo(1, 6);
     expect(paletteAt(path.tForBeat('capabilities'), path).nightAmount).toBeCloseTo(0, 6);
   });

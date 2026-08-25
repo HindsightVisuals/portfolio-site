@@ -293,8 +293,10 @@ describe('initAboutFlow', () => {
   it('drives the WebGL background invert from the palette', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);
-    flow.enter(parent); // apply(0): t=0 is full night — nightAmount 1
-    expect(deps.background!.setInvertAmount).toHaveBeenCalledWith(1);
+    // apply(0): t=0 is the Work rest, still the LIT world — nightAmount 0. The
+    // corridor dims to night across the run-up rather than stepping into it.
+    flow.enter(parent);
+    expect(deps.background!.setInvertAmount).toHaveBeenCalledWith(0);
     (deps.background!.setInvertAmount as ReturnType<typeof vi.fn>).mockClear();
     flow.setScrollForTest(1);
     expect(deps.background!.setInvertAmount).toHaveBeenCalled();
@@ -956,6 +958,48 @@ describe('initAboutFlow', () => {
     expect(deps.director.syncTo).not.toHaveBeenCalled();
     expect(deps.world.setAboutMode).not.toHaveBeenCalled();
     expect(document.documentElement.classList.contains('about-open')).toBe(false);
+    flow.destroy();
+  });
+});
+
+// Adam, first QA pass: "I was on the start a project beat, and when I hit the
+// contact form, the ferro was gone." The contact beat is one of the three where
+// applyBeat parks the blob at z-index 0 so it does not cross the corridor's
+// type — below the takeover's 20, so the modal covered it completely.
+describe('the blob\'s stacking while paused', () => {
+  it('gives the behind-class back when a modal covers the corridor', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    // Scroll to the contact beat, which is a "behind" beat.
+    const contactT = flow.path().tForBeat('contact');
+    flow.setScrollForTest(contactT);
+    expect(deps.ferroEl!.classList.contains('ferro-stage--behind')).toBe(true);
+
+    flow.pause();
+    expect(deps.ferroEl!.classList.contains('ferro-stage--behind')).toBe(false);
+    flow.destroy();
+  });
+
+  it('restores it on resume, from whatever beat you were on', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(flow.path().tForBeat('contact'));
+    flow.pause();
+    flow.resume();
+    expect(deps.ferroEl!.classList.contains('ferro-stage--behind')).toBe(true);
+    flow.destroy();
+  });
+
+  it('leaves an in-front beat alone — nothing to give back', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(flow.path().tForBeat('lander')); // in front
+    expect(deps.ferroEl!.classList.contains('ferro-stage--behind')).toBe(false);
+    flow.pause();
+    expect(deps.ferroEl!.classList.contains('ferro-stage--behind')).toBe(false);
     flow.destroy();
   });
 });

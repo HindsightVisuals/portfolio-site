@@ -79,12 +79,24 @@ const mixedText = new THREE.Color();
 /**
  * Ground brightness at `t`: 0 = night, 1 = day.
  *
- * Night from the start, up through the client wall; day across capabilities;
- * night again from contact onward. Both transitions are ramps placed in the
- * approach, so the world dims and brightens as a property of position rather
- * than as an event.
+ * Day at the corridor's mouth, dimming to night by the transition beat; night
+ * up through the client wall; day across capabilities; night again from contact
+ * onward. Every change is a ramp placed in the approach, so the world dims and
+ * brightens as a property of position rather than as an event.
+ *
+ * That first ramp exists because `t = 0` is the WORK REST — the camera is still
+ * standing in the lit world at that point, and the corridor's own night has not
+ * begun. Returning night at t = 0 made entering the corridor a white-to-black
+ * step (Adam, on the first QA pass: "the transition from work to the about flow
+ * snaps from white to black… not intended from a design standpoint"), which the
+ * spec's own palette table already ruled out: it puts night at
+ * "Transition -> Client Wall", not at the anchor.
+ *
+ * It shares its span with the Work wall's fade (see workWallFadeAt), so the
+ * wall dissolves as the ground darkens — one move, not two.
  */
 function dayAmount(t: number, path: AboutPath): number {
+  const trans = path.tForBeat('transition');
   const wall = path.tForBeat('clientWall');
   const caps = path.tForBeat('capabilities');
   const contact = path.tForBeat('contact');
@@ -92,6 +104,7 @@ function dayAmount(t: number, path: AboutPath): number {
   const upStart = wall + (caps - wall) * (1 - FADE);
   const downEnd = contact + (path.tForBeat('ai') - contact) * FADE;
 
+  if (t < trans) return 1 - smoothstep(t / trans);
   if (t <= upStart) return 0;
   if (t < caps) return smoothstep((t - upStart) / (caps - upStart));
   if (t <= contact) return 1;
