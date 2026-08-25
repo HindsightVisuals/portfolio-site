@@ -346,6 +346,53 @@ export function stretchedZoom(baseZoom: number, stretch: number): { x: number; y
   };
 }
 
+/**
+ * How far the sampled UV may shift on one axis before it runs off the clamped
+ * texture edge.
+ *
+ * The view shader samples `(vUv - 0.5) / zoom + 0.5 + offset`, so the screen
+ * edges land at `0.5 * (1 +/- 1/zoom) + offset` and the overscan therefore
+ * leaves `0.5 * (1 - 1/zoom)` of room on each side. At the 1.03 base that is
+ * about 1.5% of the texture. A zoom of 1 or less has no room at all.
+ */
+export function parallaxMargin(zoom: number): number {
+  return Number.isFinite(zoom) && zoom > 1 ? 0.5 * (1 - 1 / zoom) : 0;
+}
+
+/**
+ * Hold the parallax offset inside that margin.
+ *
+ * PARALLAX_UV_PER_UNIT was tuned against the pointer magnet, which deflects the
+ * camera by a fraction of a world unit — "full magnet deflection ~= 1% of
+ * screen", per its own comment — and BASE_OVERSCAN's 3% was sized to cover
+ * exactly that, with the explicit note that it "must leave more margin than the
+ * max parallax offset".
+ *
+ * Then the About corridor climbed the camera 31 world units off the spine. That
+ * asks for a 31% shift against a 1.5% margin, and the field smeared along its
+ * clamped edge for the whole climb (Adam, on seeing it: "the texture in the
+ * background starts to glitch out once its going vertical").
+ *
+ * Clamping rather than rescaling is deliberate: the parallax stays exactly as
+ * tuned for every camera near the spine, and simply saturates once one travels
+ * far enough that the effect would tear. The alternative — scaling the rate
+ * down to fit the worst case — would make the magnet imperceptible everywhere
+ * to accommodate a place the magnet never goes.
+ */
+export function clampParallax(
+  offU: number,
+  offV: number,
+  zoomX: number,
+  zoomY: number,
+): { u: number; v: number } {
+  const clamp = (v: number, m: number): number =>
+    Number.isFinite(v) ? Math.min(m, Math.max(-m, v)) : 0;
+  return {
+    u: clamp(offU, parallaxMargin(zoomX)),
+    v: clamp(offV, parallaxMargin(zoomY)),
+  };
+}
+
 function makeSeedTexture(w: number, h: number): THREE.DataTexture {
   const data = new Float32Array(w * h * 4);
   for (let i = 0; i < w * h; i++) {
@@ -583,13 +630,21 @@ export function initBackgroundLayer(
         curZoom = BASE_OVERSCAN + (ZOOM_MAX / 2) * (1 - Math.cos(progress * Math.PI * 2));
         curOffU = PARALLAX_UV_PER_UNIT * cam.x;
         curOffV = PARALLAX_UV_PER_UNIT * cam.y;
-        viewMaterial.uniforms.uOffset.value.set(curOffU, curOffV);
       }
       // Applied outside the cameraProvider guard so the axes stay in sync with
       // curZoom even before a provider is attached.
       const z = stretchedZoom(curZoom, curStretch);
       curZoomX = z.x;
       curZoomY = z.y;
+      // Clamped only once the zoom is known, since the margin depends on it —
+      // and written BACK into curOffU/curOffV rather than only into the
+      // uniform, because viewToSimUV reads those same two values to map a
+      // pointer into the sim. Clamping one and not the other would put the
+      // brush where the field is not.
+      const off = clampParallax(curOffU, curOffV, curZoomX, curZoomY);
+      curOffU = off.u;
+      curOffV = off.v;
+      viewMaterial.uniforms.uOffset.value.set(curOffU, curOffV);
       viewMaterial.uniforms.uZoom.value.set(curZoomX, curZoomY);
       viewMaterial.uniforms.uState.value = read.texture;
       r.setRenderTarget(null);

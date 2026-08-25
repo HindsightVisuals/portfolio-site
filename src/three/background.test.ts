@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { viewToSimUV, travelStretch, stretchedZoom, STRETCH_MAX } from './background';
+import {
+  viewToSimUV, travelStretch, stretchedZoom, STRETCH_MAX, parallaxMargin, clampParallax,
+} from './background';
 
 describe('viewToSimUV', () => {
   it('is identity at zoom 1 with no offset', () => {
@@ -100,5 +102,69 @@ describe('stretchedZoom', () => {
     const z = stretchedZoom(1.03, 1);
     expect(z.x).toBeGreaterThan(0);
     expect(z.y).toBeGreaterThan(0);
+  });
+});
+
+describe('parallaxMargin', () => {
+  it('is the overscan room the view shader actually leaves at the base zoom', () => {
+    // (vUv - 0.5)/zoom + 0.5 puts the screen edge at 0.5*(1 - 1/zoom) from the
+    // texture edge. At BASE_OVERSCAN 1.03 that is ~1.46% of the texture.
+    expect(parallaxMargin(1.03)).toBeCloseTo(0.5 * (1 - 1 / 1.03), 10);
+    expect(parallaxMargin(1.03)).toBeCloseTo(0.014563, 5);
+  });
+
+  it('grows with zoom — a stretched axis has more room, not less', () => {
+    expect(parallaxMargin(1.3)).toBeGreaterThan(parallaxMargin(1.03));
+  });
+
+  it('is zero at or below zoom 1, where there is no overscan to spend', () => {
+    expect(parallaxMargin(1)).toBe(0);
+    expect(parallaxMargin(0.8)).toBe(0);
+    expect(parallaxMargin(NaN)).toBe(0);
+  });
+});
+
+describe('clampParallax', () => {
+  it('leaves a pointer-magnet offset untouched — the case it was tuned for', () => {
+    // The magnet deflects the camera by a fraction of a world unit, so at
+    // 0.01 UV per unit the offset is well inside the margin.
+    const { u, v } = clampParallax(0.004, -0.006, 1.03, 1.03);
+    expect(u).toBeCloseTo(0.004, 10);
+    expect(v).toBeCloseTo(-0.006, 10);
+  });
+
+  it('saturates the About corridor\'s 31-unit climb instead of tearing', () => {
+    // The regression Adam saw: cam.y reaches +31 world units, so the raw
+    // offset is 0.31 against a ~0.0146 margin — a 21x overrun that smeared the
+    // field along its clamped edge for the whole climb.
+    const raw = 0.01 * 31;
+    const { v } = clampParallax(0, raw, 1.03, 1.03);
+    expect(raw).toBeGreaterThan(parallaxMargin(1.03) * 20);
+    expect(v).toBeCloseTo(parallaxMargin(1.03), 10);
+  });
+
+  it('clamps symmetrically', () => {
+    expect(clampParallax(0, -5, 1.03, 1.03).v).toBeCloseTo(-parallaxMargin(1.03), 10);
+  });
+
+  it('clamps each axis against its own zoom, not a shared one', () => {
+    // travelStretch only ever raises zoomY, so a stretched y axis must be
+    // allowed a wider offset than x.
+    const { u, v } = clampParallax(0.5, 0.5, 1.03, 1.4);
+    expect(v).toBeGreaterThan(u);
+    expect(u).toBeCloseTo(parallaxMargin(1.03), 10);
+    expect(v).toBeCloseTo(parallaxMargin(1.4), 10);
+  });
+
+  it('never returns an offset that samples outside the texture', () => {
+    // The property that matters: whatever comes in, both screen edges must
+    // still land within [0, 1] after the shift.
+    for (const raw of [0, 0.31, -0.31, 5, -5, NaN]) {
+      const { v } = clampParallax(0, raw, 1.03, 1.03);
+      const near = viewToSimUV(0.5, 0, 1.03, 1.03, 0, v).v;
+      const far = viewToSimUV(0.5, 1, 1.03, 1.03, 0, v).v;
+      expect(near).toBeGreaterThanOrEqual(-1e-12);
+      expect(far).toBeLessThanOrEqual(1 + 1e-12);
+    }
   });
 });
