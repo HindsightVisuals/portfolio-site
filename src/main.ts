@@ -510,6 +510,15 @@ if (lab === 'ferro') {
      */
     let activatingContactWipe = false;
     const activateContactWipe = async (emblem: Emblem | null): Promise<void> => {
+      // C2: unlike every other way out of the corridor, this path calls no
+      // director method at all (it pushes history and opens the takeover
+      // directly), so the director.onDepart(() => aboutFlow.exit()) subscription
+      // never fires here. The nav emblem lives in .chrome (z-index 10), above
+      // .about-doc (z-index 1), so it's clickable throughout the corridor —
+      // without this, one click strands the director suspended forever.
+      // exit() is idempotent, so this is harmless on every other path through
+      // this function too.
+      aboutFlow.exit();
       if (activatingContactWipe) return;
       activatingContactWipe = true;
       try {
@@ -628,10 +637,16 @@ if (lab === 'ferro') {
       // reads the pointer from here too.
       ferro?.setPointer(p);
       feedEmblemPointer(takeover.isOpen() ? activeEmblem : navEmblem, p);
-      if (takeover.isOpen()) {
+      // I1: the About corridor's own scroll-driven writes (cursor.setOnDark
+      // from the palette, world.setAboutMode hiding the anchored screens) must
+      // be the only thing touching these during the corridor — this raycasts
+      // against tiles the raycaster can still see (it ignores Object3D.visible)
+      // and would otherwise fight the palette's setOnDark every mousemove.
+      if (takeover.isOpen() || aboutFlow.isOpen()) {
         world.setTileHover(null);
         workHover.setHovered(null);
-        // The takeover covers the canvas; its own DOM drives hover from here.
+        // The takeover (or the corridor) covers the canvas; its own DOM drives
+        // hover from here.
         if (cursor) cursor.setWorldHover(false);
         else canvas.style.cursor = '';
         return;
@@ -695,11 +710,13 @@ if (lab === 'ferro') {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (inputMode === 'takeover') return; // Task 12: takeover mode disables world navigation
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      // I2: the corridor drags the camera ~43.7 units past the About rest
+      // (against a 60-unit SPACING) — past its halfway point camera.position.z
+      // is nearer Contact than About, so resolve from the About rest instead
+      // of the camera's actual (mid-scrub) position while the corridor is open.
+      const refZ = aboutFlow.isOpen() ? aboutRest : world.camera.position.z;
       const current = DESTINATIONS.reduce((best, d) =>
-        Math.abs(wrapDelta(d.cameraZ, world.camera.position.z)) <
-        Math.abs(wrapDelta(best.cameraZ, world.camera.position.z))
-          ? d
-          : best,
+        Math.abs(wrapDelta(d.cameraZ, refZ)) < Math.abs(wrapDelta(best.cameraZ, refZ)) ? d : best,
       );
       const idx = DEST_ORDER.indexOf(current.id) + (e.key === 'ArrowDown' ? 1 : -1);
       const next = DEST_ORDER[(idx + DEST_ORDER.length) % DEST_ORDER.length];
@@ -795,6 +812,7 @@ if (lab === 'ferro') {
       ferro,
       ferroEl: document.querySelector<HTMLElement>('.ferro-stage'),
       cursor,
+      background: bg,
       setGround: (css) => {
         document.documentElement.style.setProperty('--ground', css);
       },

@@ -28,10 +28,6 @@ body {
   font-family: var(--font-mono);
 }
 
-body {
-  background: var(--ground);
-}
-
 #bg-canvas {
   position: fixed;
   inset: 0;

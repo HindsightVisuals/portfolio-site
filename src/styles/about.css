@@ -8,6 +8,34 @@
  * camera, which reads as the corridor lurching.
  */
 
+/* The corridor's document has to actually be able to scroll. base.css locks
+ * html/body to overflow:hidden, height:100% so nothing else on the site
+ * scrolls the window (the 2D takeovers get their own internal scroll root) —
+ * about-flow.ts toggles this class for exactly as long as the corridor is
+ * open, on both motion paths (reduced motion needs to scroll too; the
+ * document IS the whole experience there). Scoped here, rather than loosening
+ * the site-wide rule, so no other page's behaviour changes. */
+html.about-open,
+html.about-open body {
+  overflow: auto;
+  height: auto;
+}
+
+/* Scoped to while the corridor is open: the palette drives --ground per-beat
+ * (about-palette.ts) via about-flow.ts, but #fdfdfd is not the site's default
+ * ground (a #f2f2f2 -> #ffffff -> #f2f2f2 gradient, see base.css) — this must
+ * not apply outside the corridor. */
+html.about-open body {
+  background: var(--ground);
+}
+
+/* Reduced motion: no camera, no WebGL beats — the corridor's opaque canvas is
+ * hidden outright rather than left covering the CSS ground it's meant to
+ * reveal (about-flow.ts toggles this on enter/exit). */
+#bg-canvas.about-canvas-hidden {
+  display: none;
+}
+
 .about-doc {
   position: relative;
   z-index: 1;               /* above #world (0), below .ferro-stage (25) */

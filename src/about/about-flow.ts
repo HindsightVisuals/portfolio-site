@@ -38,6 +38,15 @@ export interface AboutFlowDeps {
   } | null;
   ferroEl: HTMLElement | null;
   cursor: { setOnDark(v: boolean): void } | null;
+  /**
+   * The WebGL background layer, for the palette-driven day/night ground.
+   * Applies to the unmasked field only (see background.ts's setInvert doc) —
+   * exactly the case here, since the home/work/about/contact background is
+   * never masked. Null-safe: reduced motion never calls apply() (see onScroll
+   * and setScrollForTest below), so this is simply never read in that mode —
+   * the canvas itself is hidden there instead (see enter/exit).
+   */
+  background: { setInvert(on: boolean): void } | null;
   setGround(css: string): void;
   reducedMotion: boolean;
 }
@@ -70,6 +79,19 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   let t = 0;
   let lastBeat: BeatId | null = null;
 
+  // `html, body { overflow: hidden; height: 100% }` (base.css) otherwise pins
+  // window.scrollY at 0 and scrollHeight at innerHeight for the whole site —
+  // this class (about.css) lifts that lock for exactly as long as the
+  // corridor is open, on both motion paths (reduced motion needs to scroll
+  // too; the document IS the whole experience there). It also scopes the
+  // `body { background: var(--ground) }` rule so the site's default ground
+  // is untouched everywhere else.
+  const ABOUT_OPEN_CLASS = 'about-open';
+  // Reduced motion has no camera/WebGL beats — the document is the whole
+  // experience (spec: "what remains when the canvas is removed") — so the
+  // opaque WebGL canvas is hidden outright rather than left covering --ground.
+  const bgCanvas = (): HTMLElement | null => document.querySelector<HTMLElement>('#bg-canvas');
+
   const centredRect = (): { x: number; y: number; w: number; h: number } => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -96,6 +118,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     deps.setGround(palette.ground);
     deps.atmosphere.setInk(palette.ink);
     deps.cursor?.setOnDark(palette.onDark);
+    // Known limitation, out of scope to fix here: setInvert is binary, so the
+    // WebGL ground snaps at the crossfade midpoint (palette.onDark's flip)
+    // rather than dimming continuously alongside the CSS --ground crossfade.
+    // Continuous dimming needs a new uniform in background.ts.
+    deps.background?.setInvert(palette.onDark);
 
     applyBeat(beatAt(t, path));
   };
@@ -124,6 +151,10 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     enter(parent: HTMLElement): void {
       if (open) return;
       open = true;
+      // Both motion paths: the document has to be able to scroll past one
+      // viewport's worth of content, and the site's default full-bleed lock
+      // (base.css) otherwise pins it at zero height (C1).
+      document.documentElement.classList.add(ABOUT_OPEN_CLASS);
       doc = mountAboutDocument(parent, path, window.innerHeight);
       window.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('resize', onResize);
@@ -132,7 +163,10 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
         // No camera, no WebGL beats — the document is the whole experience.
         // Deliberately does NOT suspend the director or hide the world: under
         // reduced motion the canvas is not animating anyway, and leaving the
-        // world alone keeps exit trivially correct.
+        // world alone keeps exit trivially correct. The opaque WebGL canvas
+        // IS hidden, though (C3) — otherwise it still covers the page and
+        // --ground is never actually seen.
+        bgCanvas()?.classList.add('about-canvas-hidden');
         return;
       }
 
@@ -149,6 +183,13 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     exit(): void {
       if (!open) return;
       open = false;
+      document.documentElement.classList.remove(ABOUT_OPEN_CLASS);
+      // Cleared, not merely left to go stale: the --ground-scoped body rule
+      // only applies while about-open is set, so this is belt-and-braces —
+      // but a lingering inline value would otherwise be the first thing
+      // painted (briefly, pre-apply(0)) the NEXT time the corridor opens.
+      document.documentElement.style.removeProperty('--ground');
+      bgCanvas()?.classList.remove('about-canvas-hidden');
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onResize);
       doc?.destroy();

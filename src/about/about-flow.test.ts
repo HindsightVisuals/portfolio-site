@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { DESTINATIONS } from '../three/world';
 import { initAboutFlow, type AboutFlowDeps } from './about-flow';
@@ -13,6 +13,7 @@ const makeDeps = (over: Partial<AboutFlowDeps> = {}): AboutFlowDeps => ({
   ferro: { placeAt: vi.fn().mockResolvedValue(undefined), show: vi.fn(), hide: vi.fn() },
   ferroEl: document.createElement('div'),
   cursor: { setOnDark: vi.fn() },
+  background: { setInvert: vi.fn() },
   setGround: vi.fn(),
   reducedMotion: false,
   ...over,
@@ -22,6 +23,16 @@ let parent: HTMLElement;
 beforeEach(() => {
   parent = document.createElement('div');
   document.body.appendChild(parent);
+});
+
+// document.documentElement and any #bg-canvas are real jsdom globals shared
+// across every test in this file — strip what enter()/exit() touch on it so
+// a test that doesn't reach its own exit() (there shouldn't be one, but) can't
+// bleed state into the next.
+afterEach(() => {
+  document.documentElement.classList.remove('about-open');
+  document.documentElement.style.removeProperty('--ground');
+  document.querySelector('#bg-canvas')?.remove();
 });
 
 describe('initAboutFlow', () => {
@@ -116,8 +127,8 @@ describe('initAboutFlow', () => {
     flow.destroy();
   });
 
-  it('survives null ferro, null cursor and null scrollNav', () => {
-    const deps = makeDeps({ ferro: null, ferroEl: null, cursor: null, scrollNav: null });
+  it('survives null ferro, null cursor, null scrollNav and null background', () => {
+    const deps = makeDeps({ ferro: null, ferroEl: null, cursor: null, scrollNav: null, background: null });
     const flow = initAboutFlow(deps);
     expect(() => {
       flow.enter(parent);
@@ -154,6 +165,75 @@ describe('initAboutFlow', () => {
     expect(deps.camera.position.y).toBeCloseTo(0, 6);
     expect(deps.camera.position.z).toBeCloseTo(aboutRest, 6);
     expect(deps.camera.quaternion.angleTo(new THREE.Quaternion())).toBeCloseTo(0, 6);
+    flow.destroy();
+  });
+
+  // C1: base.css locks html/body to overflow:hidden, height:100% so nothing
+  // else on the site scrolls the window — without this class the corridor's
+  // scroll-driven scrub is frozen at t=0 forever (window.scrollY pinned at 0,
+  // scrollHeight === innerHeight). Both motion paths need it: reduced motion
+  // has no camera/WebGL beats, so the document IS the whole experience there.
+  it('lifts the site-wide scroll lock on enter and restores it on exit — normal motion', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    expect(document.documentElement.classList.contains('about-open')).toBe(true);
+    flow.exit();
+    expect(document.documentElement.classList.contains('about-open')).toBe(false);
+    flow.destroy();
+  });
+
+  it('lifts the site-wide scroll lock on enter and restores it on exit — reduced motion', () => {
+    const deps = makeDeps({ reducedMotion: true });
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    expect(document.documentElement.classList.contains('about-open')).toBe(true);
+    flow.exit();
+    expect(document.documentElement.classList.contains('about-open')).toBe(false);
+    flow.destroy();
+  });
+
+  // C3: --ground is scoped to `html.about-open body` (about.css) so it never
+  // overrides the site's default ground outside the corridor — a lingering
+  // inline value would otherwise be the first thing painted, pre-apply(0), the
+  // next time the corridor opens.
+  it('clears the inline --ground custom property on exit', () => {
+    document.documentElement.style.setProperty('--ground', '#123456');
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.exit();
+    expect(document.documentElement.style.getPropertyValue('--ground')).toBe('');
+    flow.destroy();
+  });
+
+  // C3: the WebGL background is opaque (#bg-canvas has no alpha), so --ground
+  // is otherwise never seen. setInvert flips the unmasked field's ground dark
+  // in step with the palette's cursor.setOnDark, using the same onDark flag.
+  it('drives the WebGL background invert from the palette', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent); // apply(0): t=0 is night — onDark true
+    expect(deps.background!.setInvert).toHaveBeenCalledWith(true);
+    (deps.background!.setInvert as ReturnType<typeof vi.fn>).mockClear();
+    flow.setScrollForTest(1);
+    expect(deps.background!.setInvert).toHaveBeenCalled();
+    flow.destroy();
+  });
+
+  // C3: reduced motion has no camera/WebGL beats — the document is meant to be
+  // the whole experience, but the opaque canvas otherwise still covers it and
+  // --ground (the whole point of this mode) is never actually seen.
+  it('hides the WebGL canvas on enter under reduced motion, and restores it on exit', () => {
+    const canvas = document.createElement('canvas');
+    canvas.id = 'bg-canvas';
+    document.body.appendChild(canvas);
+    const deps = makeDeps({ reducedMotion: true });
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    expect(canvas.classList.contains('about-canvas-hidden')).toBe(true);
+    flow.exit();
+    expect(canvas.classList.contains('about-canvas-hidden')).toBe(false);
     flow.destroy();
   });
 });
