@@ -10,6 +10,17 @@
    * cloth-V notch cut into .nav2d below. Opacity everywhere else comes from
    * .nav2d's flanking strips (top 64px) and .takeover-body (the rest). */
   overflow-y: auto;
+  /* Don't chain scroll to the document behind. A takeover is a full-viewport
+   * overlay: reaching either end of its own scroll must stop, not start
+   * scrolling whatever it covers. Ordinarily invisible (the site locks
+   * html/body to overflow:hidden), but the About corridor lifts that lock for
+   * as long as it is open (about.css's html.about-open) — and the contact
+   * takeover mostly fits one viewport, so its internal scroll is at an end
+   * from the first wheel tick. Without this, opening contact over a paused
+   * corridor scrolled the corridor's document underneath it, desyncing the
+   * scroll position from the `t` pause() had frozen. about-flow.ts's resume()
+   * resyncs regardless — this stops it happening at source. */
+  overscroll-behavior: contain;
   will-change: transform;
 }
 

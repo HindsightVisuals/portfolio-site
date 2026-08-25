@@ -754,7 +754,14 @@ if (lab === 'ferro') {
     // frame it; the ABOUT screen at rest opens the About takeover, otherwise
     // flies there. No-ops while a takeover is open (it also covers the canvas).
     canvas.addEventListener('click', (e) => {
-      if (takeover.isOpen()) return;
+      // Also gated on the corridor, matching processHover's gate above.
+      // world.pick skips roots the corridor has hidden — but the Work wall is
+      // no longer hidden for the corridor's first stretch, it FADES (C2), so
+      // for those ~8.5 units a click could otherwise hit a tile, fly to focus
+      // it, and eject the reader through director.onDepart -> aboutFlow.exit().
+      // The corridor's own document covers the canvas anyway; this makes the
+      // ownership explicit rather than leaving it to stacking order.
+      if (takeover.isOpen() || aboutFlow.isOpen()) return;
       const ndcX = (e.clientX / window.innerWidth) * 2 - 1;
       const ndcY = -((e.clientY / window.innerHeight) * 2 - 1);
       const hit = world.pick(ndcX, ndcY);
@@ -786,20 +793,41 @@ if (lab === 'ferro') {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (inputMode === 'takeover') return; // Task 12: takeover mode disables world navigation
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-      // I2: the corridor drags the camera ~43.7 units past the Work rest
-      // (against a 60-unit SPACING) — past its halfway point camera.position.z
-      // is nearer the wrapped-around Home rest than Work, so resolve from the
-      // Work rest instead of the camera's actual (mid-scrub) position while
-      // the corridor is open.
-      const refZ = aboutFlow.isOpen() ? workRest : world.camera.position.z;
+      const forward = e.key === 'ArrowDown';
+      // Inside the corridor the arrows walk the CORRIDOR, not the spine.
+      //
+      // This handler is guarded only on inputMode === 'takeover', which is
+      // never 'about' — so the corridor used to fall through to the resolve
+      // below, where refZ is the Work rest and, with DESTINATIONS down to two
+      // entries, BOTH arrows resolved to 'home'. ArrowDown ("forward") ejected
+      // the reader backwards. The corridor is the page order now; about-flow
+      // owns stepping through it (see stepBeat, which also hands the camera
+      // back on a backward step from the very top, mirroring the wheel).
+      if (aboutFlow.isOpen()) {
+        aboutFlow.stepBeat(forward ? 1 : -1);
+        return;
+      }
+      const refZ = world.camera.position.z;
       const current = DESTINATIONS.reduce((best, d) =>
         Math.abs(wrapDelta(d.cameraZ, refZ)) < Math.abs(wrapDelta(best.cameraZ, refZ)) ? d : best,
       );
-      // Cycles the spine's RESTS, not DEST_ORDER — /about and /contact are
+      // Walks the spine's RESTS, not DEST_ORDER — /about and /contact are
       // still routes but no longer places the camera stops.
+      //
+      // Clamped rather than wrapped, in both directions. Home is the TOP of
+      // the page, so ArrowUp there has nowhere to go — it used to wrap round
+      // to Work, i.e. "back" moved you forward. And forward past Work is not
+      // a wrap round to Home either: the loop closes through the About
+      // corridor now, so ArrowDown at Work enters it, exactly as the nav's
+      // own About link does.
       const ids = DESTINATIONS.map((d) => d.id);
-      const idx = ids.indexOf(current.id) + (e.key === 'ArrowDown' ? 1 : -1);
-      const next = ids[(idx + ids.length) % ids.length];
+      const idx = ids.indexOf(current.id) + (forward ? 1 : -1);
+      if (idx < 0) return; // backward from Home: nothing above the top of the page
+      if (idx >= ids.length) {
+        router.navigate('about'); // forward from Work: into the corridor, not round to Home
+        return;
+      }
+      const next = ids[idx];
       if (next !== current.id) router.navigate(next);
     });
 

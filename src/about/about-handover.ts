@@ -1,3 +1,5 @@
+import type { AboutPath } from './about-path';
+
 /**
  * When the wheel changes owner.
  *
@@ -43,4 +45,31 @@ export function shouldEnterCorridor(o: {
 
 export function shouldLeaveCorridor(o: { open: boolean; t: number; deltaPx: number }): boolean {
   return o.open && backward(o.deltaPx) && o.t <= 0;
+}
+
+/**
+ * The VISUAL half of the same handover: how opaque the Work wall still is at
+ * path parameter `t`.
+ *
+ * The wall is the only anchored root left on the spine, and at t = 0 it sits
+ * 34 units dead ahead of the camera at full opacity, full scale, centre of
+ * frame — where world.ts's own materializeAmount returns exactly 1. So
+ * setAboutMode(true)'s hard hide, which is right for the rest of the corridor,
+ * is wrong for its first stretch: it blinks the wall away in one frame the
+ * instant forward scroll crosses the handover. And the wall does have to go:
+ * the corridor's opening beat is level travel straight TOWARD it.
+ *
+ * So it fades instead, reaching zero by the 'transition' beat — the last
+ * moment the camera is still level and pointed at the wall, after which the
+ * path pitches up and climbs and the hard hide is both fine and correct.
+ *
+ * Inverted smoothstep, matching materializeAmount's own curve, so the fade
+ * reads as the same treatment the wall gets everywhere else rather than as a
+ * second, linear one.
+ */
+export function workWallFadeAt(t: number, path: AboutPath): number {
+  const end = path.tForBeat('transition');
+  if (!(end > 0) || !Number.isFinite(t)) return 0;
+  const k = Math.min(1, Math.max(0, t / end));
+  return 1 - k * k * (3 - 2 * k);
 }

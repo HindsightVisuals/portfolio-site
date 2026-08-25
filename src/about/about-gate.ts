@@ -17,6 +17,34 @@
 /** How much scroll past the footer arms the return. */
 export const GATE_THRESHOLD_PX = 800;
 
+/**
+ * How close to t = 1 counts as the end of the corridor.
+ *
+ * The gate cannot arm on an exact `t === 1`. `t` is
+ * `scrollY / (scrollHeight - innerHeight)`, and `scrollHeight` is a ROUNDED
+ * integer while the browser's real maximum `scrollY` is not — at 125% or 150%
+ * display scaling (the Windows 11 default) the two can disagree by a fraction
+ * of a pixel, so a fully scrolled document reports t ≈ 0.9999 forever. The gate
+ * would then never arm, silently, with the indicator never moving.
+ *
+ * Sized in `t`, not px, because `t` is all the flow has. The corridor's
+ * document runs a little over six screens, so on a 1080-tall viewport 1e-3 of
+ * the ~6500px range is ~7px — comfortably more than any rounding shortfall,
+ * and far less than a deliberate scroll gesture.
+ */
+export const GATE_END_EPS = 1e-3;
+
+/**
+ * True when `t` has reached the corridor's end, within GATE_END_EPS.
+ *
+ * Note the asymmetry with shouldLeaveCorridor's `t <= 0` at the other end,
+ * which needs no epsilon: scrollToT clamps through Math.max(0, …), so a
+ * document scrolled to the top yields EXACTLY zero.
+ */
+export function atCorridorEnd(t: number): boolean {
+  return t >= 1 - GATE_END_EPS;
+}
+
 export interface GateState {
   accumulated: number;
 }

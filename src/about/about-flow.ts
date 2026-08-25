@@ -6,10 +6,10 @@ import { mountAboutDocument, type AboutDocument } from './about-document';
 import { buildAboutPath, type AboutPath, type CameraPose } from './about-path';
 import { paletteAt, DAY_INK } from './about-palette';
 import { beatAt, scrollToT } from './about-scrub';
-import type { BeatId } from './about-markers';
-import { shouldLeaveCorridor } from './about-handover';
+import { ABOUT_MARKERS, type BeatId } from './about-markers';
+import { shouldLeaveCorridor, workWallFadeAt } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
-import { createGate, feedGate } from './about-gate';
+import { atCorridorEnd, createGate, feedGate } from './about-gate';
 import { buildFooter } from '../page2d/footer';
 
 /**
@@ -37,10 +37,33 @@ const FERRO_FRACTION = 0.42;
  */
 const RETURN_S = 1.6;
 
+/**
+ * Fraction of the return flight over which the corridor's document (and the
+ * blob riding above it) fades away.
+ *
+ * The flight exists so the loop closes as TRAVEL rather than as a cut. Tearing
+ * the document down only at p >= 1 — which is what this used to do — left the
+ * whole corridor, footer and all, painted opaquely over the canvas for the
+ * full 1.6s while the camera flew behind it: invisible travel, and a cut
+ * again, just a delayed one. Fading rather than destroying at p = 0 keeps the
+ * crossfade the spec asked for; 0.45 clears the document early enough that
+ * most of the flight is actually watched.
+ */
+const RETURN_FADE_P = 0.45;
+
 export interface AboutFlowDeps {
   camera: THREE.PerspectiveCamera;
-  director: { setSuspended(v: boolean): void };
-  world: { setAboutMode(v: boolean): void };
+  /**
+   * The camera director, suspended for the corridor's lifetime.
+   *
+   * `syncTo` is as load-bearing as `setSuspended`: the director writes
+   * `camera.position` from its own remembered pose on every non-suspended
+   * frame, so whatever position the corridor hands back has to be told to it
+   * first or the next tick teleports the camera away. See its doc in
+   * camera-director.ts.
+   */
+  director: { setSuspended(v: boolean): void; syncTo(z: number): void };
+  world: { setAboutMode(v: boolean): void; setAnchoredFade(a: number): void };
   atmosphere: { setInk(v: number): void };
   scrollNav: { setMode(m: 'world' | 'takeover' | 'about'): void } | null;
   ferro: {
@@ -89,7 +112,22 @@ export interface AboutFlow {
    * interpolate orientation too, from a pitched off-spine pose.
    */
   returnHome(): Promise<void>;
-  /** Test/debug seam: step the return flight to a given 0..1 progress. */
+  /**
+   * Arrow-key navigation from inside the corridor: one beat forward (+1) or
+   * back (−1). Backward from the very top leaves the corridor, mirroring the
+   * wheel. See the implementation's own comment for the full ruling.
+   */
+  stepBeat(dir: 1 | -1): void;
+  /**
+   * Test/debug seam: step the return flight to a given 0..1 progress.
+   *
+   * Guarded on `open` alone — unlike its two siblings below, which mirror
+   * onScroll and onWheel, this one mirrors doReturnHome, whose only guard is
+   * `open` (the return is a legitimate move under reduced motion, and runs
+   * whether or not the corridor is paused). Without any guard at all it ran
+   * applyReturn's whole teardown — releaseSharedState, setSuspended(false) —
+   * on a corridor that was never open.
+   */
   stepReturnForTest(p: number): void;
   /**
    * Test/debug seam: feed the footer gate a raw px delta, bypassing a real
@@ -123,9 +161,14 @@ export interface AboutFlow {
    * Drive the scrub directly, bypassing the DOM.
    *
    * jsdom gives every element a zero-height box, so a scroll-driven controller
-   * cannot be tested through real scroll events. This is also what `?debug-about`
-   * uses to step the corridor in an occluded automation tab, where no rAF ticks
-   * — the same reason the ferro exposes step(dt).
+   * cannot be tested through real scroll events — this is the only way to put
+   * the corridor at a known `t` in a test.
+   *
+   * Guarded on `paused` as well as open/reducedMotion. onScroll itself does
+   * not check `paused` because pause() DETACHES it — this seam bypasses that
+   * listener, so it has to carry the term the detach was standing in for, or
+   * a test could scrub a corridor the contact takeover is covering. Exactly
+   * the discipline feedGateForTest already follows for onWheel.
    */
   setScrollForTest(t: number): void;
   destroy(): void;
@@ -198,6 +241,13 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // Continuous, not a flip: nightAmount ramps alongside the CSS --ground
     // crossfade instead of snapping at its midpoint (palette.onDark's flip).
     deps.background?.setInvertAmount(palette.nightAmount);
+
+    // The Work wall leaves as a fade across the corridor's opening stretch,
+    // not as setAboutMode(true)'s one-frame blink — see workWallFadeAt. Safe
+    // to write every frame: About mode is on for as long as apply() runs, and
+    // world.update()'s own materialize pass is switched off in that mode, so
+    // this is the only writer rather than a fight with it.
+    deps.world.setAnchoredFade(workWallFadeAt(t, path));
 
     applyBeat(beatAt(t, path));
   };
@@ -280,6 +330,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     if (deps.reducedMotion) return;
     deps.ferro?.hide();
     deps.ferroEl?.classList.remove('ferro-stage--behind');
+    // The return flight's crossfade writes an inline opacity here (see
+    // applyReturn). Cleared alongside the behind-class for the same reason
+    // --ground/--ink are cleared above: a lingering value would be the first
+    // thing painted the next time the blob is shown.
+    deps.ferroEl?.style.removeProperty('opacity');
     deps.scrollNav?.setMode('world');
     deps.world.setAboutMode(false);
   };
@@ -329,6 +384,13 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     const e = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2; // easeInOutQuad
     deps.camera.position.lerpVectors(fromPos, homePos, e);
     deps.camera.quaternion.copy(fromQuat).slerp(homeQuat, e);
+    // Uncover the flight. The corridor's document (z-index 1) and the blob
+    // (z-index 25) both paint OVER the canvas; left opaque for the whole
+    // 1.6s, they hide the very travel this move exists to show. Faded rather
+    // than destroyed at p = 0 so the two images cross rather than cut.
+    const fade = 1 - Math.min(1, Math.max(0, p) / RETURN_FADE_P);
+    if (doc) doc.root.style.opacity = String(fade);
+    if (deps.ferroEl) deps.ferroEl.style.opacity = String(fade);
     if (p >= 1) {
       open = false;
       paused = false;
@@ -337,6 +399,20 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       lastBeat = null;
       t = 0;
       releaseSharedState(); // the same restores exit() performs
+      // BEFORE setSuspended(false), and the whole reason the loop closes at
+      // all. The director's remembered state.z has been frozen at the Work
+      // rest since enter() suspended it, and its update() writes
+      // camera.position.z = state.z unconditionally on every non-suspended
+      // frame — so without this the very next tick teleported the camera from
+      // Home (34) straight back to −26, one frame after the flight landed.
+      //
+      // exit() gets the same thing right by CUTTING the camera to the rest the
+      // director already remembers (see its comment); a flight cannot do that,
+      // so the director is told where the camera ended up instead. syncTo, not
+      // jumpTo: jumpTo fires departCbs, and main.ts subscribes
+      // `onDepart(() => aboutFlow.exit())` to those — which would cut the
+      // camera to the Work rest itself, undoing the flight.
+      deps.director.syncTo(homePos.z);
       deps.director.setSuspended(false);
       const r = returnResolve;
       returnResolve = null;
@@ -361,6 +437,9 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // but leaving them attached would double them up on the next enter().
     window.removeEventListener('resize', onResize);
     window.removeEventListener('wheel', onWheel);
+    // The document fades out under the flight (applyReturn) but stays mounted
+    // until p >= 1; a transparent footer must not still be clickable.
+    if (doc) doc.root.style.pointerEvents = 'none';
     if (deps.reducedMotion) {
       applyReturn(1);
       return Promise.resolve();
@@ -395,27 +474,46 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
    * and onWheel in the first place (see their own comments below/above).
    */
   const feedGateAt = (deltaPx: number): void => {
-    if (t < 1) return;
+    // atCorridorEnd, not `t >= 1`: t is scrollY/(scrollHeight - innerHeight),
+    // and at fractional display scaling (125%/150%, the Windows 11 default)
+    // the rounded scrollHeight can put the real maximum scrollY a fraction
+    // short — so a fully scrolled document reports t ≈ 0.9999 and an exact
+    // comparison meant the gate could never arm at all. See GATE_END_EPS.
+    if (!atCorridorEnd(t)) return;
     const { armed, amount } = feedGate(gate, deltaPx);
     doc?.root.style.setProperty('--gate', String(amount));
     if (armed) void doReturnHome();
   };
 
   /**
+   * Put the real document's scroll position where path parameter `target`
+   * sits — the inverse of scrollToT, and the one place that conversion lives.
+   *
+   * Four callers need it and three used to carry their own copy: enter()'s two
+   * branches (so the first real scroll event doesn't snap the camera back to
+   * the top), scrollToBeat below, and resume() — the caller that did NOT have
+   * a copy, which is the bug this wave fixes (see there).
+   */
+  const scrollDocumentTo = (target: number): void => {
+    const range = document.documentElement.scrollHeight - window.innerHeight;
+    if (range > 0) window.scrollTo(0, range * Math.min(1, Math.max(0, target)));
+  };
+
+  /**
    * Scroll the real document to where a beat's t sits, driving the camera
    * there through the ordinary scroll pipeline (onScroll/apply) — the same
    * mechanism a raw scroll gesture uses. Used by the footer's site nav
-   * (onFooterNav below) for 'about' and 'contact': both are scroll positions
-   * inside THIS document now (D2/the corridor spec), not places to fly to or
-   * reopen, so there is nothing to hand off to — just move the scrollbar.
-   * Under reduced motion this is also correct and sufficient: the browser's
-   * own scroll position is the only "position" that mode has (see enter()'s
-   * reduced-motion branch), and mountAboutDocument lays the document out
-   * identically regardless of reducedMotion.
+   * (onFooterNav below) for 'about' and 'contact', and by the arrow keys
+   * (stepBeat below): all of them are scroll positions inside THIS document
+   * now (D2/the corridor spec), not places to fly to or reopen, so there is
+   * nothing to hand off to — just move the scrollbar. Under reduced motion
+   * this is also correct and sufficient: the browser's own scroll position is
+   * the only "position" that mode has (see enter()'s reduced-motion branch),
+   * and mountAboutDocument lays the document out identically regardless of
+   * reducedMotion.
    */
   const scrollToBeat = (id: BeatId): void => {
-    const range = document.documentElement.scrollHeight - window.innerHeight;
-    if (range > 0) window.scrollTo(0, range * path.tForBeat(id));
+    scrollDocumentTo(path.tForBeat(id));
   };
 
   /**
@@ -436,6 +534,43 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       return;
     }
     scrollToBeat(dest === 'about' ? 'anchor' : 'contact');
+  };
+
+  /**
+   * Arrow keys, from inside the corridor: step one beat forward or back.
+   *
+   * main.ts's keydown handler resolves arrows against DESTINATIONS, which is
+   * down to two entries — so inside the corridor the camera's reference is the
+   * Work rest and BOTH ArrowDown and ArrowUp used to resolve to 'home',
+   * ejecting the reader (ArrowDown, "forward", moving them backwards). The
+   * corridor is the page order now, so the arrows have to walk IT.
+   *
+   * Backward from a beat you are partway through goes to that beat's own start
+   * first, then to the previous one — the ordinary prev-section convention.
+   * Backward from t = 0 hands the camera back, exactly mirroring the wheel's
+   * own shouldLeaveCorridor rule (backward at the top leaves), so a
+   * keyboard-only reader is never trapped in here. Forward past the last beat
+   * clamps: t = 1 IS the last marker, and leaving forward is the footer gate's
+   * job, not an arrow's.
+   *
+   * Moves the SCROLLBAR rather than the camera, so the ordinary
+   * onScroll/apply pipeline does the work and `t` cannot desync — the same
+   * mechanism the footer's own site nav uses, hard cut and all.
+   *
+   * Reduced motion is left to the browser: `t` never leaves 0 there (apply()
+   * never runs), the document is the whole experience, and the arrows already
+   * scroll it natively.
+   */
+  const stepBeat = (dir: 1 | -1): void => {
+    if (!open || paused || deps.reducedMotion) return;
+    if (dir < 0 && t <= 0) {
+      exit();
+      return;
+    }
+    const i = ABOUT_MARKERS.findIndex((m) => m.id === beatAt(t, path));
+    const here = path.tForBeat(ABOUT_MARKERS[i].id);
+    const j = dir > 0 ? i + 1 : t > here + 1e-6 ? i : i - 1;
+    scrollToBeat(ABOUT_MARKERS[Math.min(ABOUT_MARKERS.length - 1, Math.max(0, j))].id);
   };
 
   // Backward scroll at the very top of the corridor hands the camera back —
@@ -501,8 +636,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
         // BROWSER's own scroll is the only "position" reduced motion has, so
         // it has to be set directly from startT the same way the non-reduced
         // branch below sets it from the camera's t.
-        const range = document.documentElement.scrollHeight - window.innerHeight;
-        if (range > 0) window.scrollTo(0, range * Math.min(1, Math.max(0, startT)));
+        scrollDocumentTo(startT);
         return;
       }
 
@@ -516,15 +650,14 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       apply(Math.min(1, Math.max(0, startT)));
       // Put the document where the camera is, or the first real scroll event
       // would snap the camera back to the top.
-      if (doc) {
-        const range = document.documentElement.scrollHeight - window.innerHeight;
-        if (range > 0) window.scrollTo(0, range * t);
-      }
+      if (doc) scrollDocumentTo(t);
     },
 
     exit,
     returnHome: doReturnHome,
+    stepBeat,
     stepReturnForTest(p: number): void {
+      if (!open) return;
       applyReturn(Math.min(1, Math.max(0, p)));
     },
     feedGateForTest(deltaPx: number): void {
@@ -560,12 +693,27 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       deps.ferro?.show();
       lastBeat = null;
       apply(t);
+      // Re-anchor the DOCUMENT to t, not just the camera.
+      //
+      // pause() holds `t` by detaching the scroll listener — but the document
+      // underneath keeps scrolling regardless. The contact takeover is
+      // position: fixed with its own overflow-y: auto and, since the contact
+      // page mostly fits one viewport, its internal scroll is at an end
+      // immediately, so wheel events chain straight through to the document
+      // behind it (`.takeover` now carries overscroll-behavior: contain to
+      // stop most of that at source — page2d.css — but touch, keyboard and
+      // scrollbar drags can still move it, and this is the fix that does not
+      // depend on the browser honouring it). Without this, resume()
+      // re-attached the listener on a DESYNCED scroll position and the next
+      // wheel tick read it and jumped the camera to a different beat. Same
+      // two lines enter() has always had, for the same reason.
+      scrollDocumentTo(t);
     },
     isOpen: () => open,
     t: () => t,
     path: () => path,
     setScrollForTest(next: number): void {
-      if (!open || deps.reducedMotion) return;
+      if (!open || paused || deps.reducedMotion) return;
       apply(Math.min(1, Math.max(0, next)));
     },
     destroy(): void {

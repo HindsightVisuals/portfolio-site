@@ -53,6 +53,29 @@ export interface CameraDirector {
    * a scrub of several thousand pixels would fire the whole lot on exit.
    */
   setSuspended(v: boolean): void;
+  /**
+   * Tell the director where the camera ALREADY is, without moving it and
+   * without telling anyone.
+   *
+   * update() writes `camera.position` from the director's own remembered pose
+   * on every non-suspended frame, unconditionally. So a controller that has
+   * been driving the camera itself while suspended (the About corridor) must
+   * hand back a matching pose, or the very next tick teleports the camera back
+   * to wherever the director last left it — the corridor's return flight
+   * landed at Home and was snapped to the Work rest one frame later.
+   *
+   * Deliberately NOT jumpTo(): jumpTo fires departCbs, and one of those is
+   * `director.onDepart(() => aboutFlow.exit())` in main.ts, which would cut
+   * the camera to the Work rest itself. This emits nothing at all.
+   *
+   * The lateral/peek/magnet terms are zeroed alongside `state.z` for the same
+   * reason the z is set: `camera.position.x` is `lateral.x + peek.x + magnet.x`,
+   * so a stale lateral offset is the identical bug on a different axis. Every
+   * caller syncs to a point ON the spine axis (the corridor's whole path sits
+   * at x = 0), so zero is the truthful value — same discipline as jumpTo's own
+   * magnet reset.
+   */
+  syncTo(z: number): void;
   onArrive(cb: (id: DestId) => void): () => void;
   onDepart(cb: (dest: DestId) => void): () => void;
   getVelocity(): number;
@@ -426,6 +449,28 @@ export function initCameraDirector(
         velocity = 0;
         mode = 'free';
       }
+    },
+
+    syncTo(z: number): void {
+      // killSettle rather than a bare settleTween?.kill(): a settle tween left
+      // running would keep writing state.z straight back over the value being
+      // synced in, and its pending fly promise must not be stranded.
+      killSettle();
+      lateralTween?.kill();
+      lateralTween = null;
+      peekTween?.kill();
+      peekTween = null;
+      mode = 'free';
+      velocity = 0;
+      measuredVelocity = 0;
+      state.z = z;
+      lateral.x = 0;
+      lateral.y = 0;
+      peek.x = 0;
+      peek.y = 0;
+      magnet.x = 0;
+      magnet.y = 0;
+      // No emitArrive, no departCbs. See the interface doc.
     },
 
     destroy(): void {

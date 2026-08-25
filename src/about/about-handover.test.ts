@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ENTER_EPS, shouldEnterCorridor, shouldLeaveCorridor } from './about-handover';
+import * as THREE from 'three';
+import { ENTER_EPS, shouldEnterCorridor, shouldLeaveCorridor, workWallFadeAt } from './about-handover';
+import { buildAboutPath } from './about-path';
 import { SPINE_PERIOD } from '../three/loop';
 
 const REST = -26;
@@ -83,5 +85,39 @@ describe('shouldLeaveCorridor', () => {
   it('ignores a zero or non-finite delta', () => {
     expect(shouldLeaveCorridor({ open: true, t: 0, deltaPx: 0 })).toBe(false);
     expect(shouldLeaveCorridor({ open: true, t: 0, deltaPx: NaN })).toBe(false);
+  });
+});
+
+describe('workWallFadeAt', () => {
+  const path = buildAboutPath(new THREE.Vector3(0, 0, REST));
+  const transitionT = path.tForBeat('transition');
+
+  it('leaves the wall fully opaque at the handover itself', () => {
+    // The defect this exists for: setAboutMode(true) hid the wall in one
+    // frame at t = 0, where the camera is still at the Work rest with the
+    // wall 34 units dead ahead — materializeAmount(34) is exactly 1.
+    expect(workWallFadeAt(0, path)).toBeCloseTo(1, 6);
+  });
+
+  it('has faded it out entirely by the transition beat', () => {
+    expect(transitionT).toBeGreaterThan(0);
+    expect(workWallFadeAt(transitionT, path)).toBeCloseTo(0, 6);
+  });
+
+  it('falls monotonically in between, and stays at zero for the rest of the climb', () => {
+    let prev = Infinity;
+    for (let i = 0; i <= 20; i++) {
+      const a = workWallFadeAt((transitionT * i) / 20, path);
+      expect(a).toBeLessThanOrEqual(prev + 1e-9);
+      prev = a;
+    }
+    for (const t of [transitionT + 1e-6, 0.3, 0.7, 1]) {
+      expect(workWallFadeAt(t, path)).toBeCloseTo(0, 6);
+    }
+  });
+
+  it('clamps below zero and ignores a non-finite t', () => {
+    expect(workWallFadeAt(-1, path)).toBeCloseTo(1, 6);
+    expect(workWallFadeAt(NaN, path)).toBe(0);
   });
 });

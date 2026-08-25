@@ -8,8 +8,8 @@ import { GATE_THRESHOLD_PX } from './about-gate';
 
 const makeDeps = (over: Partial<AboutFlowDeps> = {}): AboutFlowDeps => ({
   camera: new THREE.PerspectiveCamera(),
-  director: { setSuspended: vi.fn() },
-  world: { setAboutMode: vi.fn() },
+  director: { setSuspended: vi.fn(), syncTo: vi.fn() },
+  world: { setAboutMode: vi.fn(), setAnchoredFade: vi.fn() },
   atmosphere: { setInk: vi.fn() },
   scrollNav: { setMode: vi.fn() },
   ferro: { placeAt: vi.fn().mockResolvedValue(undefined), show: vi.fn(), hide: vi.fn() },
@@ -690,6 +690,272 @@ describe('initAboutFlow', () => {
       Object.defineProperty(window, 'innerHeight', originalInnerHeight);
       delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
     }
+    flow.destroy();
+  });
+
+  // --- IMPORTANT 3: pause() holds `t`, but not the document underneath it ---
+  //
+  // The contact takeover is position: fixed with its own overflow-y: auto, and
+  // the contact page mostly fits one viewport — so its internal scroll is at an
+  // end from the first wheel tick and events chain straight through to the
+  // document, which `html.about-open` has made scrollable. pause() detaches the
+  // 'scroll' listener, so `t` correctly freezes; the document scrolls anyway.
+  // resume() then re-attached the listener on a DESYNCED position and the next
+  // wheel tick jumped the camera to a different beat.
+  it('resume resyncs the document scroll to the t it froze', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 5000 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    try {
+      flow.enter(parent);
+      flow.setScrollForTest(0.42);
+      flow.pause();
+      // Whatever the takeover's scroll chaining did to the document behind it
+      // is exactly what resume() has to undo.
+      scrollTo.mockClear();
+      flow.resume();
+      expect(flow.t()).toBeCloseTo(0.42, 6);
+      expect(scrollTo).toHaveBeenCalledWith(0, 4000 * 0.42);
+    } finally {
+      flow.destroy();
+      scrollTo.mockRestore();
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+    }
+  });
+
+  it('resume under reduced motion leaves the browser owning the scroll', () => {
+    const deps = makeDeps({ reducedMotion: true });
+    const flow = initAboutFlow(deps);
+    const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 5000 });
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    try {
+      flow.enter(parent, 0.6);
+      flow.pause();
+      scrollTo.mockClear();
+      flow.resume();
+      // `t` never leaves 0 in this mode, so resyncing to it would yank a
+      // reader back to the top of a document they were simply scrolling.
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally {
+      flow.destroy();
+      scrollTo.mockRestore();
+      Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+      delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+    }
+  });
+
+  // --- IMPORTANT 4: the gate could never arm at fractional display scaling ---
+  it('arms the gate a rounding error short of the end, not only at an exact 1', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    // What a fully scrolled document actually reports at 125%/150% scaling:
+    // scrollHeight is a rounded integer, the real maximum scrollY is not.
+    flow.setScrollForTest(0.9999);
+    expect(flow.t()).toBeLessThan(1);
+    flow.feedGateForTest(GATE_THRESHOLD_PX);
+    // The indicator is the gate's own synchronous output, written by
+    // feedGateAt itself — a direct read of "the gate was fed", independent of
+    // the async flight it then kicks off.
+    const root = parent.querySelector<HTMLElement>('.about-doc')!;
+    expect(root.style.getPropertyValue('--gate')).toBe('1');
+    flow.stepReturnForTest(1);
+    expect(flow.isOpen()).toBe(false);
+    flow.destroy();
+  });
+
+  it('still refuses to feed the gate genuinely short of the end', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.99); // a real gesture short, not a rounding error
+    flow.feedGateForTest(GATE_THRESHOLD_PX);
+    const root = parent.querySelector<HTMLElement>('.about-doc')!;
+    expect(root.style.getPropertyValue('--gate')).toBe('');
+    expect(flow.isOpen()).toBe(true);
+    flow.destroy();
+  });
+
+  // --- IMPORTANT 5: the return flight played behind the still-mounted doc ---
+  it('fades the corridor document out under the return flight instead of after it', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    const root = parent.querySelector<HTMLElement>('.about-doc')!;
+    expect(root).toBeTruthy();
+
+    void flow.returnHome();
+    // Clickable content must not linger invisibly over the world.
+    expect(root.style.pointerEvents).toBe('none');
+
+    flow.stepReturnForTest(0.1);
+    const early = Number(root.style.opacity);
+    expect(early).toBeLessThan(1);
+    expect(early).toBeGreaterThan(0);
+    flow.stepReturnForTest(0.3);
+    expect(Number(root.style.opacity)).toBeLessThan(early);
+    // Clear well before the flight lands, so most of the travel is watched.
+    flow.stepReturnForTest(0.5);
+    expect(Number(root.style.opacity)).toBe(0);
+
+    flow.stepReturnForTest(1);
+    expect(parent.querySelector('.about-doc')).toBeNull();
+    flow.destroy();
+  });
+
+  it('the blob fades with the document and leaves no inline opacity behind', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    void flow.returnHome();
+    flow.stepReturnForTest(0.2);
+    // not.toBe('') first: an unset inline opacity reads as 0 through Number(),
+    // which would satisfy a bare "< 1" without anything having faded at all.
+    expect(deps.ferroEl!.style.opacity).not.toBe('');
+    expect(Number(deps.ferroEl!.style.opacity)).toBeLessThan(1);
+    expect(Number(deps.ferroEl!.style.opacity)).toBeGreaterThan(0);
+    flow.stepReturnForTest(1);
+    expect(deps.ferroEl!.style.opacity).toBe('');
+    flow.destroy();
+  });
+
+  // --- IMPORTANT 6: arrows ejected you Home from inside the corridor ---
+  //
+  // main.ts's keydown handler is guarded only on inputMode === 'takeover',
+  // which is never 'about'. Inside the corridor refZ is the Work rest, so with
+  // DESTINATIONS down to two entries BOTH arrows resolved to 'home' —
+  // ArrowDown ("forward") moved you backwards. The corridor is the page order
+  // now, so it owns stepping through itself.
+  describe('stepBeat', () => {
+    const withScrollStub = (fn: (scrollTo: ReturnType<typeof vi.spyOn>) => void): void => {
+      const originalInnerHeight = Object.getOwnPropertyDescriptor(window, 'innerHeight')!;
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+      Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 5000 });
+      const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+      try {
+        fn(scrollTo);
+      } finally {
+        scrollTo.mockRestore();
+        Object.defineProperty(window, 'innerHeight', originalInnerHeight);
+        delete (document.documentElement as unknown as Record<string, unknown>).scrollHeight;
+      }
+    };
+
+    it('steps forward to the next beat rather than resolving against the spine', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      withScrollStub((scrollTo) => {
+        flow.enter(parent); // beat 'anchor', t = 0
+        scrollTo.mockClear();
+        flow.stepBeat(1);
+        expect(scrollTo).toHaveBeenCalledWith(0, 4000 * flow.path().tForBeat('transition'));
+        expect(flow.isOpen()).toBe(true);
+      });
+      flow.destroy();
+    });
+
+    it('steps back to the current beat own start before leaving it', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      withScrollStub((scrollTo) => {
+        flow.enter(parent);
+        const lander = flow.path().tForBeat('lander');
+        const team = flow.path().tForBeat('team');
+        flow.setScrollForTest((lander + team) / 2); // partway through 'lander'
+        scrollTo.mockClear();
+        flow.stepBeat(-1);
+        expect(scrollTo).toHaveBeenCalledWith(0, 4000 * lander);
+      });
+      flow.destroy();
+    });
+
+    it('steps back to the previous beat once it is at the current one start', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      withScrollStub((scrollTo) => {
+        flow.enter(parent);
+        flow.setScrollForTest(flow.path().tForBeat('lander'));
+        scrollTo.mockClear();
+        flow.stepBeat(-1);
+        expect(scrollTo).toHaveBeenCalledWith(0, 4000 * flow.path().tForBeat('transition'));
+      });
+      flow.destroy();
+    });
+
+    it('hands the camera back on a backward step from the very top, mirroring the wheel', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      flow.enter(parent); // t = 0
+      flow.stepBeat(-1);
+      expect(flow.isOpen()).toBe(false);
+      expect(deps.director.setSuspended).toHaveBeenLastCalledWith(false);
+      flow.destroy();
+    });
+
+    it('clamps forward at the last beat — leaving forward is the gate job', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      withScrollStub((scrollTo) => {
+        flow.enter(parent);
+        flow.setScrollForTest(1);
+        scrollTo.mockClear();
+        flow.stepBeat(1);
+        expect(scrollTo).toHaveBeenCalledWith(0, 4000); // t stays 1
+        expect(flow.isOpen()).toBe(true);
+      });
+      flow.destroy();
+    });
+
+    it('does nothing while paused, closed, or under reduced motion', () => {
+      const closed = initAboutFlow(makeDeps());
+      expect(() => closed.stepBeat(-1)).not.toThrow();
+      expect(closed.isOpen()).toBe(false);
+
+      const paused = initAboutFlow(makeDeps());
+      paused.enter(parent);
+      paused.pause();
+      paused.stepBeat(-1); // would otherwise exit() from behind the modal
+      expect(paused.isOpen()).toBe(true);
+      paused.destroy();
+
+      const reduced = initAboutFlow(makeDeps({ reducedMotion: true }));
+      reduced.enter(parent);
+      reduced.stepBeat(-1);
+      expect(reduced.isOpen()).toBe(true); // the browser owns the arrows here
+      reduced.destroy();
+    });
+  });
+
+  // --- MINOR 7: the debug seams had drifted from the guards they bypass ---
+  it('setScrollForTest is inert on a paused corridor, like the listener it bypasses', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.enter(parent);
+    flow.setScrollForTest(0.42);
+    const z = deps.camera.position.z;
+    flow.pause();
+    flow.setScrollForTest(0.8);
+    expect(flow.t()).toBeCloseTo(0.42, 6);
+    expect(deps.camera.position.z).toBeCloseTo(z, 6);
+    flow.destroy();
+  });
+
+  it('stepReturnForTest does not run the teardown on a closed corridor', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    flow.stepReturnForTest(1);
+    expect(deps.director.setSuspended).not.toHaveBeenCalled();
+    expect(deps.director.syncTo).not.toHaveBeenCalled();
+    expect(deps.world.setAboutMode).not.toHaveBeenCalled();
+    expect(document.documentElement.classList.contains('about-open')).toBe(false);
     flow.destroy();
   });
 });

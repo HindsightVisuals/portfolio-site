@@ -149,6 +149,22 @@ export interface WorldLayer extends StageLayer {
   setTileStroke(slug: string, px: number): void;
   /** Freeze spine re-anchoring and hide the anchored screens (About corridor). */
   setAboutMode(v: boolean): void;
+  /**
+   * Drive the anchored roots' materialize fade explicitly, 0..1.
+   *
+   * Only meaningful while About mode is on — that is the one state in which
+   * update() does NOT recompute the fade from camera distance every frame, so
+   * this is the only writer. It exists so the corridor can fade the Work wall
+   * out across its opening stretch instead of letting setAboutMode's hard hide
+   * blink it away in a single frame: at the handover the camera sits at the
+   * Work rest with the wall 34 units dead ahead, fully opaque and centred, and
+   * the corridor's first ~8.5 units are level travel straight toward it.
+   *
+   * Uses the same fade/scale pair as the ordinary materialize pass so the two
+   * are indistinguishable. Skips the home mock for the same reason both other
+   * passes do — its visibility is treatment-B managed.
+   */
+  setAnchoredFade(a: number): void;
   /** Test seam: how many anchored roots are currently visible. */
   anchoredVisibleCount(): number;
   /** Test seam: the anchored roots' current z positions, in declaration order. */
@@ -445,6 +461,15 @@ export function initWorld(opts: { reducedMotion: boolean }): WorldLayer {
       }
       // Exiting needs no restore pass: the next update() re-anchors and
       // re-fades every root from the camera's actual position.
+    },
+    setAnchoredFade(a: number): void {
+      const clamped = Math.min(1, Math.max(0, a));
+      for (const s of anchored) {
+        if (s.root === homeMock) continue;
+        s.root.visible = clamped > 0.01;
+        s.root.scale.setScalar(1 - MATERIALIZE_SCALE * (1 - clamped));
+        s.setFade(clamped);
+      }
     },
     anchoredVisibleCount(): number {
       return anchored.filter((s) => s.root.visible).length;
