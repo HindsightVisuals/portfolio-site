@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { DESTINATIONS } from '../three/world';
 import { DAY_INK } from './about-palette';
-import { initAboutFlow, type AboutFlowDeps } from './about-flow';
+import { GATE_IDLE_MS, initAboutFlow, type AboutFlowDeps } from './about-flow';
 import { GATE_THRESHOLD_PX } from './about-gate';
 
 const makeDeps = (over: Partial<AboutFlowDeps> = {}): AboutFlowDeps => ({
@@ -510,9 +510,14 @@ describe('initAboutFlow', () => {
   // placeholder's self-hiding property (opacity from --gate) did not survive
   // into the real component — so a dark bar reading "keep scrolling to return
   // home" sat across the bottom of the day-lit anchor and the whole climb,
-  // announcing an action unavailable for 99% of the scroll. footerRiseAt is an
-  // exact fit for when it IS available and needs no new state.
-  it('keeps the gate indicator invisible until the footer beat brings it in', () => {
+  // announcing an action unavailable for 99% of the scroll. The fix moved
+  // through two shapes: first tying the reveal to footerRiseAt (still visible
+  // before you could act on it, only later in the corridor), then — this QA
+  // pass's change 1 — to whether the gate has genuinely been FED at all,
+  // per Adam's own framing: "it should only pop up once scroll has been done
+  // at the bottom of the page." Arriving at t = 1 is no longer enough on its
+  // own; a real push is.
+  it('keeps the gate indicator invisible until it has actually been fed, even at the very end', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);
     const root = document.documentElement;
@@ -523,8 +528,36 @@ describe('initAboutFlow', () => {
     expect(root.style.getPropertyValue('--gate-show')).toBe('0');
     flow.setScrollForTest(0.5); // mid-climb — nothing to push against yet
     expect(root.style.getPropertyValue('--gate-show')).toBe('0');
+    flow.setScrollForTest(1); // at the very end now, but nothing pushed yet
+    expect(root.style.getPropertyValue('--gate-show')).toBe('0');
+    flow.feedGateForTest(GATE_THRESHOLD_PX / 4); // the first real push
+    expect(root.style.getPropertyValue('--gate-show')).toBe('1');
+    flow.destroy();
+  });
+
+  // The panel stays offered for as long as the reader keeps dwelling at the
+  // end, even once the idle-retreat timer (change 2, below) has drained the
+  // fill back to nothing — it only withdraws once you actually leave the end.
+  it('keeps the gate indicator visible across an idle drain, only hiding it once you leave the end', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    const root = document.documentElement;
+    flow.enter(parent);
     flow.setScrollForTest(1);
-    expect(Number(root.style.getPropertyValue('--gate-show'))).toBeCloseTo(1, 3);
+    flow.feedGateForTest(GATE_THRESHOLD_PX / 4);
+    expect(root.style.getPropertyValue('--gate-show')).toBe('1');
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(GATE_IDLE_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The fill drained, but the offer itself did not.
+    expect(root.style.getPropertyValue('--gate-show')).toBe('1');
+
+    flow.setScrollForTest(0.5); // back up the corridor — now it withdraws
+    expect(root.style.getPropertyValue('--gate-show')).toBe('0');
     flow.destroy();
   });
 
@@ -533,6 +566,7 @@ describe('initAboutFlow', () => {
     const flow = initAboutFlow(deps);
     flow.enter(parent);
     flow.setScrollForTest(1);
+    flow.feedGateForTest(GATE_THRESHOLD_PX / 4);
     flow.exit();
     expect(document.documentElement.style.getPropertyValue('--gate-show')).toBe('');
     flow.destroy();
@@ -564,6 +598,75 @@ describe('initAboutFlow', () => {
     expect(Number(root.style.getPropertyValue('--gate'))).toBeCloseTo(0.5, 6);
     expect(flow.isOpen()).toBe(true);
     flow.destroy();
+  });
+
+  // --- QA change 2: retreat to 0% after inactive scrolling ---
+  //
+  // "it should auto (with smoothing) retreat back to 0% after inactive
+  // scrolling" — an idle timer (GATE_IDLE_MS after the last push) drains the
+  // accumulator exactly as leaving the end already does; the smoothing itself
+  // is CSS's job (.about-gate-fill's width transition, asserted separately in
+  // about-css.test.ts).
+  describe('the idle-retreat timer', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('drains the fill back to zero after GATE_IDLE_MS of no further pushing', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      vi.useFakeTimers();
+      flow.enter(parent);
+      const root = parent.querySelector<HTMLElement>('.about-doc')!;
+      flow.setScrollForTest(1);
+      flow.feedGateForTest(GATE_THRESHOLD_PX / 2);
+      expect(Number(root.style.getPropertyValue('--gate'))).toBeCloseTo(0.5, 6);
+
+      vi.advanceTimersByTime(GATE_IDLE_MS);
+      expect(root.style.getPropertyValue('--gate')).toBe('');
+      // The accumulator drained with it — a later push starts from zero
+      // again, not from wherever it left off.
+      flow.feedGateForTest(GATE_THRESHOLD_PX / 4);
+      expect(Number(root.style.getPropertyValue('--gate'))).toBeCloseTo(0.25, 6);
+      flow.destroy();
+    });
+
+    it('rearms on every push, so a reader mid-push is never drained out from under them', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      vi.useFakeTimers();
+      flow.enter(parent);
+      const root = parent.querySelector<HTMLElement>('.about-doc')!;
+      flow.setScrollForTest(1);
+      flow.feedGateForTest(GATE_THRESHOLD_PX / 4);
+
+      // Most of the idle window elapses, then another push arrives —
+      // the clock must restart from THIS push, not fire on the original
+      // schedule.
+      vi.advanceTimersByTime(GATE_IDLE_MS - 100);
+      flow.feedGateForTest(GATE_THRESHOLD_PX / 4);
+      vi.advanceTimersByTime(GATE_IDLE_MS - 100);
+      expect(Number(root.style.getPropertyValue('--gate'))).toBeCloseTo(0.5, 6);
+
+      vi.advanceTimersByTime(100);
+      expect(root.style.getPropertyValue('--gate')).toBe('');
+      flow.destroy();
+    });
+
+    it('does not fire against a corridor that has already been exited', () => {
+      const deps = makeDeps();
+      const flow = initAboutFlow(deps);
+      vi.useFakeTimers();
+      flow.enter(parent);
+      flow.setScrollForTest(1);
+      flow.feedGateForTest(GATE_THRESHOLD_PX / 4);
+      flow.exit();
+      // A dangling timer touching doc.root or --gate-show after teardown
+      // would throw or resurrect cleared state — either is a bug.
+      expect(() => vi.advanceTimersByTime(GATE_IDLE_MS)).not.toThrow();
+      expect(document.documentElement.style.getPropertyValue('--gate-show')).toBe('');
+      flow.destroy();
+    });
   });
 
   // --- IMPORTANT 1: the projection read last frame's camera matrix ---

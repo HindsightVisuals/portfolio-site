@@ -159,13 +159,21 @@ html.about-open .chrome {
    * through the whole climb, announcing an action unavailable for 99% of the
    * scroll.
    *
-   * --gate-show (about-flow.ts, footerRiseAt) is 0 until the 'contact' beat
-   * and 1 at the corridor's end — the same ramp the chrome lifts on, so the
-   * panel arrives exactly as the footer does. Opacity rather than display, so
-   * it FADES in across that beat instead of appearing in one frame; the panel
-   * is already pointer-events: none, so a fully transparent one is inert.
-   * The `, 0` fallback matters: --gate-show is undefined everywhere outside
-   * the corridor, and a bare var() would invalidate the declaration. */
+   * --gate-show (about-flow.ts) is 0 until the gate has actually been FED —
+   * a real push at the corridor's end, not merely arriving at the beat, per
+   * Adam's QA: driving it off footerRiseAt's ramp instead used to pop the
+   * panel up across the whole last beat, before there was anything to push
+   * against. It stays 1 for as long as you keep dwelling at the end, even
+   * across the idle-retreat below draining the fill back to 0% — the panel
+   * is the "keep scrolling to return home" affordance and stays offered
+   * while that is still true; only leaving the end (or the corridor) hides
+   * it again. No transition here, deliberately: the return flight
+   * (about-flow.ts's applyReturn) writes this same property every tick of
+   * its own eased 1.6s interpolation, and a CSS transition would retarget
+   * against THAT every frame and lag behind it, fighting a curve that is
+   * already smooth. The `, 0` fallback matters: --gate-show is undefined
+   * everywhere outside the corridor, and a bare var() would invalidate the
+   * declaration. */
   opacity: var(--gate-show, 0);
 }
 
@@ -197,6 +205,27 @@ html.about-open .chrome {
   border-radius: 2px;
   background: #61e891;
   width: calc(var(--gate, 0) * 100%);
+  /* QA: "the animation of the green status indicator [should be] smoothed
+   * with scroll so it's not jumpy but smoothly expands as the user scrolls."
+   * --gate used to be written per wheel event with no transition at all, so
+   * the fill stepped once per tick instead of reading as continuous growth.
+   * A plain `width` transition is enough — about-flow.ts's idle-retreat
+   * timer (GATE_IDLE_MS) also just writes --gate back toward 0 on the same
+   * property, so this one rule covers both the forward fill AND the
+   * inactive-scrolling retreat with no JS animation loop, on a corridor that
+   * has no per-frame loop of its own to hang one on (apply() only runs off
+   * real scroll/wheel events).
+   *
+   * 250ms ease-out: quick enough that a burst of wheel ticks (each
+   * retargeting the transition already in flight) still reads as the fill
+   * keeping pace with scrolling rather than lagging behind it, slow enough
+   * to visibly ease rather than snap. Short relative to the 1.6s return
+   * flight (about-flow.ts's RETURN_S), too: the fill finishes catching up to
+   * 100% within the flight's first ~15%, while the panel — on its own
+   * un-transitioned --gate-show, eased by applyReturn — is still almost
+   * fully opaque (easeInOutQuad starts slow), so arming the gate at 100%
+   * does not visibly depart mid-fill. */
+  transition: width 250ms ease-out;
 }
 
 /* Reduced motion: the gate is never fed (about-flow.ts's onWheel returns

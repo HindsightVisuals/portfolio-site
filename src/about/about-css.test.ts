@@ -55,14 +55,24 @@ describe('about.css — the gate indicator', () => {
   // was nothing drawn. This one has no such property — at --gate: 0 the panel,
   // its border and its hatched track are fully painted and only the green fill
   // is zero-width — so a dark bar sat across the bottom of every beat from the
-  // first frame of enter(). --gate-show (about-flow.ts, footerRiseAt) ramps it
-  // in with the footer instead.
-  it('ramps the panel in off --gate-show rather than painting from frame one', () => {
+  // first frame of enter(). --gate-show (about-flow.ts) gates it on whether
+  // the gate has genuinely been fed, per this pass's QA change 1.
+  it('gates the panel on --gate-show rather than painting from frame one', () => {
     const rule = ruleBody(about, '.about-gate');
     expect(rule).toMatch(/opacity:\s*var\(\s*--gate-show\s*,\s*0\s*\)/);
     // display, not opacity, is what the reduced-motion rule above uses — this
     // one must not reach for it, or the panel could never fade.
     expect(rule).not.toMatch(/(^|;|\s)display:\s*none/);
+  });
+
+  // QA change 1's other half: --gate-show must not carry its own CSS
+  // transition. The return flight (about-flow.ts's applyReturn) writes this
+  // same property every tick of an already-eased 1.6s interpolation; a CSS
+  // transition here would retarget against each of those writes and lag
+  // behind a curve that is already smooth, instead of tracking it exactly.
+  it('does not transition --gate-show, so it tracks the return flight exactly', () => {
+    const rule = ruleBody(about, '.about-gate');
+    expect(rule).not.toMatch(/transition\s*:/);
   });
 
   // The gate's two numeric properties need their fallbacks: unlike --ground
@@ -75,6 +85,24 @@ describe('about.css — the gate indicator', () => {
     const seen = [...about.matchAll(/var\(\s*--(gate|gate-show)\s*([,)])/g)];
     expect(seen.length).toBeGreaterThanOrEqual(2);
     for (const m of seen) expect(m[2], `var(--${m[1]}) has no fallback`).toBe(',');
+  });
+
+  // QA change 3: "the animation of the green status indicator [should be]
+  // smoothed with scroll so it's not jumpy but smoothly expands as the user
+  // scrolls." --gate used to be written per wheel event with no transition,
+  // so the fill stepped. The same rule also carries the idle-retreat
+  // (change 2) back to 0% for free — one width transition covers both.
+  it('eases the fill width instead of stepping it per wheel event', () => {
+    const rule = ruleBody(about, '.about-gate-fill');
+    expect(rule).toMatch(/width:\s*calc\(\s*var\(\s*--gate\s*,\s*0\s*\)\s*\*\s*100%\s*\)/);
+    const transition = /transition\s*:\s*width\s+(\d+)ms\s+([\w-]+)/.exec(rule);
+    expect(transition, 'no width transition on .about-gate-fill').not.toBeNull();
+    const [, ms] = transition!;
+    // Short enough to stay well inside the return flight (about-flow.ts's
+    // RETURN_S = 1.6s) so a just-armed fill visibly finishes catching up
+    // long before the panel has faded — not merely "a transition exists".
+    expect(Number(ms)).toBeGreaterThan(0);
+    expect(Number(ms)).toBeLessThan(600);
   });
 });
 
