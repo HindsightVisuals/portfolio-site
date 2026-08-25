@@ -11,6 +11,16 @@ export interface FooterOpts {
    * name, and the meta strip simply omits that segment when it's absent.
    */
   projectOrder?: number;
+  /**
+   * The About corridor's scroll-gate indicator, mounted as a sibling of the
+   * nav column, taking the remaining width of the bottom band's row — per
+   * Figma `110:2`: the nav column sits at 205.66px, and `Scroll Progress
+   * Indicator` (`110:473`) lives inside the remaining 1642.56px frame beside
+   * it. Optional and case-study-only-by-omission: the case study takeover
+   * has no gate to show and simply never passes one, so its footer is
+   * unaffected by this slot's existence.
+   */
+  gate?: HTMLElement;
 }
 
 /**
@@ -116,6 +126,19 @@ export function buildFooter(opts: FooterOpts): HTMLElement {
     navCell.append(link);
   }
   navRow.append(navCell);
+
+  // The About corridor's gate indicator (opts.gate) — a sibling of the nav
+  // column taking the rest of the row's width, per Figma `110:2`. Wrapped
+  // rather than appended bare so footer.css can give it `flex: 1 1 auto`
+  // without reaching into about.css's `.about-gate` rule to do it. Absent on
+  // every case study mount, so `.cs-fband--nav` there never grows this extra
+  // child — the case study's footer is unaffected by this slot existing.
+  if (opts.gate) {
+    const gateSlot = document.createElement('div');
+    gateSlot.className = 'cs-fgate-slot';
+    gateSlot.append(opts.gate);
+    navRow.append(gateSlot);
+  }
   navBox.append(navRow);
   navBand.append(navBox);
 

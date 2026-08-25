@@ -1184,11 +1184,42 @@ describe('initAboutFlow', () => {
     // Effectively home by the time the flight lands, so removing the property
     // at p >= 1 has nothing left to snap.
     expect(late).toBeLessThan(0.1);
-    // The gate panel rides down on the same ramp — it belongs to the footer.
-    expect(Number(root.style.getPropertyValue('--gate-show'))).toBeCloseTo(late, 6);
 
     flow.stepReturnForTest(1);
     expect(root.style.getPropertyValue('--footer-rise')).toBe('');
+    flow.destroy();
+  });
+
+  // CHANGED for this task (gate placement correction). This used to assert
+  // "--gate-show rides down on the same ramp as --footer-rise" — true only
+  // while the gate panel was `position: fixed`, painted OVER the fading
+  // corridor document rather than inside it, so nothing else would have
+  // carried it out of view during the return flight. It now mounts through
+  // footer.ts's `gate` slot, a normal descendant of doc.root — and
+  // applyReturn already fades doc.root's own opacity to 0 well before the
+  // flight lands (RETURN_FADE_P clears it at p = 0.45), so the panel is
+  // already invisible by then regardless of --gate-show. Continuing to write
+  // it every tick would only re-open the exact retarget conflict that used to
+  // block giving .about-gate a plain opacity transition for its fade-in — so
+  // applyReturn no longer touches it at all; only syncGateShow (feedGateAt /
+  // apply()'s leave-the-end reset) and releaseSharedState() (the final clear
+  // at p >= 1) do.
+  it('leaves --gate-show untouched by the return flight, clearing it only when the flight lands', () => {
+    const deps = makeDeps();
+    const flow = initAboutFlow(deps);
+    const root = document.documentElement;
+    flow.enter(parent);
+    flow.setScrollForTest(1);
+    flow.feedGateForTest(GATE_THRESHOLD_PX / 4); // fed — the flight can only ever start once it is
+    expect(root.style.getPropertyValue('--gate-show')).toBe('1');
+
+    void flow.returnHome();
+    flow.stepReturnForTest(0.5);
+    expect(root.style.getPropertyValue('--gate-show')).toBe('1');
+    flow.stepReturnForTest(0.9);
+    expect(root.style.getPropertyValue('--gate-show')).toBe('1');
+
+    flow.stepReturnForTest(1);
     expect(root.style.getPropertyValue('--gate-show')).toBe('');
     flow.destroy();
   });

@@ -47,4 +47,29 @@ describe('buildFooter', () => {
     const stripText = Array.from(el.querySelectorAll('.cs-fstrip span')).map((span) => span.textContent);
     expect(stripText).toEqual(['© 2026 · A. TARR', 'END OF FILE  ·  PG 03 / 08', 'click anywhere to mute']);
   });
+
+  // New for this task: the About corridor's gate indicator moved from a
+  // fixed panel floating over the world into the footer's own bottom band —
+  // a sibling of the WORK/ABOUT/CONTACT nav column, per Figma `110:2`.
+  it('mounts a supplied gate element as a sibling of the nav column', () => {
+    const gate = document.createElement('div');
+    gate.className = 'about-gate';
+    const el = buildFooter({ onNav: vi.fn(), gate });
+    const navCell = el.querySelector('.cs-fband--nav .cs-fcell');
+    const slot = el.querySelector('.cs-fgate-slot');
+    expect(slot).not.toBeNull();
+    expect(slot!.contains(gate)).toBe(true);
+    // Siblings in the same row, not nested inside one another — that's what
+    // "the nav column keeps its width, the indicator takes the rest" means
+    // structurally.
+    expect(navCell!.parentElement).toBe(slot!.parentElement);
+  });
+
+  // The case study's own mount never supplies a gate — its footer must be
+  // byte-for-byte what it always was, with no extra slot in the nav row.
+  it('leaves the nav row exactly as before when no gate is supplied (the case study mount)', () => {
+    const el = buildFooter({ onNav: vi.fn(), projectOrder: 3 });
+    expect(el.querySelector('.cs-fgate-slot')).toBeNull();
+    expect(el.querySelector('.about-gate')).toBeNull();
+  });
 });

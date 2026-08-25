@@ -15,7 +15,15 @@ const path = buildAboutPath(new THREE.Vector3(0, 0, ANCHOR_Z));
 const mount = (h = 1000) => {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
-  return { parent, doc: mountAboutDocument(parent, path, h, () => buildFooter({ onNav: () => {} })) };
+  // The footer callback now receives the gate element and must actually
+  // place it (as buildFooter's `gate` slot) for it to mount at all — the
+  // panel no longer gets appended to the beat directly by
+  // mountAboutDocument, it only reaches the DOM through the footer it's
+  // handed to. See about-document.ts and this task's report.
+  return {
+    parent,
+    doc: mountAboutDocument(parent, path, h, (gate) => buildFooter({ onNav: () => {}, gate })),
+  };
 };
 
 describe('mountAboutDocument', () => {
@@ -84,11 +92,20 @@ describe('mountAboutDocument', () => {
     parent.remove();
   });
 
-  it('mounts the gate indicator in the last beat, with its label', () => {
+  // Changed for this task: the gate used to be appended to the beat as a
+  // sibling of the footer, presented as a fixed panel floating over the
+  // world. The designer's mockup (Figma 110:2) puts it INSIDE the footer's
+  // own bottom band instead — a sibling of the WORK/ABOUT/CONTACT nav column,
+  // not of the footer itself — so this now also pins that it is a descendant
+  // of the footer, not merely of the last beat.
+  it('mounts the gate indicator inside the footer, in the last beat, with its label', () => {
     const { doc, parent } = mount();
     const last = doc.sectionFor('ai');
+    const footer = last.querySelector('footer.cs-footer');
+    expect(footer).not.toBeNull();
     const gate = last.querySelector('.about-gate');
     expect(gate).not.toBeNull();
+    expect(footer!.contains(gate)).toBe(true);
     expect(gate!.textContent).toContain('keep scrolling to return home');
     expect(gate!.querySelector('.about-gate-fill')).not.toBeNull();
     doc.destroy();

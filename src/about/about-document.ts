@@ -39,7 +39,7 @@ export function mountAboutDocument(
   parent: HTMLElement,
   path: AboutPath,
   viewportH: number,
-  footer?: () => HTMLElement,
+  footer?: (gate: HTMLElement) => HTMLElement,
 ): AboutDocument {
   const root = document.createElement('main');
   root.className = 'about-doc';
@@ -57,12 +57,15 @@ export function mountAboutDocument(
     root.appendChild(section);
   }
 
-  // The footer lives in the last beat: it IS the end of the page, and the
-  // gate is scroll pushed against it.
-  if (footer) sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!.appendChild(footer());
-
   // The scroll-gate indicator. --gate (0..1) is written per wheel event by
   // about-flow.ts; this only presents it. See about.css for the fill mapping.
+  //
+  // Built here — about-document.ts still owns the corridor's document shape
+  // — but no longer appended to the beat directly. Per the designer's mockup
+  // (Figma 110:2) it lives INSIDE the footer's own bottom band, as the
+  // remaining-width sibling of the WORK/ABOUT/CONTACT nav column, not
+  // floating over the world — so it is handed to `footer` as its `gate` slot
+  // instead.
   const gate = document.createElement('div');
   gate.className = 'about-gate';
   const gateLabel = document.createElement('p');
@@ -74,7 +77,10 @@ export function mountAboutDocument(
   gateFill.className = 'about-gate-fill';
   gateTrack.appendChild(gateFill);
   gate.append(gateLabel, gateTrack);
-  sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!.appendChild(gate);
+
+  // The footer (and, inside it, the gate above) lives in the last beat: it IS
+  // the end of the page, and the gate is scroll pushed against it.
+  if (footer) sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!.appendChild(footer(gate));
 
   /**
    * Height per beat, proportional to that beat's span of the path.

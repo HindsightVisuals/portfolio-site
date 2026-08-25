@@ -65,14 +65,27 @@ describe('about.css — the gate indicator', () => {
     expect(rule).not.toMatch(/(^|;|\s)display:\s*none/);
   });
 
-  // QA change 1's other half: --gate-show must not carry its own CSS
-  // transition. The return flight (about-flow.ts's applyReturn) writes this
-  // same property every tick of an already-eased 1.6s interpolation; a CSS
-  // transition here would retarget against each of those writes and lag
-  // behind a curve that is already smooth, instead of tracking it exactly.
-  it('does not transition --gate-show, so it tracks the return flight exactly', () => {
+  // CHANGED for this task (gate placement correction). This used to assert
+  // the OPPOSITE — that .about-gate carried no transition at all — because
+  // the return flight (about-flow.ts's applyReturn) wrote --gate-show every
+  // tick of its own eased 1.6s interpolation, and a CSS transition would have
+  // retargeted against each of those writes. That conflict has evaporated:
+  // the panel now mounts inside the footer, itself inside .about-doc, whose
+  // opacity applyReturn already fades wholesale on return — so applyReturn no
+  // longer touches --gate-show at all (verified directly in about-flow.ts;
+  // see applyReturn's own comment). With nothing left to retarget against, a
+  // plain opacity transition is safe, and the designer asked for exactly
+  // this: the panel should fade in on first feed rather than pop.
+  it('fades --gate-show in on a plain opacity transition, now that nothing retargets it', () => {
     const rule = ruleBody(about, '.about-gate');
-    expect(rule).not.toMatch(/transition\s*:/);
+    const transition = /transition\s*:\s*opacity\s+(\d+)ms\s+([\w-]+)/.exec(rule);
+    expect(transition, 'no opacity transition on .about-gate').not.toBeNull();
+    const [, ms] = transition!;
+    // Same reasoning as the fill's own transition below: quick enough to
+    // read as a fade rather than a lag, and well inside the 1.6s return
+    // flight so it never overlaps the panel's own fade-out under it.
+    expect(Number(ms)).toBeGreaterThan(0);
+    expect(Number(ms)).toBeLessThan(600);
   });
 
   // The gate's two numeric properties need their fallbacks: unlike --ground

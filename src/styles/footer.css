@@ -154,6 +154,24 @@
   color: var(--cs-ink);
 }
 
+/* The About corridor's gate indicator slot (FooterOpts.gate) — a sibling of
+ * the nav column (.cs-fcell above, in the same .cs-fcells row) taking the
+ * remaining width, per Figma 110:2's footer bottom band: the nav column sits
+ * at 205.66px there, and this frame takes the remaining 1642.56px. `flex: 1 1
+ * auto` is what does that — .cs-fcell's own width is left untouched (still
+ * sized to its content, same as every other caller of this component), so it
+ * is this slot alone that grows to fill what's left.
+ *
+ * Absent from the DOM whenever no `gate` is supplied — every case study
+ * mount — so `.cs-fband--nav` there is exactly the single-cell row it always
+ * was; this rule never has anything to match on that page. */
+.cs-fgate-slot {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 .cs-fstrip {
   display: flex;
   align-items: center;

@@ -122,20 +122,31 @@ html.about-open .chrome {
   }
 }
 
-/* The footer gate's indicator, per Figma 110:473. It is fixed to the viewport
- * rather than flowing with the footer, so it stays reachable while you push
- * against the end. --gate is 0..1, written per wheel event by about-flow.ts.
+/* The footer gate's indicator, per Figma 110:473.
+ *
+ * CORRECTED (this task): it originally shipped as a panel fixed to the
+ * viewport, floating over the world so it "stayed reachable while you push
+ * against the end" — that reasoning doesn't survive a look at the actual
+ * mockup. Figma 110:2's footer bottom band is a row of two: the
+ * WORK/ABOUT/CONTACT nav column, and a sibling frame taking the row's
+ * remaining width, inside which this indicator sits. It is mounted THROUGH
+ * footer.ts's `gate` slot now (page2d/footer.ts, `.cs-fgate-slot`) — a
+ * sibling of the nav column, in normal flow, not a fixed overlay — so this
+ * rule carries no position/inset properties at all. `width: 100%` fills that
+ * slot; `max-width` and the centring margin below reproduce the mock's own
+ * inset (1322.56px of a 1642.56px frame, i.e. inset from both sides, at
+ * footer.css's noted 1.38x Figma scale: 1322.56 / 1.38 ≈ 958px).
+ *
+ * --gate is 0..1, written per wheel event by about-flow.ts.
  *
  * The hatch is a CSS gradient rather than the mock's exported PNG: it is a
  * specifiable 45-degree stripe, not an icon, and a gradient stays crisp at any
  * width with no tiling seam. Space Mono stands in for the mock's Galix Mono,
  * which the site does not ship. */
 .about-gate {
-  position: fixed;
-  left: 50%;
-  bottom: 64px;
-  transform: translateX(-50%);
-  width: min(1272px, calc(100vw - 160px));
+  width: 100%;
+  max-width: 958px;
+  margin: 0 auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -145,12 +156,7 @@ html.about-open .chrome {
   background: #121212;
   border: 1px solid #6b6b6b;
   border-radius: 4px;
-  pointer-events: none;
-  z-index: 2;
-  /* The panel is only relevant AT the footer, and it must not be painted
-   * anywhere else in the corridor.
-   *
-   * The placeholder this replaced self-hid: its width AND its opacity were
+  /* The placeholder this replaced self-hid: its width AND its opacity were
    * both calc(var(--gate, 0) * …), so at zero there was nothing drawn. This
    * component has no such property — at --gate: 0 the panel, its border and
    * its hatched track are all fully painted and only the green fill is
@@ -167,14 +173,23 @@ html.about-open .chrome {
    * across the idle-retreat below draining the fill back to 0% — the panel
    * is the "keep scrolling to return home" affordance and stays offered
    * while that is still true; only leaving the end (or the corridor) hides
-   * it again. No transition here, deliberately: the return flight
-   * (about-flow.ts's applyReturn) writes this same property every tick of
-   * its own eased 1.6s interpolation, and a CSS transition would retarget
-   * against THAT every frame and lag behind it, fighting a curve that is
-   * already smooth. The `, 0` fallback matters: --gate-show is undefined
-   * everywhere outside the corridor, and a bare var() would invalidate the
-   * declaration. */
+   * it again. The `, 0` fallback matters: --gate-show is undefined everywhere
+   * outside the corridor, and a bare var() would invalidate the declaration.
+   *
+   * A plain opacity transition is now safe, where it previously was not: the
+   * return flight (about-flow.ts's applyReturn) used to write this same
+   * property every tick of its own eased 1.6s interpolation, and a CSS
+   * transition would have retargeted against THAT every frame. Now that this
+   * panel lives inside .about-doc, applyReturn's existing whole-document fade
+   * (doc.root.style.opacity, faded out well before the flight lands — see
+   * RETURN_FADE_P) already carries it out of view, so applyReturn no longer
+   * touches --gate-show at all (confirmed: no other writer runs during the
+   * flight). The conflict that ruled out a transition here has evaporated,
+   * so the panel can now fade in on its one real transition — first feed,
+   * 0 to 1 — as the designer asked for, on the same cadence as the fill's own
+   * transition below. */
   opacity: var(--gate-show, 0);
+  transition: opacity 250ms ease-out;
 }
 
 .about-gate-label {
@@ -221,18 +236,18 @@ html.about-open .chrome {
    * keeping pace with scrolling rather than lagging behind it, slow enough
    * to visibly ease rather than snap. Short relative to the 1.6s return
    * flight (about-flow.ts's RETURN_S), too: the fill finishes catching up to
-   * 100% within the flight's first ~15%, while the panel — on its own
-   * un-transitioned --gate-show, eased by applyReturn — is still almost
-   * fully opaque (easeInOutQuad starts slow), so arming the gate at 100%
-   * does not visibly depart mid-fill. */
+   * 100% within the flight's first ~15%, well before the panel is carried out
+   * of view by .about-doc's own whole-document fade (applyReturn), so arming
+   * the gate at 100% does not visibly depart mid-fill. */
   transition: width 250ms ease-out;
 }
 
 /* Reduced motion: the gate is never fed (about-flow.ts's onWheel returns
  * early), so an indicator that could never fill would be a lie — and worse,
- * the panel is position: fixed, so it would sit pinned to the viewport at 0%
- * over a plain scrolling document for the whole read, telling the reader to
- * keep scrolling to return home when scrolling there does nothing.
+ * the panel sits in the footer's own row (page2d/footer.ts's `gate` slot),
+ * so it would render pinned at 0% fill inside a plain scrolling document for
+ * the whole read, telling the reader to keep scrolling to return home when
+ * scrolling there does nothing.
  *
  * BELOW the block above, not folded into the reduced-motion @media near the
  * top of this file, which is where it shipped: a media query adds NO

@@ -310,10 +310,13 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
    * leaving the end (apply()'s reset below) or leaving the corridor
    * (releaseSharedState) clears gateFed.
    *
-   * The single writer for --gate-show outside the return flight (applyReturn
-   * owns it there, off fromRise, per its own comment) — called from both
-   * sites that can flip gateFed: feedGateAt's first push, and apply()'s
-   * leave-the-end reset.
+   * The ONLY writer of --gate-show, full stop — called from both sites that
+   * can flip gateFed: feedGateAt's first push, and apply()'s leave-the-end
+   * reset. (applyReturn used to write it too, off fromRise, for as long as
+   * the panel was a `position: fixed` overlay outside the fading document;
+   * now that it mounts through footer.ts's `gate` slot, a descendant of
+   * doc.root, applyReturn's own whole-document fade already carries it out of
+   * view — see applyReturn's own comment.)
    */
   const syncGateShow = (): void => {
     document.documentElement.style.setProperty('--gate-show', gateFed ? '1' : '0');
@@ -599,10 +602,26 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // down here is the whole fix: the chrome descends as the camera flies.
     // Off the EASED e, not raw p, so it tracks the camera's own curve rather
     // than merely finishing at the same time. releaseSharedState() below still
-    // removes both properties at p >= 1 — by then they read 0 anyway, so
-    // there is nothing left to snap.
+    // removes this property at p >= 1 — by then it reads 0 anyway, so there
+    // is nothing left to snap.
     document.documentElement.style.setProperty('--footer-rise', String(fromRise * (1 - e)));
-    document.documentElement.style.setProperty('--gate-show', String(fromRise * (1 - e)));
+    // --gate-show is deliberately NOT written here any more (it used to ride
+    // the same fromRise*(1-e) ramp as --footer-rise above). That write
+    // existed only because the gate panel used to be `position: fixed`,
+    // painted OVER the fading document rather than inside it, so nothing else
+    // would have carried it out of view. Now that the panel is mounted
+    // through footer.ts's `gate` slot — a normal descendant of `doc.root` —
+    // the `fade` write four lines up already takes it to invisible (well
+    // before the flight lands: RETURN_FADE_P clears the whole document at
+    // p = 0.45, long before --footer-rise/e reach 0), so a second write here
+    // would be redundant at best. It would also fight the opacity transition
+    // about.css now puts on .about-gate for the fade-IN: retargeting that
+    // transition every tick, exactly the conflict this property used to
+    // create for --footer-rise's chrome consumers, just relocated. Leaving
+    // gateFed's last value (always '1' here — the flight only starts once the
+    // gate has been fed) in place for the rest of the flight is correct: it
+    // is already invisible via the document fade, and releaseSharedState()
+    // below still clears it outright at p >= 1.
     if (p >= 1) {
       open = false;
       paused = false;
@@ -856,7 +875,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       // viewport's worth of content, and the site's default full-bleed lock
       // (base.css) otherwise pins it at zero height (C1).
       document.documentElement.classList.add(ABOUT_OPEN_CLASS);
-      doc = mountAboutDocument(parent, path, window.innerHeight, () => buildFooter({ onNav: onFooterNav }));
+      // Named gateEl, not gate: this closure's own `gate` is the GateState
+      // above (createGate()) — a same-named callback param would shadow it.
+      doc = mountAboutDocument(parent, path, window.innerHeight, (gateEl) =>
+        buildFooter({ onNav: onFooterNav, gate: gateEl }),
+      );
       window.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('resize', onResize);
       window.addEventListener('wheel', onWheel, { passive: true });
