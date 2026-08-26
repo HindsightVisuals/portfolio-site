@@ -328,8 +328,44 @@ because the whole beat loads together.
 | `Cursor` | Include, hidden. Gives the runtime its measured radius and a placement reference rather than a hardcoded 0.2504. |
 | `Point` | Include. Exports via `KHR_lights_punctual`; saves guessing intensity and colour. |
 
-Ground ships separately as `array-ground.glb` — low-poly plane plus baked normal
-map. Multires L2 at 524k polys cannot ship.
+### Ground: geometry in the GLB, textures alongside it
+
+`array-ground.glb` carries **only the plane** — export it with Materials: No
+export, exactly like the array. Its maps ship as standalone files and are loaded
+by the runtime, not embedded.
+
+Embedding was the original plan and it is wrong for three reasons, all measured
+2026-08-26:
+
+- **VRAM, not download, is the real cost.** Four 2048² textures report a
+  `gpuSize` of **22.37 MB each — 89.5 MB total**. Uncompressed formats stay
+  uncompressed in memory; only a GPU format (KTX2/Basis) fixes that.
+- **Half the maps are constants.** `Emission` decodes to 12,582,912 bytes of pure
+  `0x00` — one distinct value, every row filter zero. Blank, for 22.37 MB of
+  VRAM. `Alpha` and `Metallic` are flat too. All three become scalar material
+  values.
+- **Round-tripping the GLB through image tooling is fragile.** See below.
+
+Source maps live in `03_Substance Painter/01_Textures/00_GroundPlane/`, 2048²
+JPEG: `BaseColor` (810 KB), `Normal` (2.16 MB), `Roughness` (1.38 MB),
+`Displacement` (738 KB, not currently used). Those three — plus displacement if
+wanted — are the whole ground texture set. The camera looks *up* at the array, so
+the ground is peripheral; 1024² is likely enough and halves everything again.
+
+### Tooling state (unresolved, implementation-phase)
+
+KTX2 encoding is **not yet working on this machine** and needs one of:
+
+- **KTX-Software 4.3+** installed, giving `gltf-transform`'s `uastc`/`etc1s` the
+  `ktx` binary they shell out to. Preferred.
+- `gltfpack` — bundles the Basis encoder, but **cannot read Draco**, so it would
+  need a decode pass first.
+
+Separately, `gltf-transform`'s sharp/libvips-backed commands (`resize`, `webp`)
+fail here with `VipsInterpretation` value 32 — not a valid enum value, and it
+fires regardless of input, so it is an environment bug rather than a problem with
+the bakes (the PNGs are ordinary 8-bit RGB/RGBA). Keeping textures out of the GLB
+means this never sits on the critical path.
 
 ### Export settings
 
@@ -430,11 +466,10 @@ transitions freeze at their start value. Plan around it:
 
 ## 9. Open questions
 
-**9.1 — Where does the array sit relative to the camera?** The `lander` marker
-has **pitch 179.9°**, i.e. the camera looking straight up; the Blender comms
-scene is framed level (camera at y −4.558, pitch 90°). Looking up at a dish that
-looms overhead would work, but the array's placement transform depends on the
-answer and it is not derivable from either file.
+**9.1 — RESOLVED 2026-08-26.** The array sits **overhead at the existing marker**.
+The `lander` pitch of 179.9° stands — the camera climbs, tips back, and the dish
+looms above it. No change to `ABOUT_MARKERS`. The Blender scene's level framing
+was an authoring convenience, not the intended view.
 
 **9.2 — Touch devices.** There is no pointer. Options: ambient-only, an
 autonomous sweep that drives the cursor, or drive it from scroll position. F19
