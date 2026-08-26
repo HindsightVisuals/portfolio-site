@@ -28,7 +28,7 @@ runtime must reproduce.
 |---|---|---|
 | `Cursor` | driver | UV sphere, local radius **1.0**, world radius **0.2504** |
 | `Circle` | dish panels | child of `Cube.001`; **world scale 0.732**; local radius ≈ **1.611**; 9,840 tris |
-| `Circle.012` | **constant emitter** — the glowing core | child of `Circle`; 3,072 tris; see below |
+| `Circle.012` | **wireframe scaffold** under the main disc | child of `Circle`; 3,072 tris; **256 islands**; same treatment as `Circle` |
 | `Cylinder` | signal beam | child of `Circle`; 1,404 tris after Decimate |
 | `Cube.001` + 19 others | frame, struts, dish fittings | share `Array Material` (grey metal) |
 | `Landscape` | terrain | 32,768 base polys × Multires L2 = **524,288** |
@@ -36,12 +36,20 @@ runtime must reproduce.
 
 `Circle` carries `TRACK_TO`→`Cursor` at influence **0.159**.
 
-**`Circle.012` shares `Array Material_CursorEmission` with the panels but has no
-GN modifier**, so its `dist` attribute resolves to 0 and the Map Range pins
-emission at its maximum, 4.6, everywhere. It is a *constant* full-strength
-emitter mottled by the noise mask — the bright green core visible in the
-reference frame, not a cursor-driven surface. It needs a simplified variant of
-the panel material: the emission path without the explode or the `vDist` varying.
+**`Circle.012` is the wireframe scaffolding disc sitting under the main dish**, and
+it gets the *same* treatment as `Circle` — same `Array Material_CursorEmission`,
+same split-edge islands, same proximity-driven explode and emission. Verified
+2026-08-26: it carries a baked `dist` attribute (min 3.34, matching the disc's
+3.30 from the same far-parked bake) and separates into **256 islands** by
+connected components.
+
+So there is **one panel material, applied to two meshes** — not two variants. It
+ships as a separate node purely because it is separate geometry; the runtime
+treats both identically and derives island centroids for each.
+
+*(An earlier revision of this spec claimed `Circle.012` had no GN modifier and was
+a constant full-strength emitter. That was inferred without checking the object
+and is wrong.)*
 
 ### Hierarchy (drives the export grouping)
 
@@ -104,8 +112,26 @@ of attention rather than a soft blob. Preserve the ratio when tuning.
 ### Lighting
 
 **`World` background strength is `0`.** The HDRI in the file contributes
-nothing; the scene is lit by the Point/Area lights plus emission. No environment
-map is needed in the web build.
+nothing; the scene is lit by three lights plus emission. No environment map is
+needed in the web build.
+
+Measured 2026-08-26 — recorded here as literal values rather than exported,
+because glTF's `KHR_lights_punctual` has no area-light type and `Area` would not
+survive the trip:
+
+| Light | Type | Power | Colour | World position | Notes |
+|---|---|---|---|---|---|
+| `Area` | square, size 1.0 | **12.7 W** | white | `(0.086, 0.287, 2.521)` | rotation zero — pointing straight down |
+| `Point` | point | **0.639 W** | `(0.288, 1.0, 0.361)` green | `(0.470, −0.264, 0.865)` | child of `Circle`; `CHILD_OF`→`Cursor` @ 0.142 |
+| `Point.002` | point, radius 0.34 | **21.2 W** | white | `(0.079, 0.857, 0.668)` | static fill |
+
+`Point.001` lives in the excluded `Communication Array_UnRigged` collection —
+ignore it.
+
+**Colour management:** the scene renders under **Filmic / Medium High Contrast,
+exposure 0**. Three.js will not match that out of the box, and no built-in tone
+mapping is a direct equivalent. Matching the look is its own tuning pass — expect
+to land it by eye against a reference frame rather than by picking a constant.
 
 `Rough Meta.001` on the Landscape is **fully procedural** — noise, ramps, bump,
 zero image textures. The 4K sand maps in the file belong to unused materials.
@@ -276,6 +302,13 @@ map. Multires L2 at 524k polys cannot ship.
 
 ### Export settings
 
+- **Materials: "No export".** The array needs no glTF materials and no textures.
+  Every array surface is authored in GLSL, so the runtime wants geometry, node
+  transforms and names — nothing else. This single setting is what removes the
+  30.8 MB of duplicated `Scratches` PNG. *(The ground is the exception: its baked
+  maps do ship.)*
+- **Lights: do not export.** Recorded as literal values in §2 instead —
+  `KHR_lights_punctual` has no area-light type, so `Area` cannot survive.
 - **"Apply Modifiers" ON.** Not optional: the GN group on `Circle` is what
   creates the islands, and the `Array` GN on `Circle.016`/`Cube.004` is real
   geometry. Solidify, Bevel, Mirror and Decimate all need to bake too.
@@ -296,9 +329,23 @@ map. Multires L2 at 524k polys cannot ship.
 Placement: an array-root transform relative to the `lander` marker, dialled in
 once — see §9.1.
 
-Pipeline, following Igloo: **Draco** for geometry, **KTX2/Basis** for any
-texture. Neither loader is in the bundle today; both go in the lazy About chunk,
-not the boot path.
+### Compression is the repo's job, not Blender's
+
+Blender exports **raw**; a repo build script does resize → KTX2 → Draco via
+[`gltf-transform`](https://gltf-transform.dev/) (npm, runs on the existing Node
+toolchain). Reasons this belongs on the code side:
+
+- It is reproducible and versioned — re-exporting from Blender cannot silently
+  change compression settings.
+- KTX2/Basis is a GPU container, not an authoring format. Substance Painter does
+  not produce it; `toktx`, `gltf-transform` and `gltfpack` do.
+- Texture budgets can be retuned without asking for a new export.
+
+Draco is already coming out of Blender correctly (~1.2 bytes/tri measured), so
+the script's real work is textures.
+
+Loaders: `DRACOLoader` and `KTX2Loader` are not in the bundle today; both go in
+the lazy About chunk, not the boot path.
 
 ## 7. Performance budget
 
