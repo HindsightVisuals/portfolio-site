@@ -101,6 +101,8 @@ if (lab === 'ferro') {
   void import('./lab/ferro').then((m) => m.initFerroLab());
 } else if (lab === 'fly') {
   void import('./lab/fly').then((m) => m.initFlyLab());
+} else if (lab === 'array') {
+  void import('./lab/array').then((m) => m.initArrayLab());
 } else {
   // Normal site boot
   function initSite(): void {
