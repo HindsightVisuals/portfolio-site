@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { clusterIslandCentres } from './array-geometry';
-import { DISC_NODES, getIslandAttribute, loadArray } from './array-load';
+import { DISC_NODES, getIslandAttribute, loadArray, rebuildHierarchy } from './array-load';
 import { createIdleModel, updateIdle } from './array-idle';
 import { makePanelMaterial } from './array-material';
 import { initArrayPointer, isDisengaged, makeProxy } from './array-pointer';
@@ -33,7 +33,7 @@ export async function initArray(opts: {
   camera: THREE.PerspectiveCamera;
   reducedMotion: boolean;
 }): Promise<ArrayHandle> {
-  const meshes = await loadArray();
+  const { roots, meshes } = await loadArray();
   const group = new THREE.Group();
   const panel = makePanelMaterial();
   const dressing = new THREE.MeshStandardMaterial({
@@ -41,6 +41,19 @@ export async function initArray(opts: {
     metalness: 1,
     roughness: 0.5,
   });
+
+  // Add the scene ROOTS, never the individual meshes. `group.add(mesh)` would
+  // detach each one from its glTF parent and flatten the whole tree — which is
+  // invisible at rest and then leaves the dish's children behind the moment it
+  // leans.
+  for (const root of roots) group.add(root);
+
+  // The export is split across six files, so Blender baked world transforms
+  // onto nodes whose parents live in another file. Put the tree back before
+  // anything reads a transform.
+  group.updateMatrixWorld(true);
+  const missing = rebuildHierarchy(meshes);
+  if (missing.length > 0) console.warn(`[array] unresolved parenting: ${missing.join(', ')}`);
 
   for (const [name, mesh] of meshes) {
     if (DISC_NODES.includes(name)) {
@@ -57,7 +70,6 @@ export async function initArray(opts: {
     } else {
       mesh.material = dressing;
     }
-    group.add(mesh);
   }
 
   const disc = meshes.get('Circle');

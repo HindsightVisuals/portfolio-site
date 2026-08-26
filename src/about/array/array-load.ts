@@ -73,9 +73,71 @@ export function getIslandAttribute(
   );
 }
 
-export async function loadArray(
-  baseUrl: string = import.meta.env.BASE_URL,
-): Promise<Map<string, THREE.Mesh>> {
+/**
+ * The Blender parent of each node, from the scene's own hierarchy.
+ *
+ * The array was exported across six files, and Blender bakes a world transform
+ * onto any node whose parent is not in the same export. So every mesh arrives
+ * correctly PLACED but with no parent — which is invisible at rest and breaks
+ * the moment anything moves, since the dish's children have to ride its
+ * TRACK_TO lean.
+ *
+ * Ordered parents-first so a rebuild walks down the tree rather than across it.
+ */
+export const PARENT_OF: ReadonlyArray<readonly [child: string, parent: string]> = [
+  ['Circle', 'Cube.001'],
+  ['Circle.013', 'Cube.001'],
+  ['Circle.014', 'Cube.001'],
+  ['Cube.002', 'Cube.001'],
+  ['Circle.001', 'Circle'],
+  ['Circle.002', 'Circle'],
+  ['Circle.003', 'Circle'],
+  ['Circle.004', 'Circle'],
+  ['Circle.005', 'Circle'],
+  ['Circle.006', 'Circle'],
+  ['Circle.007', 'Circle'],
+  ['Circle.008', 'Circle'],
+  ['Circle.009', 'Circle'],
+  ['Circle.010', 'Circle'],
+  ['Circle.011', 'Circle'],
+  ['Circle.012', 'Circle'],
+  ['Cube', 'Circle'],
+  ['Cylinder', 'Circle'],
+];
+
+/**
+ * Restore the Blender parenting without moving anything.
+ *
+ * Uses `attach()`, not `add()`: `add()` keeps the LOCAL transform and therefore
+ * teleports a node whose world transform was baked, while `attach()` keeps the
+ * world transform and recomputes the local one. World matrices must be current
+ * before it is called, which is why the caller updates them first.
+ *
+ * Returns the names it could not resolve, so a missing node is reported rather
+ * than silently leaving an orphan that looks fine until the dish moves.
+ */
+export function rebuildHierarchy(meshes: Map<string, THREE.Mesh>): string[] {
+  const missing: string[] = [];
+  for (const [childName, parentName] of PARENT_OF) {
+    const child = meshes.get(childName);
+    const parent = meshes.get(parentName);
+    if (!child || !parent) {
+      missing.push(`${childName} -> ${parentName}`);
+      continue;
+    }
+    parent.attach(child);
+  }
+  return missing;
+}
+
+export interface LoadedArray {
+  /** Each file's scene root, hierarchy intact. Add THESE to the scene. */
+  roots: THREE.Object3D[];
+  /** Every mesh by node name, for material and attribute work. */
+  meshes: Map<string, THREE.Mesh>;
+}
+
+export async function loadArray(baseUrl: string = import.meta.env.BASE_URL): Promise<LoadedArray> {
   const draco = new DRACOLoader();
   draco.setDecoderPath(`${baseUrl}draco/`);
   const loader = new GLTFLoader();
@@ -85,12 +147,14 @@ export async function loadArray(
     ARRAY_ASSETS.map((f) => loader.loadAsync(`${baseUrl}lander/${f}`)),
   );
 
-  const all = new Map<string, THREE.Mesh>();
+  const roots: THREE.Object3D[] = [];
+  const meshes = new Map<string, THREE.Mesh>();
   for (const gltf of scenes) {
+    roots.push(gltf.scene);
     for (const [name, mesh] of splitByName(gltf.scene)) {
-      if (!all.has(name)) all.set(name, mesh);
+      if (!meshes.has(name)) meshes.set(name, mesh);
     }
   }
   draco.dispose();
-  return all;
+  return { roots, meshes };
 }

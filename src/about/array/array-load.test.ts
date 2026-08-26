@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { ARRAY_ASSETS, DISC_NODES, getIslandAttribute, splitByName } from './array-load';
+import {
+  ARRAY_ASSETS,
+  DISC_NODES,
+  getIslandAttribute,
+  rebuildHierarchy,
+  splitByName,
+} from './array-load';
 
 function meshNamed(name: string): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial());
@@ -20,6 +26,60 @@ describe('ARRAY_ASSETS', () => {
 describe('DISC_NODES', () => {
   it('names the two meshes that carry _ISLAND_C', () => {
     expect(DISC_NODES).toEqual(['Circle', 'Circle.012']);
+  });
+});
+
+describe('rebuildHierarchy', () => {
+  it('re-parents without moving anything in world space', () => {
+    // Blender bakes a world transform onto a node whose parent is in another
+    // file. attach() must preserve that placement; add() would teleport it.
+    const meshes = new Map<string, THREE.Mesh>();
+    const parent = meshNamed('Circle');
+    parent.position.set(1, 2, 3);
+    const child = meshNamed('Circle.012');
+    child.position.set(4, 5, 6); // already world-correct
+    const scene = new THREE.Group();
+    scene.add(parent, child);
+    scene.updateMatrixWorld(true);
+
+    meshes.set('Circle', parent);
+    meshes.set('Circle.012', child);
+    meshes.set('Cube.001', meshNamed('Cube.001'));
+
+    const before = child.getWorldPosition(new THREE.Vector3());
+    rebuildHierarchy(meshes);
+    scene.updateMatrixWorld(true);
+    const after = child.getWorldPosition(new THREE.Vector3());
+
+    expect(child.parent).toBe(parent);
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+    expect(after.z).toBeCloseTo(before.z, 5);
+  });
+
+  it('makes children follow the dish once it leans', () => {
+    const meshes = new Map<string, THREE.Mesh>();
+    const disc = meshNamed('Circle');
+    const scaffold = meshNamed('Circle.012');
+    const scene = new THREE.Group();
+    scene.add(disc, scaffold);
+    scene.updateMatrixWorld(true);
+    meshes.set('Circle', disc);
+    meshes.set('Circle.012', scaffold);
+
+    rebuildHierarchy(meshes);
+    disc.position.set(0, 10, 0);
+    scene.updateMatrixWorld(true);
+
+    expect(scaffold.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(10, 5);
+  });
+
+  it('reports what it could not resolve rather than leaving a silent orphan', () => {
+    const meshes = new Map<string, THREE.Mesh>();
+    meshes.set('Circle', meshNamed('Circle'));
+    const missing = rebuildHierarchy(meshes);
+    expect(missing).toContain('Circle -> Cube.001');
+    expect(missing.some((m) => m.startsWith('Cylinder'))).toBe(true);
   });
 });
 
