@@ -21,6 +21,18 @@ export async function initArrayLab(): Promise<void> {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
+  /**
+   * Blender's Z-up coordinates in Three's Y-up space.
+   *
+   * `(x, y, z)` becomes `(x, z, -y)` — note the NEGATED y. Dropping that sign
+   * mirrors the scene through the origin, which put the camera behind the dish
+   * and every light on the wrong side. It looks plausible enough in a dark
+   * scene to survive a glance, so the conversion lives here rather than being
+   * done by hand at each call site.
+   */
+  const fromBlender = (x: number, y: number, z: number): THREE.Vector3 =>
+    new THREE.Vector3(x, z, -y);
+
   // 50mm on a 36mm sensor at 16:9 -> about 22.9 degrees vertical.
   const camera = new THREE.PerspectiveCamera(
     22.9,
@@ -28,18 +40,19 @@ export async function initArrayLab(): Promise<void> {
     0.01,
     100,
   );
-  camera.position.set(0, 0.6, -4.5);
-  camera.lookAt(0, 0.6, 0);
+  camera.position.copy(fromBlender(0, -4.558, 0.578));
+  camera.lookAt(0, 0.578, 0);
 
-  // The rig's three lights, at their measured powers. World strength is 0 in
-  // Blender, so there is deliberately no ambient or environment term — the
-  // scene is meant to be near-black except where emission catches it.
+  // The rig's three lights, at their measured powers and world positions.
+  // World strength is 0 in Blender, so there is deliberately no ambient or
+  // environment term — the scene is meant to be near-black except where
+  // emission catches it.
   const area = new THREE.DirectionalLight(0xffffff, 1.6);
-  area.position.set(0.086, 2.52, 0.287);
+  area.position.copy(fromBlender(0.0864, 0.2873, 2.521));
   const fill = new THREE.PointLight(0xffffff, 2.5, 0, 2);
-  fill.position.set(0.079, 0.668, 0.857);
+  fill.position.copy(fromBlender(0.0786, 0.8569, 0.668));
   const key = new THREE.PointLight(new THREE.Color(0.288, 1, 0.361), 0.4, 0, 2);
-  key.position.set(0.47, 0.865, -0.264);
+  key.position.copy(fromBlender(0.4698, -0.2639, 0.8652));
   scene.add(area, fill, key);
 
   const array = await initArray({ el: canvas, camera, reducedMotion: false });
