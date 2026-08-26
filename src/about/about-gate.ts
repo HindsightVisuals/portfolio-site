@@ -16,8 +16,16 @@
  * it).
  */
 
-/** How much scroll past the footer arms the return. */
-export const GATE_THRESHOLD_PX = 800;
+/**
+ * How much scroll past the footer arms the return.
+ *
+ * Raised from 800 per Adam's QA: "I want to double/triple the scroll it
+ * takes to return home." 2000 sits squarely between double (1600) and triple
+ * (2400) — a round number that reads as deliberate rather than a leftover
+ * arithmetic result. Still a placeholder pending Adam's Figma per this
+ * module's own doc comment above; only the guess changed, not its status.
+ */
+export const GATE_THRESHOLD_PX = 2000;
 
 /**
  * How close to t = 1 counts as the end of the corridor.

@@ -78,6 +78,32 @@ html.about-open .chrome {
   opacity: 0.5;
 }
 
+/* Adam's QA: "I want to make it so the footer is aligned to the bottom of
+ * the screen." The last beat is exactly one viewport tall (about-document.ts)
+ * and .about-beat's `justify-content: center` — correct for the other seven
+ * beats' centred placeholder headings — was centring the footer within it
+ * too, leaving a band of the 3D world visible below. Scoped to
+ * .about-beat-footer, a modifier about-document.ts sets on the last section
+ * only, rather than to `[data-beat="ai"]` here: that would hardcode a
+ * specific marker id into the stylesheet, when what actually matters is the
+ * beat's ROLE (it holds the footer), not which id currently happens to be
+ * last.
+ *
+ * One consequence, not fixed here: the footer is content-sized, and on a
+ * short window it can already exceed one viewport (a recorded, deferred
+ * item — see the last section's missing overflow containment). Today that
+ * overflow spills off the BOTTOM, past the section's own edge, still
+ * partly reachable by scrolling further. Bottom-aligning does not add a new
+ * failure mode, but it does relocate it: the overflow now spills upward, off
+ * the TOP of the viewport, above where the corridor's scroll can reach —
+ * arguably worse, since the reader can never scroll up INTO the corridor
+ * (the last beat's top is `.about-beat`'s scroll-driven start, not a static
+ * position) to see what's been pushed out of view.
+ */
+.about-beat-footer {
+  justify-content: flex-end;
+}
+
 /* The shared footer (page2d/footer.ts, footer.css) mounts full-bleed here,
  * unlike .about-beat's other children. Adam's QA: "the actual footer should
  * be 100vw effectively looking like a 2D page... with the world still

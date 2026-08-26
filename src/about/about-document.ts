@@ -80,7 +80,16 @@ export function mountAboutDocument(
 
   // The footer (and, inside it, the gate above) lives in the last beat: it IS
   // the end of the page, and the gate is scroll pushed against it.
-  if (footer) sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!.appendChild(footer(gate));
+  //
+  // .about-beat-footer (about.css) is a modifier scoped to this one section,
+  // not a `[data-beat="ai"]` selector in the stylesheet: about.css should not
+  // have to know which marker id happens to be last, only that this beat is
+  // the one carrying the footer. Added unconditionally — it marks the beat's
+  // role in the corridor, not whether a footer factory was actually passed in
+  // (tests that mount without one still get the beat that WOULD hold it).
+  const lastSection = sections.get(ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id)!;
+  lastSection.classList.add('about-beat-footer');
+  if (footer) lastSection.appendChild(footer(gate));
 
   /**
    * Height per beat, proportional to that beat's span of the path.

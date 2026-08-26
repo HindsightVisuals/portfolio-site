@@ -216,6 +216,17 @@ describe('the footer full-bleed in the About corridor (footer.css / about.css)',
     expect(rule).toMatch(/align-self:\s*stretch/);
   });
 
+  // Adam's QA: "I want to make it so the footer is aligned to the bottom of
+  // the screen." .about-beat-footer (set on the last section only, by
+  // about-document.ts) overrides the shared .about-beat's centred
+  // justify-content so the footer sits flush to the bottom instead — scoped
+  // to a modifier class rather than `[data-beat="ai"]`, so this stylesheet
+  // never has to know which marker id is last.
+  it('bottom-aligns only the last beat, via a modifier rather than a hardcoded marker id', () => {
+    const rule = ruleBody(about, '.about-beat-footer');
+    expect(rule).toMatch(/justify-content:\s*flex-end/);
+  });
+
   // "The container for the content should be full width too, with the margin
   // we use on the case study page" — .cs-fband is that container, and
   // --cs-gutter is that margin. Scoped to `.about-beat .cs-fband` so the

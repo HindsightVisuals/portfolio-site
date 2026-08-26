@@ -42,8 +42,14 @@ describe('feedGate', () => {
   });
 
   it('has a threshold that takes deliberate effort but is not a workout', () => {
+    // Upper bound widened from 2000 to 3000 for this task: Adam's QA asked to
+    // double/triple the old 800px threshold (1600-2400), and 2000 — the new
+    // value — landed exactly on the old ceiling. That ceiling was never a
+    // reasoned limit on its own, just headroom above the old placeholder's
+    // 800; 3000 preserves the same kind of headroom above the new one rather
+    // than being loosened just far enough to let 2000 slip through.
     expect(GATE_THRESHOLD_PX).toBeGreaterThan(300);
-    expect(GATE_THRESHOLD_PX).toBeLessThan(2000);
+    expect(GATE_THRESHOLD_PX).toBeLessThan(3000);
   });
 });
 

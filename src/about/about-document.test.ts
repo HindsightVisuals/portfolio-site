@@ -92,6 +92,20 @@ describe('mountAboutDocument', () => {
     parent.remove();
   });
 
+  // Adam's QA: the footer should sit flush to the bottom of the screen, not
+  // centred like the other seven beats' placeholder headings. .about-beat-footer
+  // (about.css) is the modifier that flips justify-content for this one
+  // section — only the last beat should carry it.
+  it('marks only the last beat as the one that holds the footer', () => {
+    const { doc, parent } = mount();
+    for (const m of ABOUT_MARKERS) {
+      const isLast = m.id === ABOUT_MARKERS[ABOUT_MARKERS.length - 1].id;
+      expect(doc.sectionFor(m.id).classList.contains('about-beat-footer')).toBe(isLast);
+    }
+    doc.destroy();
+    parent.remove();
+  });
+
   // Changed for this task: the gate used to be appended to the beat as a
   // sibling of the footer, presented as a fixed panel floating over the
   // world. The designer's mockup (Figma 110:2) puts it INSIDE the footer's
