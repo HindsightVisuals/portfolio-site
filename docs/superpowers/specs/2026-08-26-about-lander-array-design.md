@@ -271,9 +271,40 @@ that file's header explains why for this codebase.
 
 ## 6. Asset handoff contract
 
-What the runtime needs exported. **Nothing here needs a custom Blender
-attribute** — island centroids are derived at load from connected components,
-which is robust and keeps the export simple.
+What the runtime needs exported.
+
+### `_ISLAND_C` — the one required custom attribute
+
+`Circle` and `Circle.012` each carry a POINT-domain `FLOAT_VECTOR` attribute
+**`_ISLAND_C`**, the rest centroid of the vertex's panel island. It must survive
+export — enable **Attributes** in the glTF exporter's Data ▸ Mesh panel.
+
+An earlier revision of this spec said no custom attribute was needed, on the
+grounds that connected components could recover the islands at load. Both routes
+to that were measured on 2026-08-26 and **both fail**:
+
+- **Index connectivity fails** because `Smooth by Angle` makes the exporter split
+  vertices at sharp edges — `Circle` goes 5,368 → 21,232 verts, `Circle.012`
+  2,304 → 6,144. Each panel fragments into several components.
+- **Position welding fails** because adjacent panels genuinely touch. At an
+  epsilon of 1e-6, 16 vertex positions on `Circle` are already shared by two
+  different islands, and **505 of 1,676** on `Circle.012`. No epsilon separates
+  "normal-split duplicate" from "neighbouring panel".
+
+So the grouping is computed in Blender, where edge connectivity is unambiguous,
+and baked. Verified after baking: `Circle` 224 islands / 224 unique centres
+(22–24 verts each), `Circle.012` 256 islands / 256 unique centres (9 verts each).
+
+**Do not change the shading to work around this.** Flat shading splits *more*
+(every face needs its own normal, ~29,500 verts), and removing `Smooth by Angle`
+returns the low vertex count but leaves hard-surface bevels reading soft. The
+vertex count costs nothing — 21,232 verts Draco-compresses to 99 KB.
+
+*Caveat to tune:* the baked centroid is the centroid of the **solidified,
+bevelled** island, so it sits slightly inside the original flat face centre that
+Blender's `Geometry Proximity` sampled on the FACE domain. The offset is roughly
+half the Solidify thickness along the panel normal, constant per panel. Expect to
+absorb it with a small uniform rather than treating the thresholds as exact.
 
 ### One file, not five
 
