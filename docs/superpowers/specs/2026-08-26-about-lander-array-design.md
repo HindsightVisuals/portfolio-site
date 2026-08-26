@@ -249,17 +249,49 @@ What the runtime needs exported. **Nothing here needs a custom Blender
 attribute** — island centroids are derived at load from connected components,
 which is robust and keeps the export simple.
 
-Group by the hierarchy in §2 — what rides with the dish versus what stays put —
-not by material.
+### One file, not five
 
-| File | Contents | Requirements |
-|---|---|---|
-| `array-disc.glb` | `Circle` alone, evaluated with GN scale forced to 1.0 (park the cursor far away), Solidify + Bevel + Smooth applied | **Do not merge vertices.** Island separation is load-bearing — a merge-by-distance pass destroys the effect. 9,840 tris, ship as-is. |
-| `array-core.glb` | `Circle.012` | Constant emitter, own material variant. Decimate freely — 3,072 tris is generous for a glowing cone. |
-| `array-fittings.glb` | `Circle.001`–`.011` + `Cube` (children of `Circle`) | Rides with the dish, so parented under the disc at runtime. May merge into one mesh. **Both decimation targets live here: `Circle.010` at 7,484 tris and `Cube` at 7,136 — together 42% of the whole array, and both are dressing.** |
-| `array-frame.glb` | `Cube.001`, `Circle.013`, `.014`, `Cube.002`, `Circle.015`, `.016`, `Cube.003`, `Cube.004` | Static base and mast. May merge into one mesh, one material. Only 3,658 tris total — leave alone. |
-| `array-signal.glb` | `Cylinder`, decimated, **UVs intact** | The alpha mask is UV-driven |
-| `array-ground.glb` | low-poly plane + baked normal map *(Adam is providing this)* | Multires L2 at 524k polys cannot ship |
+**Export the whole array as a single `array.glb` with its hierarchy intact**, and
+the runtime splits it by node name.
+
+Splitting per-group into separate `.glb` files — an earlier draft of this spec —
+is wrong: `Circle`'s transform is expressed relative to `Cube.001`, so exporting
+them to different files drops the parent chain and the dish lands in the wrong
+place. Per-mesh handling (don't-merge, decimate, UV-preserve) is a property of
+each mesh, not of the file it ships in. And there is no lazy-loading benefit,
+because the whole beat loads together.
+
+| Node | Handling |
+|---|---|
+| `Circle` | **Do not merge vertices.** Island separation is load-bearing — a merge-by-distance pass destroys the effect. 9,840 tris, ship as-is. |
+| `Circle.012` | Constant emitter, own material variant. Decimate freely — 3,072 tris is generous for a glowing cone. |
+| `Circle.001`–`.011`, `Cube` | Dish fittings, ride with the disc. **Both decimation targets: `Circle.010` at 7,484 and `Cube` at 7,136 — together 42% of the array, both pure dressing.** |
+| `Cube.001`, `Circle.013`/`.014`, `Cube.002`, `Circle.015`/`.016`, `Cube.003`/`.004` | Static base and mast. 3,658 tris total — leave alone. |
+| `Cylinder` | Signal beam. Decimated, **UVs intact** — the alpha mask is UV-driven. |
+| `Cursor` | Include, hidden. Gives the runtime its measured radius and a placement reference rather than a hardcoded 0.2504. |
+| `Point` | Include. Exports via `KHR_lights_punctual`; saves guessing intensity and colour. |
+
+Ground ships separately as `array-ground.glb` — low-poly plane plus baked normal
+map. Multires L2 at 524k polys cannot ship.
+
+### Export settings
+
+- **"Apply Modifiers" ON.** Not optional: the GN group on `Circle` is what
+  creates the islands, and the `Array` GN on `Circle.016`/`Cube.004` is real
+  geometry. Solidify, Bevel, Mirror and Decimate all need to bake too.
+- **Do NOT apply scale or rotation.** Every threshold in §2 and §3 is expressed in
+  `Circle`'s local space *as it currently stands* (local scale 2, world scale
+  0.732, local radius ≈ 1.611). Applying scale doubles that local radius and
+  breaks 0.2 / 0.41 / 0.3421 all at once. glTF carries the node TRS faithfully,
+  so there is nothing to gain.
+- **Mute `Circle`'s `TRACK_TO` and `Point`'s `CHILD_OF` before exporting.**
+  Measured 2026-08-26: the constraints swing the dish **5.91°** off its authored
+  rotation as the file sits, and **11.36°** once the cursor is parked far away for
+  the GN bake. The exporter reads the evaluated depsgraph, so that swing gets
+  baked into the node transform. The runtime reproduces both follows itself and
+  needs the authored rest pose.
+- Park `Cursor` far away (e.g. x = 100) so the GN evaluates every panel at scale
+  1.0 — the closed state. Restore it afterwards.
 
 Placement: an array-root transform relative to the `lander` marker, dialled in
 once — see §9.1.
