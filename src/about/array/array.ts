@@ -17,6 +17,14 @@ const EXPECTED_ISLANDS: Record<string, number> = { Circle: 224, 'Circle.012': 25
 export interface ArrayHandle {
   group: THREE.Group;
   update(dt: number): void;
+  /**
+   * Hand the panel shader the scene's three lights, in world space.
+   *
+   * The panels are Metallic 1 in a scene with no environment light, so their
+   * entire read is specular — Three's own light uniforms are not available to
+   * a raw ShaderMaterial, so they are passed explicitly.
+   */
+  setLights(positions: THREE.Vector3[], colours: THREE.Color[]): void;
   dispose(): void;
 }
 
@@ -68,13 +76,19 @@ export async function initArray(opts: {
   const lookMatrix = new THREE.Matrix4();
   const lookTarget = new THREE.Quaternion();
   const restQuat = disc.quaternion.clone();
+  const camWorld = new THREE.Vector3();
   let time = 0;
 
   return {
     group,
+    setLights(positions, colours) {
+      panel.setLights(positions, colours);
+    },
     update(dt: number): void {
       time += dt;
       const now = performance.now();
+
+      panel.setCameraPos(opts.camera.getWorldPosition(camWorld));
 
       const hit = pointer.update(opts.camera, disc, cursorLocal);
       const disengaged = opts.reducedMotion || !hit || isDisengaged(pointer.sample(), now);

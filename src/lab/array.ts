@@ -58,6 +58,18 @@ export async function initArrayLab(): Promise<void> {
   const array = await initArray({ el: canvas, camera, reducedMotion: false });
   scene.add(array.group);
 
+  // The panel material is a raw ShaderMaterial, so Three's light uniforms do
+  // not reach it — hand it the same three lights explicitly. Colours are
+  // pre-multiplied by intensity because the shader divides by distance squared.
+  array.setLights(
+    [area.position, fill.position, key.position],
+    [
+      area.color.clone().multiplyScalar(area.intensity * 6),
+      fill.color.clone().multiplyScalar(fill.intensity),
+      key.color.clone().multiplyScalar(key.intensity),
+    ],
+  );
+
   stage.addLayer({
     update: (dt) => array.update(dt),
     render: (renderer) => renderer.render(scene, camera),
