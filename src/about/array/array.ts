@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { clusterIslandCentres } from './array-geometry';
 import { DISC_NODES, getIslandAttribute, loadArray, rebuildHierarchy } from './array-load';
 import { createIdleModel, updateIdle } from './array-idle';
-import { makePanelMaterial } from './array-material';
+import { makePanelMaterial, type PanelMaterialHandle } from './array-material';
 import { initArrayPointer, isDisengaged, makeProxy } from './array-pointer';
+import { CURSOR_WORLD_RADIUS } from './array-math';
 
 /** Disc local radius, measured in Blender. Sizes the raycast proxy. */
 const DISC_LOCAL_RADIUS = 1.611;
@@ -35,7 +36,6 @@ export async function initArray(opts: {
 }): Promise<ArrayHandle> {
   const { roots, meshes } = await loadArray();
   const group = new THREE.Group();
-  const panel = makePanelMaterial();
   const dressing = new THREE.MeshStandardMaterial({
     color: 0x222222,
     metalness: 1,
@@ -55,6 +55,17 @@ export async function initArray(opts: {
   const missing = rebuildHierarchy(meshes);
   if (missing.length > 0) console.warn(`[array] unresolved parenting: ${missing.join(', ')}`);
 
+  /**
+   * One panel material PER disc mesh, not one shared between them.
+   *
+   * `_ISLAND_C` is baked in each mesh's OWN local space, and the scaffold disc
+   * is a child of the dish with its own transform. A single shared material
+   * carries a single `uCursor`, which can only ever be correct for one of
+   * them — the other silently compares its centroids against a cursor in the
+   * wrong space and never reacts.
+   */
+  const panels: Array<{ mesh: THREE.Mesh; handle: PanelMaterialHandle }> = [];
+
   for (const [name, mesh] of meshes) {
     if (DISC_NODES.includes(name)) {
       const attr = getIslandAttribute(mesh.geometry, name);
@@ -66,7 +77,9 @@ export async function initArray(opts: {
       console[ok ? 'info' : 'warn'](
         `[array] ${name}: ${count} islands${ok ? '' : ` — EXPECTED ${expected}`}`,
       );
-      mesh.material = panel.material;
+      const handle = makePanelMaterial();
+      mesh.material = handle.material;
+      panels.push({ mesh, handle });
     } else {
       mesh.material = dressing;
     }
@@ -89,42 +102,59 @@ export async function initArray(opts: {
   const lookTarget = new THREE.Quaternion();
   const restQuat = disc.quaternion.clone();
   const camWorld = new THREE.Vector3();
+  const meshScale = new THREE.Vector3();
+  const parentWorldQuat = new THREE.Quaternion();
   let time = 0;
 
   return {
     group,
     setLights(positions, colours) {
-      panel.setLights(positions, colours);
+      for (const p of panels) p.handle.setLights(positions, colours);
     },
     update(dt: number): void {
       time += dt;
       const now = performance.now();
+      opts.camera.getWorldPosition(camWorld);
 
-      panel.setCameraPos(opts.camera.getWorldPosition(camWorld));
-
-      const hit = pointer.update(opts.camera, disc, cursorLocal);
+      const hit = pointer.update(opts.camera, cursorWorld);
       const disengaged = opts.reducedMotion || !hit || isDisengaged(pointer.sample(), now);
 
       updateIdle(idle, dt * 1000, disengaged);
 
-      panel.setCursor(cursorLocal.x, cursorLocal.y, cursorLocal.z);
-      panel.setCursorAmount(idle.cursor);
-      panel.setAmbient(opts.reducedMotion ? 0 : idle.ambient);
-      panel.setTime(time);
+      for (const { mesh, handle } of panels) {
+        // Convert the world cursor into THIS mesh's local space, and scale the
+        // sphere radius by the same amount, so both discs measure proximity in
+        // the space their own `_ISLAND_C` was baked in.
+        cursorLocal.copy(cursorWorld);
+        mesh.worldToLocal(cursorLocal);
+        mesh.getWorldScale(meshScale);
+        const s = (meshScale.x + meshScale.y + meshScale.z) / 3;
+        handle.setCursorRadius(CURSOR_WORLD_RADIUS / (s || 1));
+        handle.setCursor(cursorLocal.x, cursorLocal.y, cursorLocal.z);
+        handle.setCursorAmount(idle.cursor);
+        handle.setAmbient(opts.reducedMotion ? 0 : idle.ambient);
+        handle.setTime(time);
+        handle.setCameraPos(camWorld);
+      }
 
       // Soft TRACK_TO: the dish leans toward the cursor at 0.159, never fully.
       if (hit && !opts.reducedMotion) {
-        cursorWorld.copy(cursorLocal);
-        disc.localToWorld(cursorWorld);
         disc.getWorldPosition(discWorld);
         lookMatrix.lookAt(discWorld, cursorWorld, disc.up);
         lookTarget.setFromRotationMatrix(lookMatrix);
+        // lookAt gives a WORLD orientation but `disc.quaternion` is LOCAL to
+        // its parent, so it has to come back through the parent's inverse —
+        // otherwise the lean is skewed by whatever rotation the mount carries.
+        if (disc.parent) {
+          disc.parent.getWorldQuaternion(parentWorldQuat);
+          lookTarget.premultiply(parentWorldQuat.invert());
+        }
         disc.quaternion.copy(restQuat).slerp(lookTarget, TRACK_INFLUENCE * idle.cursor);
       }
     },
     dispose(): void {
       pointer.destroy();
-      panel.dispose();
+      for (const p of panels) p.handle.dispose();
       dressing.dispose();
       group.clear();
     },

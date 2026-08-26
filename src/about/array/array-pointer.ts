@@ -40,10 +40,14 @@ export function makeProxy(radius: number): THREE.Mesh {
 
 export interface ArrayPointer {
   /**
-   * Write the cursor position, in the disc's local space, into `out`.
+   * Write the cursor position, in WORLD space, into `out`.
    * Returns false when the pointer misses the proxy entirely.
+   *
+   * World, not disc-local: more than one mesh runs the panel shader and each
+   * has its own local space, so the conversion has to happen per mesh at the
+   * call site rather than once here.
    */
-  update(camera: THREE.Camera, disc: THREE.Object3D, out: THREE.Vector3): boolean;
+  update(camera: THREE.Camera, out: THREE.Vector3): boolean;
   lastMovedAt(): number;
   sample(): PointerSample | null;
   destroy(): void;
@@ -66,7 +70,7 @@ export function initArrayPointer(el: HTMLElement, proxy: THREE.Mesh): ArrayPoint
   el.addEventListener('pointermove', onMove, { passive: true });
 
   return {
-    update(camera, disc, out) {
+    update(camera, out) {
       if (!current) return false;
       ndc.set(current.x, current.y);
       ray.setFromCamera(ndc, camera);
@@ -77,7 +81,6 @@ export function initArrayPointer(el: HTMLElement, proxy: THREE.Mesh): ArrayPoint
       proxy.raycast(ray, hits);
       if (hits.length === 0) return false;
       out.copy(hits[0].point);
-      disc.worldToLocal(out);
       return true;
     },
     lastMovedAt: () => current?.movedAt ?? -Infinity,

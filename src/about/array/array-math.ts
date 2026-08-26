@@ -39,6 +39,16 @@ export const CENTRE_SCALE = 1.5;
  */
 export const CURSOR_RADIUS = 0.3421;
 
+/**
+ * The cursor sphere's radius in WORLD units.
+ *
+ * The disc-local value above is this divided by the disc's world scale of
+ * 0.732. Any other mesh running the panel shader — the scaffold disc, which
+ * has its own transform — needs its own division, so the world figure is the
+ * one that travels.
+ */
+export const CURSOR_WORLD_RADIUS = 0.2504;
+
 export function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
