@@ -17,6 +17,7 @@ import {
   CURSOR_TAU,
   AMBIENT_AMPLITUDE,
   AMBIENT_RATE_X,
+  DISPLACE_GLOW_REF,
 } from './array-math';
 
 describe('constants match the Blender rig', () => {
@@ -149,10 +150,19 @@ describe('dampAngle', () => {
     expect(out).toBeLessThan(0.1); // moved backwards, not forwards
   });
 
-  it('is a big slow drift, not vibration', () => {
-    // Amplitude went up 8x; the rates came DOWN, so the panels travel further
-    // and take longer doing it.
+  it('is a big drift, still slower than the original', () => {
+    // Amplitude up 8x; the rates stay BELOW the original 0.13/0.11/0.17, so the
+    // panels travel much further without the motion reading as vibration.
     expect(AMBIENT_AMPLITUDE).toBeCloseTo(0.012 * 8, 6);
     expect(AMBIENT_RATE_X).toBeLessThan(0.13);
+  });
+
+  it('sizes the emission reference to the AMBIENT, not the explode', () => {
+    // The explode moves a vertex several times further than the ambient does,
+    // so a reference scaled to it would leave the ambient's glow invisible.
+    // The explode saturating is the intended trade.
+    const ambientPeak = AMBIENT_AMPLITUDE * 0.5; // drift is centred, +/- 0.5
+    expect(DISPLACE_GLOW_REF).toBeGreaterThan(ambientPeak * 0.5);
+    expect(DISPLACE_GLOW_REF).toBeLessThan(0.43); // well under a full explode
   });
 });

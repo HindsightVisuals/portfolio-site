@@ -5,6 +5,7 @@ import {
   AMBIENT_RATE_Y,
   AMBIENT_RATE_Z,
   CENTRE_SCALE,
+  DISPLACE_GLOW_REF,
   CURSOR_RADIUS,
   EMISSION_MAX,
   EXPLODE_FAR,
@@ -54,6 +55,7 @@ uniform float uAmbient;
 uniform float uTime;
 
 varying float vDist;
+varying float vDisplace;
 varying vec3  vNormalW;
 varying vec3  vWorldPos;
 varying vec2  vUv;
@@ -92,13 +94,21 @@ void main() {
   vec3 p = centre + (position - centre) * s;
 
   // Ambient drift, sampled per ISLAND so panels move as units rather than
-  // wobbling internally.
+  // wobbling internally, and gated by the SAME falloff as the explode so it
+  // only breathes where the sphere is. Ungated it stirred the whole dish at
+  // once, which reads as noise rather than as the array reacting.
+  float influence = 1.0 - t;
   vec3 drift = vec3(
     noise3(aIslandC * 3.1 + vec3(uTime * ${f3(AMBIENT_RATE_X)}, 0.0, 0.0)),
     noise3(aIslandC * 3.1 + vec3(0.0, uTime * ${f3(AMBIENT_RATE_Y)}, 0.0)),
     noise3(aIslandC * 3.1 + vec3(0.0, 0.0, uTime * ${f3(AMBIENT_RATE_Z)}))
   ) - 0.5;
-  p += drift * ${f3(AMBIENT_AMPLITUDE)} * uAmbient;
+  p += drift * ${f3(AMBIENT_AMPLITUDE)} * uAmbient * influence;
+
+  // How far this vertex actually moved. Emission reads from this rather than
+  // from proximity alone, so a panel pushed by the ambient lights up the same
+  // way one pushed by the sphere does.
+  vDisplace = length(p - position);
 
   vUv = uv;
   vec4 world = modelMatrix * vec4(p, 1.0);
@@ -119,15 +129,26 @@ uniform sampler2D uScratch;
 uniform float uScratchScale;
 
 varying float vDist;
+varying float vDisplace;
 varying vec3  vNormalW;
 varying vec3  vWorldPos;
 varying vec2  vUv;
 
 void main() {
-  // Emission Map Range: 4.6 at the cursor surface, 0 past the glow shell. Much
-  // tighter than the explode band, deliberately.
+  // Emission has two drivers, and takes whichever is stronger.
+  //
+  // PROXIMITY — the rig's own Map Range: 4.6 at the cursor surface, 0 past the
+  // glow shell, and much tighter than the explode band. This is the hot core
+  // right under the sphere.
   float g = 1.0 - clamp(vDist / ${f(GLOW_RADIUS)}, 0.0, 1.0);
-  float e = ${f(EMISSION_MAX)} * g * uCursorAmount * uEmissionGain;
+
+  // DISPLACEMENT — how far the panel actually moved. This is what lets the
+  // ambient drift light panels on its own, with no cursor term: the more a
+  // panel is pushed, the harder it glows, whatever pushed it.
+  float dispDrive = clamp(vDisplace / ${f(DISPLACE_GLOW_REF)}, 0.0, 1.0);
+
+  float drive = max(g * uCursorAmount, dispDrive);
+  float e = ${f(EMISSION_MAX)} * drive * uEmissionGain;
 
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(uCameraPos - vWorldPos);

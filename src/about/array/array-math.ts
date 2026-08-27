@@ -96,14 +96,13 @@ export const AMBIENT_AMPLITUDE = 0.096;
 /**
  * How fast the ambient noise field evolves.
  *
- * Deliberately SLOWER than the amplitude increase — a big, slow drift reads as
- * something alive, while a big, fast one reads as vibration. Scaled down from
- * the original 0.13/0.11/0.17 so the panels travel further and take longer
- * doing it.
+ * Still slower than the original 0.13/0.11/0.17, so the panels travel much
+ * further (8x) without the motion reading as vibration — but doubled from the
+ * first attempt, which was sluggish.
  */
-export const AMBIENT_RATE_X = 0.042;
-export const AMBIENT_RATE_Y = 0.036;
-export const AMBIENT_RATE_Z = 0.055;
+export const AMBIENT_RATE_X = 0.084;
+export const AMBIENT_RATE_Y = 0.072;
+export const AMBIENT_RATE_Z = 0.11;
 
 /**
  * Time constant for the cursor's follow, in seconds.
@@ -139,3 +138,15 @@ export function dampAngle(current: number, target: number, dt: number, tau: numb
   if (tau <= 0 || dt <= 0) return tau <= 0 ? target : current;
   return current + shortestAngleDelta(current, target) * (1 - Math.exp(-dt / tau));
 }
+
+/**
+ * The vertex displacement, in local units, that drives emission to full.
+ *
+ * Emission follows how far a panel has actually MOVED, not just how near the
+ * cursor is — so ambient drift lights panels the same way the sphere does.
+ *
+ * Sized for the ambient, not the explode: the explode moves a vertex several
+ * times further, so a reference scaled to it would leave the ambient's
+ * contribution invisible. The explode simply saturates instead.
+ */
+export const DISPLACE_GLOW_REF = 0.12;
