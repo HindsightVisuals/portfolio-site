@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import {
+  AMBIENT_AMPLITUDE,
+  AMBIENT_RATE_X,
+  AMBIENT_RATE_Y,
+  AMBIENT_RATE_Z,
   CENTRE_SCALE,
   CURSOR_RADIUS,
   EMISSION_MAX,
@@ -37,6 +41,8 @@ export const EMISSION_GAIN = 0.42;
  * occluded tab, so it would look fine right up until it was looked at.
  */
 const f = (n: number): string => n.toFixed(2);
+/** Same, at three places — the ambient rates are small enough that two rounds to zero. */
+const f3 = (n: number): string => n.toFixed(3);
 
 const VERT = /* glsl */ `
 attribute vec3 aIslandC;
@@ -88,11 +94,11 @@ void main() {
   // Ambient drift, sampled per ISLAND so panels move as units rather than
   // wobbling internally.
   vec3 drift = vec3(
-    noise3(aIslandC * 3.1 + vec3(uTime * 0.13, 0.0, 0.0)),
-    noise3(aIslandC * 3.1 + vec3(0.0, uTime * 0.11, 0.0)),
-    noise3(aIslandC * 3.1 + vec3(0.0, 0.0, uTime * 0.17))
+    noise3(aIslandC * 3.1 + vec3(uTime * ${f3(AMBIENT_RATE_X)}, 0.0, 0.0)),
+    noise3(aIslandC * 3.1 + vec3(0.0, uTime * ${f3(AMBIENT_RATE_Y)}, 0.0)),
+    noise3(aIslandC * 3.1 + vec3(0.0, 0.0, uTime * ${f3(AMBIENT_RATE_Z)}))
   ) - 0.5;
-  p += drift * 0.012 * uAmbient;
+  p += drift * ${f3(AMBIENT_AMPLITUDE)} * uAmbient;
 
   vUv = uv;
   vec4 world = modelMatrix * vec4(p, 1.0);

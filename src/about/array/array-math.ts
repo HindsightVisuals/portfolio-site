@@ -84,3 +84,58 @@ export function emissionStrength(d: number): number {
 export function signalFalloff(d: number): number {
   return 10 / (d ** 4 + 1);
 }
+
+/**
+ * How far an idling panel drifts, in the disc's local units.
+ *
+ * Eight times the original 0.012. The ambient is meant to read as the array
+ * breathing, and at the old amplitude it was barely perceptible.
+ */
+export const AMBIENT_AMPLITUDE = 0.096;
+
+/**
+ * How fast the ambient noise field evolves.
+ *
+ * Deliberately SLOWER than the amplitude increase — a big, slow drift reads as
+ * something alive, while a big, fast one reads as vibration. Scaled down from
+ * the original 0.13/0.11/0.17 so the panels travel further and take longer
+ * doing it.
+ */
+export const AMBIENT_RATE_X = 0.042;
+export const AMBIENT_RATE_Y = 0.036;
+export const AMBIENT_RATE_Z = 0.055;
+
+/**
+ * Time constant for the cursor's follow, in seconds.
+ *
+ * The sphere chases the pointer rather than snapping to it: roughly 63% of the
+ * remaining distance is covered each `tau`. A TUNING VALUE — larger is heavier.
+ */
+export const CURSOR_TAU = 0.22;
+
+/**
+ * The signed shortest way from `from` to `to`, in radians, always in (-PI, PI].
+ *
+ * The cursor lives on a closed ring, so the naive difference would send it the
+ * long way round whenever it crosses the seam — a full lap of the dish instead
+ * of a nudge.
+ */
+export function shortestAngleDelta(from: number, to: number): number {
+  const TWO_PI = Math.PI * 2;
+  let d = (to - from) % TWO_PI;
+  if (d > Math.PI) d -= TWO_PI;
+  if (d <= -Math.PI) d += TWO_PI;
+  return d;
+}
+
+/**
+ * Ease an angle toward a target, framerate-independently.
+ *
+ * Uses `1 - exp(-dt/tau)` rather than a fixed lerp factor, so the motion is the
+ * same at 30fps and 144fps. A fixed factor would make the cursor heavier on a
+ * slow machine, which is exactly backwards.
+ */
+export function dampAngle(current: number, target: number, dt: number, tau: number): number {
+  if (tau <= 0 || dt <= 0) return tau <= 0 ? target : current;
+  return current + shortestAngleDelta(current, target) * (1 - Math.exp(-dt / tau));
+}

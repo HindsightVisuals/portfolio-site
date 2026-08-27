@@ -93,11 +93,34 @@ export function projectOntoRing(
  * Derived from the normal rather than assuming an up vector, which would be
  * degenerate whenever the ring happens to face that way.
  */
-export function ringBasis(ring: DisplacementRing): { u: THREE.Vector3; v: THREE.Vector3 } {
-  const u = new THREE.Vector3(1, 0, 0);
+export function ringBasisInto(ring: DisplacementRing, u: THREE.Vector3, v: THREE.Vector3): void {
+  u.set(1, 0, 0);
   if (Math.abs(u.dot(ring.normal)) > 0.9) u.set(0, 1, 0);
   u.addScaledVector(ring.normal, -u.dot(ring.normal)).normalize();
-  return { u, v: new THREE.Vector3().crossVectors(ring.normal, u).normalize() };
+  v.crossVectors(ring.normal, u).normalize();
+}
+
+export function ringBasis(ring: DisplacementRing): { u: THREE.Vector3; v: THREE.Vector3 } {
+  const u = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  ringBasisInto(ring, u, v);
+  return { u, v };
+}
+
+const _u = new THREE.Vector3();
+const _v = new THREE.Vector3();
+const _d = new THREE.Vector3();
+
+/**
+ * The bearing of `point` around the ring, in radians.
+ *
+ * The exact inverse of `ringPointAt` — both read the same basis, so damping can
+ * happen in angle space and come back out as a position without drifting.
+ */
+export function ringAngleOf(point: THREE.Vector3, ring: DisplacementRing): number {
+  ringBasisInto(ring, _u, _v);
+  _d.subVectors(point, ring.centre);
+  return Math.atan2(_d.dot(_v), _d.dot(_u));
 }
 
 /**
@@ -112,11 +135,11 @@ export function ringPointAt(
   angle: number,
   out: THREE.Vector3,
 ): THREE.Vector3 {
-  const { u, v } = ringBasis(ring);
+  ringBasisInto(ring, _u, _v);
   return out
     .copy(ring.centre)
-    .addScaledVector(u, Math.cos(angle) * ring.radius)
-    .addScaledVector(v, Math.sin(angle) * ring.radius);
+    .addScaledVector(_u, Math.cos(angle) * ring.radius)
+    .addScaledVector(_v, Math.sin(angle) * ring.radius);
 }
 
 /**

@@ -13,11 +13,13 @@ import {
 import { createIdleModel, updateIdle } from './array-idle';
 import { makePanelMaterial, type PanelMaterialHandle } from './array-material';
 import { initArrayPointer, isDisengaged } from './array-pointer';
-import { CURSOR_WORLD_RADIUS, EXPLODE_FAR, GLOW_RADIUS } from './array-math';
+import { CURSOR_TAU, CURSOR_WORLD_RADIUS, EXPLODE_FAR, GLOW_RADIUS, dampAngle } from './array-math';
 import {
   makeCursorHelper,
   makeRingHelper,
+  ringAngleOf,
   ringFromNode,
+  ringPointAt,
   updateRingFromNode,
   type DisplacementRing,
 } from './array-path';
@@ -229,6 +231,9 @@ export async function initArray(opts: {
   // Hoisted — update() runs every frame and must not allocate.
   const cursorLocal = new THREE.Vector3();
   const cursorWorld = new THREE.Vector3();
+  const cursorTarget = new THREE.Vector3();
+  let cursorAngle = 0;
+  let hasAngle = false;
   const discWorld = new THREE.Vector3();
   const camWorld = new THREE.Vector3();
   const meshScale = new THREE.Vector3();
@@ -270,8 +275,21 @@ export async function initArray(opts: {
       // off the path whenever the dish is in motion.
       updateRingFromNode(pathNode, ring);
 
-      const hit = pointer.update(opts.camera, ring, cursorWorld);
+      const hit = pointer.update(opts.camera, ring, cursorTarget);
       const disengaged = opts.reducedMotion || !hit || isDisengaged(pointer.sample(), now);
+
+      // Damp the cursor ALONG THE RING, as an angle — not through 3D space.
+      // Interpolating the position directly would cut a chord across the circle
+      // and briefly leave the path; easing the bearing slides along it, which is
+      // what the FOLLOW_PATH constraint does in Blender.
+      if (hit) {
+        const targetAngle = ringAngleOf(cursorTarget, ring);
+        cursorAngle = hasAngle
+          ? dampAngle(cursorAngle, targetAngle, dt, CURSOR_TAU)
+          : targetAngle; // no lurch from an arbitrary start on the first frame
+        hasAngle = true;
+      }
+      ringPointAt(ring, cursorAngle, cursorWorld);
 
       updateIdle(idle, dt * 1000, disengaged);
 
