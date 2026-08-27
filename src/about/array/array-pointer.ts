@@ -36,23 +36,32 @@ export interface ArrayPointer {
   /**
    * Write the cursor position, in WORLD space, into `out`.
    *
-   * The cursor rides a plane perpendicular to the camera's view axis, sitting
-   * `CURSOR_FRONT_OFFSET` in front of `anchor`. Two reasons it is a plane and
-   * not the dish or a proxy sphere:
+   * The cursor rides a plane PARALLEL TO THE DISH'S FACE, sitting
+   * `CURSOR_FRONT_OFFSET` above it — the same thing as sliding the `Cursor`
+   * sphere across the dish in Blender, which is what the rig does.
    *
-   * - A SPHERE returns points on the hemisphere facing the camera, so screen
-   *   centre maps to somewhere up and left on the dish and the mapping breaks
-   *   down entirely near the silhouette. That was the original bug.
-   * - The DISH ITSELF is oriented by the cursor (TRACK_TO), so raycasting it
-   *   closes a feedback loop.
+   * The plane must be dish-aligned, not screen-aligned. The dish is tilted, so
+   * a view-perpendicular plane cuts THROUGH it: the panels nearest that plane
+   * form a band across the dish instead of a pool under the pointer, and the
+   * effect stops following the mouse.
    *
-   * A screen-aligned plane is linear in screen space, stable under the lean,
-   * and never misses — off-dish positions are handled by proximity falloff
-   * rather than by a raycast miss, which is what makes the edges smooth.
+   * `faceNormal` is the dish's REST normal, never its current one. The dish is
+   * oriented by the cursor (TRACK_TO), so feeding back its live orientation
+   * closes a loop; at an influence of 0.159 the rest normal is close enough
+   * that the difference is invisible, and it is unconditionally stable.
+   *
+   * A plane also never misses, so leaving the dish falls off through proximity
+   * rather than through a raycast miss — which is what made the perimeter
+   * glitchy when the target was a sphere.
    *
    * Returns false only when there has been no pointer at all.
    */
-  update(camera: THREE.Camera, anchor: THREE.Vector3, out: THREE.Vector3): boolean;
+  update(
+    camera: THREE.Camera,
+    anchor: THREE.Vector3,
+    faceNormal: THREE.Vector3,
+    out: THREE.Vector3,
+  ): boolean;
   lastMovedAt(): number;
   sample(): PointerSample | null;
   destroy(): void;
@@ -62,8 +71,9 @@ export function initArrayPointer(el: HTMLElement): ArrayPointer {
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const plane = new THREE.Plane();
-  const camDir = new THREE.Vector3();
   const planePoint = new THREE.Vector3();
+  const camPos = new THREE.Vector3();
+  const normal = new THREE.Vector3();
   let current: PointerSample | null = null;
 
   const onMove = (e: PointerEvent): void => {
@@ -77,18 +87,22 @@ export function initArrayPointer(el: HTMLElement): ArrayPointer {
   el.addEventListener('pointermove', onMove, { passive: true });
 
   return {
-    update(camera, anchor, out) {
+    update(camera, anchor, faceNormal, out) {
       if (!current) return false;
 
-      camera.getWorldDirection(camDir);
-      // The plane sits in front of the anchor, facing the camera.
-      planePoint.copy(anchor).addScaledVector(camDir, -CURSOR_FRONT_OFFSET);
-      plane.setFromNormalAndCoplanarPoint(camDir.clone().negate(), planePoint);
+      // Face the plane's normal toward the camera, so the offset lifts the
+      // cursor onto the viewer's side of the dish whichever way it points.
+      camera.getWorldPosition(camPos);
+      normal.copy(faceNormal).normalize();
+      if (normal.dot(camPos.clone().sub(anchor)) < 0) normal.negate();
+
+      planePoint.copy(anchor).addScaledVector(normal, CURSOR_FRONT_OFFSET);
+      plane.setFromNormalAndCoplanarPoint(normal, planePoint);
 
       ndc.set(current.x, current.y);
       ray.setFromCamera(ndc, camera);
-      // Only fails if the ray is exactly parallel to the plane, which cannot
-      // happen for a plane built from this camera's own direction.
+      // Misses only when the view grazes the dish edge-on, where there is no
+      // sensible answer anyway; the caller treats that as no cursor.
       return ray.ray.intersectPlane(plane, out) !== null;
     },
     lastMovedAt: () => current?.movedAt ?? -Infinity,

@@ -37,7 +37,7 @@ export async function initArrayLab(): Promise<void> {
   // AgX is the nearest built-in and rolls the bright emission off instead of
   // clipping it to flat green. Both of these are TUNING VALUES, not measured.
   stage.renderer.toneMapping = THREE.AgXToneMapping;
-  stage.renderer.toneMappingExposure = 1.35;
+  stage.renderer.toneMappingExposure = 1.0;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -59,8 +59,11 @@ export async function initArrayLab(): Promise<void> {
 
   // Frame the dish wherever the export put it.
   array.group.updateMatrixWorld(true);
-  const discWorld = array.disc.getWorldPosition(new THREE.Vector3());
-  camera.position.copy(discWorld).add(CAM_OFFSET_FROM_DISC);
+  // Aim at the dish's VISUAL centre, not its node origin — they differ by
+  // about 0.39 in y, which is enough to push the dish off screen centre and
+  // take the pointer mapping with it.
+  const discWorld = array.discCentre;
+  camera.position.copy(array.disc.getWorldPosition(new THREE.Vector3())).add(CAM_OFFSET_FROM_DISC);
   camera.lookAt(discWorld);
 
   // A camera that ends up inside the terrain renders a screenful of rock and

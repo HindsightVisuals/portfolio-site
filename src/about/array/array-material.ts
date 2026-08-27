@@ -18,6 +18,17 @@ import {
 export const EMISSION_COLOR = new THREE.Color(0.164, 1.0, 0.248);
 
 /**
+ * Scales the rig's peak emission of 4.6 before tone mapping.
+ *
+ * At full strength the emission is (0.75, 4.6, 1.14): green clips hard, blue
+ * clips too, and AgX desaturates the result to cyan-white instead of the green
+ * the rig renders. Pulling the peak under the clip keeps the hue.
+ *
+ * A TUNING VALUE — raise it for a hotter core, lower it for more colour.
+ */
+export const EMISSION_GAIN = 0.42;
+
+/**
  * Format a number as a GLSL float literal.
  *
  * Necessary, not decorative: `SCALE_MAX` is exactly 1, and interpolating it
@@ -94,6 +105,7 @@ void main() {
 const FRAG = /* glsl */ `
 uniform vec3  uEmission;
 uniform float uCursorAmount;
+uniform float uEmissionGain;
 uniform vec3  uLightPos[3];
 uniform vec3  uLightCol[3];
 uniform vec3  uCameraPos;
@@ -109,7 +121,7 @@ void main() {
   // Emission Map Range: 4.6 at the cursor surface, 0 past the glow shell. Much
   // tighter than the explode band, deliberately.
   float g = 1.0 - clamp(vDist / ${f(GLOW_RADIUS)}, 0.0, 1.0);
-  float e = ${f(EMISSION_MAX)} * g * uCursorAmount;
+  float e = ${f(EMISSION_MAX)} * g * uCursorAmount * uEmissionGain;
 
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(uCameraPos - vWorldPos);
@@ -171,6 +183,7 @@ export function makePanelMaterial(scratch: THREE.Texture | null = null): PanelMa
       uAmbient: { value: 0 },
       uTime: { value: 0 },
       uEmission: { value: EMISSION_COLOR },
+      uEmissionGain: { value: EMISSION_GAIN },
       uCameraPos: { value: new THREE.Vector3() },
       uLightPos: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
       uLightCol: { value: [new THREE.Color(), new THREE.Color(), new THREE.Color()] },

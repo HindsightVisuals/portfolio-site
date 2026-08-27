@@ -21,6 +21,9 @@ describe('isDisengaged', () => {
   });
 });
 
+/** A dish whose face points straight at the camera, for the simple cases. */
+const FACE_Z = new THREE.Vector3(0, 0, 1);
+
 /** A camera at +z looking back at the origin, the way the lab frames the dish. */
 function camAt(z: number): THREE.PerspectiveCamera {
   const c = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
@@ -45,7 +48,7 @@ function elWithBox(w: number, h: number): HTMLElement {
 describe('the cursor plane', () => {
   it('is false before any pointer movement', () => {
     const p = initArrayPointer(elWithBox(800, 600));
-    expect(p.update(camAt(5), new THREE.Vector3(), new THREE.Vector3())).toBe(false);
+    expect(p.update(camAt(5), new THREE.Vector3(), FACE_Z, new THREE.Vector3())).toBe(false);
     p.destroy();
   });
 
@@ -57,7 +60,7 @@ describe('the cursor plane', () => {
     move(el, 400, 300);
 
     const out = new THREE.Vector3();
-    expect(p.update(camAt(5), new THREE.Vector3(0, 0, 0), out)).toBe(true);
+    expect(p.update(camAt(5), new THREE.Vector3(0, 0, 0), FACE_Z, out)).toBe(true);
     expect(out.x).toBeCloseTo(0, 5);
     expect(out.y).toBeCloseTo(0, 5);
     p.destroy();
@@ -69,7 +72,7 @@ describe('the cursor plane', () => {
     move(el, 400, 300);
 
     const out = new THREE.Vector3();
-    p.update(camAt(5), new THREE.Vector3(0, 0, 0), out);
+    p.update(camAt(5), new THREE.Vector3(0, 0, 0), FACE_Z, out);
     expect(out.z).toBeCloseTo(CURSOR_FRONT_OFFSET, 5);
     p.destroy();
   });
@@ -81,11 +84,11 @@ describe('the cursor plane', () => {
     const cam = camAt(5);
 
     move(el, 600, 300);
-    p.update(cam, new THREE.Vector3(), out);
+    p.update(cam, new THREE.Vector3(), FACE_Z, out);
     expect(out.x).toBeGreaterThan(0);
 
     move(el, 400, 150);
-    p.update(cam, new THREE.Vector3(), out);
+    p.update(cam, new THREE.Vector3(), FACE_Z, out);
     expect(out.y).toBeGreaterThan(0);
     p.destroy();
   });
@@ -98,8 +101,46 @@ describe('the cursor plane', () => {
     const p = initArrayPointer(el);
     const out = new THREE.Vector3();
     move(el, 799, 1);
-    expect(p.update(camAt(5), new THREE.Vector3(), out)).toBe(true);
+    expect(p.update(camAt(5), new THREE.Vector3(), FACE_Z, out)).toBe(true);
     expect(Number.isFinite(out.x)).toBe(true);
+    p.destroy();
+  });
+
+  it('rides the dish face when the dish is TILTED, not a screen-aligned slice', () => {
+    // The dish is tilted, so a view-perpendicular plane cuts through it and the
+    // nearest panels form a band across the dish rather than a pool under the
+    // pointer — the effect stops following the mouse. Riding the face keeps the
+    // cursor a constant height above it everywhere.
+    const el = elWithBox(800, 600);
+    const p = initArrayPointer(el);
+    const cam = camAt(5);
+    const anchor = new THREE.Vector3(0, 0, 0);
+    const tilted = new THREE.Vector3(0.341, 0.543, 0.767).normalize();
+    const out = new THREE.Vector3();
+
+    for (const [cx, cy] of [
+      [400, 300],
+      [560, 220],
+      [250, 420],
+    ]) {
+      move(el, cx, cy);
+      expect(p.update(cam, anchor, tilted, out)).toBe(true);
+      // Every hit sits exactly CURSOR_FRONT_OFFSET above the dish's plane,
+      // whatever part of the screen it came from.
+      const height = out.clone().sub(anchor).dot(tilted);
+      expect(height).toBeCloseTo(CURSOR_FRONT_OFFSET, 5);
+    }
+    p.destroy();
+  });
+
+  it('lifts the cursor toward the viewer even if the face normal points away', () => {
+    const el = elWithBox(800, 600);
+    const p = initArrayPointer(el);
+    move(el, 400, 300);
+    const out = new THREE.Vector3();
+    // Same plane, normal flipped: the offset must still land on the camera side.
+    p.update(camAt(5), new THREE.Vector3(), new THREE.Vector3(0, 0, -1), out);
+    expect(out.z).toBeCloseTo(CURSOR_FRONT_OFFSET, 5);
     p.destroy();
   });
 
@@ -115,7 +156,7 @@ describe('the cursor plane', () => {
     let maxStep = 0;
     for (let x = 0; x <= 800; x += 20) {
       move(el, x, 300);
-      p.update(cam, anchor, a);
+      p.update(cam, anchor, FACE_Z, a);
       if (prev) maxStep = Math.max(maxStep, a.distanceTo(prev));
       prev = b.copy(a).clone();
     }

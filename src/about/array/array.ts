@@ -25,6 +25,14 @@ export interface ArrayHandle {
   group: THREE.Group;
   /** The dish. The lab frames the camera against it. */
   disc: THREE.Mesh;
+  /**
+   * The dish's VISUAL centre in world space, not its node origin.
+   *
+   * The two differ by about 0.39 in y — the node origin sits low on the dish —
+   * so aiming the camera at the origin puts the middle of the dish above screen
+   * centre, and the pointer mapping inherits the same offset.
+   */
+  discCentre: THREE.Vector3;
   update(dt: number): void;
   /**
    * Hand the panel shader the scene's three lights, in world space.
@@ -109,6 +117,15 @@ export async function initArray(opts: {
   const disc = meshes.get('Circle');
   if (!disc) throw new Error('array: Circle node not found');
 
+  // The dish's rest orientation and visual centre, both fixed at load.
+  // Everything that aims at the dish uses these rather than its live transform,
+  // which the cursor is busy rotating.
+  disc.updateMatrixWorld(true);
+  const discCentre = new THREE.Box3().setFromObject(disc).getCenter(new THREE.Vector3());
+  const restFaceNormal = new THREE.Vector3(0, 1, 0)
+    .applyQuaternion(disc.getWorldQuaternion(new THREE.Quaternion()))
+    .normalize();
+
   const pointer = initArrayPointer(opts.el);
   const idle = createIdleModel();
 
@@ -140,6 +157,7 @@ export async function initArray(opts: {
   return {
     group,
     disc,
+    discCentre,
     setLights(positions, colours) {
       for (const p of panels) p.handle.setLights(positions, colours);
     },
@@ -149,7 +167,7 @@ export async function initArray(opts: {
       opts.camera.getWorldPosition(camWorld);
       disc.getWorldPosition(discWorld);
 
-      const hit = pointer.update(opts.camera, discWorld, cursorWorld);
+      const hit = pointer.update(opts.camera, discCentre, restFaceNormal, cursorWorld);
       const disengaged = opts.reducedMotion || !hit || isDisengaged(pointer.sample(), now);
 
       updateIdle(idle, dt * 1000, disengaged);
