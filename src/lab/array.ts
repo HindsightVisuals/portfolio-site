@@ -3,28 +3,22 @@ import { initStage } from '../three/stage';
 import { initArray } from '../about/array/array';
 
 /**
- * Blender's Z-up coordinates in Three's Y-up space.
+ * Where the camera sits relative to the dish, in Three space.
  *
- * `(x, y, z)` becomes `(x, z, -y)` — note the NEGATED y. Dropping that sign
- * mirrors the scene through the origin, which puts the camera behind the dish
- * and every light on the wrong side. It looks plausible enough in a dark scene
- * to survive a glance, so the conversion lives in one named place.
+ * Taken from AboutLander_Model.blend's OWN camera, which is the framing the
+ * model was authored against: Blender (0, -4.558, 0.578) against a dish at
+ * (-0.0163, 0.3823, 0.6395).
+ *
+ * NOT the corridor camera. Threejs Flow1.blend reaches its look-up framing by
+ * rotating the whole About Lander collection 90 degrees about X, so relative to
+ * the model's own axes its camera is still level and in front. Copying the
+ * corridor's offset put the camera 4.17 below the dish -- underneath a terrain
+ * whose floor is at -0.20, i.e. buried.
  */
-const fromBlender = (x: number, y: number, z: number): THREE.Vector3 =>
-  new THREE.Vector3(x, z, -y);
+const CAM_OFFSET_FROM_DISC = new THREE.Vector3(0.0163, -0.0615, 4.9403);
 
 /**
- * Where the corridor's camera sits relative to the dish, in Three space.
- *
- * Measured in `Threejs Flow1.blend` at the About Page Beat (frame 105): the
- * camera is at Blender (0, 36.269, 4.52) and the dish's centre at
- * (-0.016, 36.735, 8.695). The camera is therefore 4.17 BELOW the dish and
- * looking up at it — which is what the marker's 179.9-degree pitch encodes.
- */
-const CAM_OFFSET_FROM_DISC = fromBlender(0.0163, -0.4656, -4.1747);
-
-/**
- * `?lab=array` — the comms array on its own, framed as the corridor frames it.
+ * `?lab=array` — the comms array on its own, at the model's own framing.
  *
  * Deliberately does NOT mount the corridor: the array is being built as a
  * standalone subsystem so it does not wait on the about-flow.ts split.
@@ -63,24 +57,36 @@ export async function initArrayLab(): Promise<void> {
   const array = await initArray({ el: canvas, camera, reducedMotion: false });
   scene.add(array.group);
 
-  // Frame the dish exactly as the corridor does, wherever the export put it.
+  // Frame the dish wherever the export put it.
   array.group.updateMatrixWorld(true);
   const discWorld = array.disc.getWorldPosition(new THREE.Vector3());
   camera.position.copy(discWorld).add(CAM_OFFSET_FROM_DISC);
   camera.lookAt(discWorld);
 
+  // A camera that ends up inside the terrain renders a screenful of rock and
+  // nothing else, with no error to explain it. Say so.
+  const groundBox = new THREE.Box3().setFromObject(array.group);
+  console.info(
+    `[array lab] camera ${camera.position.toArray().map((v) => v.toFixed(2)).join(', ')} | ` +
+      `dish ${discWorld.toArray().map((v) => v.toFixed(2)).join(', ')} | ` +
+      `scene y ${groundBox.min.y.toFixed(2)}..${groundBox.max.y.toFixed(2)}`,
+  );
+
   // The rig's three lights, at their measured positions relative to the dish.
   // World strength is 0 in Blender, so there is deliberately no ambient or
   // environment term — the scene is near-black except where emission catches it.
-  const at = (bx: number, by: number, bz: number): THREE.Vector3 =>
-    discWorld.clone().add(fromBlender(bx, by, bz));
+  // Offsets are each light's world position in AboutLander_Model.blend minus
+  // the dish's, converted to Three space. Intensities are CONVERTED GUESSES --
+  // Blender watts do not map onto Three candela directly, so these are the
+  // first knob to reach for if the scene reads too hot or too dark.
+  const at = (o: THREE.Vector3): THREE.Vector3 => discWorld.clone().add(o);
 
-  const area = new THREE.PointLight(0xffffff, 3.2, 0, 2);
-  area.position.copy(at(0.1, 0.26, 3.28));
-  const fill = new THREE.PointLight(0xffffff, 2.2, 0, 2);
-  fill.position.copy(at(0.1, -0.03, 0.47));
-  const key = new THREE.PointLight(new THREE.Color(0.288, 1, 0.361), 1.4, 0, 2);
-  key.position.copy(at(0.22, -0.86, 2.73));
+  const area = new THREE.PointLight(0xffffff, 6, 0, 2);
+  area.position.copy(at(new THREE.Vector3(0.1027, 1.8815, 0.095)));
+  const fill = new THREE.PointLight(0xffffff, 10, 0, 2);
+  fill.position.copy(at(new THREE.Vector3(0.0949, 0.0285, -0.4746)));
+  const key = new THREE.PointLight(new THREE.Color(0.288, 1, 0.361), 0.5, 0, 2);
+  key.position.copy(at(new THREE.Vector3(0.4861, 0.2257, 0.6462)));
   scene.add(area, fill, key);
 
   // The panel material is a raw ShaderMaterial, so Three's light uniforms do

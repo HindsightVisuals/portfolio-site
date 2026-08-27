@@ -122,10 +122,19 @@ export async function initArray(opts: {
   const trackQuat = new THREE.Quaternion();
   const parentWorldQuat = new THREE.Quaternion();
   const restQuat = disc.quaternion.clone();
-  const restWorldQuat = new THREE.Quaternion();
-  disc.getWorldQuaternion(restWorldQuat);
-  /** The dish's face normal: Blender tracks its +Z at the cursor. */
-  const FACE_AXIS = new THREE.Vector3(0, 0, 1);
+  /**
+   * The dish's face normal, in its own local space.
+   *
+   * Blender's constraint is TRACK_Z — the dish's local +Z aims at the cursor —
+   * but the glTF Y-up conversion rotates the mesh data by -90 degrees about X,
+   * so Blender's local +Z arrives as glTF local **+Y**. The geometry confirms
+   * it: the disc's local POSITION extent is thin in Y (0.371 to 0.630) and wide
+   * in X and Z, which is only true if Y is the face normal.
+   *
+   * Using (0,0,1) here aims an in-plane axis at the pointer and swings the dish
+   * through itself.
+   */
+  const FACE_AXIS = new THREE.Vector3(0, 1, 0);
   let time = 0;
 
   return {
