@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { makeRingHelper, projectOntoRing, ringFromNode, type DisplacementRing } from './array-path';
+import {
+  makeRingHelper,
+  projectOntoRing,
+  ringFromNode,
+  updateRingFromNode,
+  type DisplacementRing,
+} from './array-path';
 
 /** The measured ring from array-displacementPathAndCursor.glb. */
 const MEASURED: DisplacementRing = {
@@ -111,28 +117,60 @@ describe('projectOntoRing', () => {
 });
 
 describe('makeRingHelper', () => {
-  it('draws a closed circle in the ring plane', () => {
-    const line = makeRingHelper(MEASURED, 64);
+  it('draws a closed UNIT circle in the path node local XZ plane', () => {
+    // Local, not world: the helper is parented to the path node so it rides the
+    // dish's lean for free. A world-space helper would need rebuilding every
+    // frame and would drift out of step with the ring it is showing.
+    const line = makeRingHelper(64);
     const pos = line.geometry.getAttribute('position');
     expect(pos.count).toBe(65); // closed: last point repeats the first
 
     const p = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) {
       p.fromBufferAttribute(pos, i);
-      expect(p.distanceTo(MEASURED.centre)).toBeCloseTo(MEASURED.radius, 4);
-      expect(p.clone().sub(MEASURED.centre).dot(MEASURED.normal)).toBeCloseTo(0, 4);
+      expect(p.length()).toBeCloseTo(1, 5);
+      expect(p.y).toBeCloseTo(0, 6); // the node's +Y is the plane normal
     }
   });
 
-  it('picks a valid in-plane basis even when the normal is +X', () => {
-    const ring: DisplacementRing = {
-      centre: new THREE.Vector3(),
-      normal: new THREE.Vector3(1, 0, 0),
-      radius: 1,
-    };
-    const pos = makeRingHelper(ring, 8).geometry.getAttribute('position');
-    const p = new THREE.Vector3().fromBufferAttribute(pos, 0);
-    expect(Number.isNaN(p.x)).toBe(false);
-    expect(p.length()).toBeCloseTo(1, 5);
+  it('renders at the path node own scale and orientation once parented', () => {
+    const node = new THREE.Object3D();
+    node.position.set(0.1474, 0.8736, -0.0549);
+    node.scale.setScalar(0.6001);
+    node.quaternion.set(0.4727, 0.2333, -0.0713, 0.8468).normalize();
+    const line = makeRingHelper(16);
+    node.add(line);
+    node.updateMatrixWorld(true);
+
+    const ring = ringFromNode(node);
+    const pos = line.geometry.getAttribute('position');
+    const p = new THREE.Vector3().fromBufferAttribute(pos, 0).applyMatrix4(line.matrixWorld);
+    expect(p.distanceTo(ring.centre)).toBeCloseTo(ring.radius, 5);
+    expect(p.clone().sub(ring.centre).dot(ring.normal)).toBeCloseTo(0, 5);
+  });
+});
+
+describe('updateRingFromNode', () => {
+  it('follows the node as the dish leans, without allocating a new ring', () => {
+    const disc = new THREE.Object3D();
+    const node = new THREE.Object3D();
+    node.position.set(0, 0, 0.5);
+    node.scale.setScalar(0.6);
+    disc.add(node);
+    disc.updateMatrixWorld(true);
+
+    const ring = ringFromNode(node);
+    const centreRef = ring.centre;
+    const before = ring.centre.clone();
+
+    // About X, not Z: the node sits on the Z axis, so a Z rotation would leave
+    // it exactly where it was and the test would pass without proving anything.
+    disc.rotation.x = Math.PI / 2;
+    disc.updateMatrixWorld(true);
+    updateRingFromNode(node, ring);
+
+    expect(ring.centre).toBe(centreRef); // written in place
+    expect(ring.centre.distanceTo(before)).toBeGreaterThan(0.01);
+    expect(ring.radius).toBeCloseTo(0.6, 5);
   });
 });

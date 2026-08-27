@@ -22,26 +22,35 @@ export interface DisplacementRing {
   radius: number;
 }
 
+const _quat = new THREE.Quaternion();
+const _scale = new THREE.Vector3();
+
 /**
- * Read the ring from a loaded `Displacement Path` node.
+ * Read the ring from a loaded `Displacement Path` node, in place.
  *
  * glTF has no curve type, so the path exports as a bare transform: position is
  * the centre, uniform scale is the radius, and the node's local +Y is the
  * plane normal. Reconstructing the circle from those three is exact, because
  * the source curve is a Blender Bézier circle of unit radius.
+ *
+ * Re-read every frame rather than cached, because the path is parented to the
+ * dish and therefore rides its lean.
  */
-export function ringFromNode(node: THREE.Object3D): DisplacementRing {
+export function updateRingFromNode(node: THREE.Object3D, ring: DisplacementRing): DisplacementRing {
   node.updateWorldMatrix(true, false);
-  const centre = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  const scale = new THREE.Vector3();
-  node.matrixWorld.decompose(centre, quat, scale);
+  node.matrixWorld.decompose(ring.centre, _quat, _scale);
+  ring.normal.set(0, 1, 0).applyQuaternion(_quat).normalize();
+  ring.radius = (Math.abs(_scale.x) + Math.abs(_scale.y) + Math.abs(_scale.z)) / 3;
+  return ring;
+}
 
-  return {
-    centre,
-    normal: new THREE.Vector3(0, 1, 0).applyQuaternion(quat).normalize(),
-    radius: (Math.abs(scale.x) + Math.abs(scale.y) + Math.abs(scale.z)) / 3,
-  };
+/** A fresh ring read from `node`. */
+export function ringFromNode(node: THREE.Object3D): DisplacementRing {
+  return updateRingFromNode(node, {
+    centre: new THREE.Vector3(),
+    normal: new THREE.Vector3(0, 1, 0),
+    radius: 1,
+  });
 }
 
 /**
@@ -98,7 +107,11 @@ export function ringBasis(ring: DisplacementRing): { u: THREE.Vector3; v: THREE.
  * bearing — the very first frame can land dead on the ring's centre, where the
  * bearing is undefined and there is no previous position to hold.
  */
-export function ringPointAt(ring: DisplacementRing, angle: number, out: THREE.Vector3): THREE.Vector3 {
+export function ringPointAt(
+  ring: DisplacementRing,
+  angle: number,
+  out: THREE.Vector3,
+): THREE.Vector3 {
   const { u, v } = ringBasis(ring);
   return out
     .copy(ring.centre)
@@ -106,15 +119,59 @@ export function ringPointAt(ring: DisplacementRing, angle: number, out: THREE.Ve
     .addScaledVector(v, Math.sin(angle) * ring.radius);
 }
 
-/** A thin ring for `?debug-path`, so the constraint can be seen rather than inferred. */
-export function makeRingHelper(ring: DisplacementRing, segments = 128): THREE.Line {
+/**
+ * A unit ring in the path node's OWN local space, for `?debug-path`.
+ *
+ * Drawn locally and parented to the path node so it rides the dish's lean for
+ * free. A world-space helper would have to be rebuilt every frame, and would
+ * drift out of step with the ring it is supposed to be showing.
+ *
+ * The node's local +Y is the plane normal, so the circle lies in local XZ, and
+ * the node's own uniform scale supplies the radius.
+ */
+export function makeRingHelper(segments = 128): THREE.Line {
   const pts: THREE.Vector3[] = [];
   for (let i = 0; i <= segments; i++) {
-    pts.push(ringPointAt(ring, (i / segments) * Math.PI * 2, new THREE.Vector3()));
+    const a = (i / segments) * Math.PI * 2;
+    pts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)));
   }
-
   return new THREE.Line(
     new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color: 0x61e891 }),
+    new THREE.LineBasicMaterial({ color: 0x61e891, transparent: true, opacity: 0.7 }),
   );
+}
+
+/**
+ * Debug shells showing what the cursor actually reaches.
+ *
+ * The cursor is a sphere of `radius`, but the effect it drives extends well
+ * past its surface: the emission halo dies `glowRadius` beyond it, and panels
+ * stop moving `explodeFar` beyond it. Drawing only the sphere makes the effect
+ * look mysteriously large, so all three shells are drawn.
+ *
+ * Distances arrive in WORLD units; the caller converts from the disc's local
+ * space, where the thresholds are defined.
+ */
+export function makeCursorHelper(
+  radius: number,
+  glowRadius: number,
+  explodeFar: number,
+): THREE.Group {
+  const g = new THREE.Group();
+  const shell = (r: number, colour: number, opacity: number, segs: number): THREE.Mesh =>
+    new THREE.Mesh(
+      new THREE.SphereGeometry(r, segs, segs),
+      new THREE.MeshBasicMaterial({
+        color: colour,
+        wireframe: true,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+      }),
+    );
+
+  g.add(shell(radius, 0x61e891, 0.95, 16));
+  g.add(shell(radius + glowRadius, 0x61e891, 0.3, 12));
+  g.add(shell(radius + explodeFar, 0xffffff, 0.12, 10));
+  return g;
 }

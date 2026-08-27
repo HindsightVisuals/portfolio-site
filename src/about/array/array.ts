@@ -12,8 +12,14 @@ import {
 import { createIdleModel, updateIdle } from './array-idle';
 import { makePanelMaterial, type PanelMaterialHandle } from './array-material';
 import { initArrayPointer, isDisengaged } from './array-pointer';
-import { CURSOR_WORLD_RADIUS } from './array-math';
-import { makeRingHelper, ringFromNode, type DisplacementRing } from './array-path';
+import { CURSOR_WORLD_RADIUS, EXPLODE_FAR, GLOW_RADIUS } from './array-math';
+import {
+  makeCursorHelper,
+  makeRingHelper,
+  ringFromNode,
+  updateRingFromNode,
+  type DisplacementRing,
+} from './array-path';
 
 /**
  * TRACK_TO influence on the dish, from the rig. Blender's constraint is
@@ -93,6 +99,7 @@ export async function initArray(opts: {
    * wrong space and never reacts.
    */
   const panels: Array<{ mesh: THREE.Mesh; handle: PanelMaterialHandle }> = [];
+  let cursorMesh: THREE.Mesh | null = null;
 
   for (const [name, mesh] of meshes) {
     if (DISC_NODES.includes(name)) {
@@ -115,8 +122,11 @@ export async function initArray(opts: {
       const m = mesh.material as THREE.MeshStandardMaterial;
       if (m && 'roughness' in m) m.envMapIntensity = 0;
     } else if (mesh.name === 'Cursor') {
-      // The driver sphere is an INPUT, not scenery — Blender never renders it.
+      // The driver sphere is an INPUT, not scenery — Blender never renders it —
+      // so it stays hidden unless ?debug-path asks for it. It is exported at the
+      // true influence radius, so it shows the real extent, not a stand-in.
       mesh.visible = false;
+      cursorMesh = mesh;
     } else {
       mesh.material = dressing;
     }
@@ -138,19 +148,56 @@ export async function initArray(opts: {
     .boundingBox!.getCenter(new THREE.Vector3())
     .applyMatrix4(disc.matrixWorld);
 
-  // The ring, read from the exported path node and fixed at load. Static in
-  // world space, exactly as the Blender curve is: it is unparented there, and
-  // making it ride the dish's lean would close a loop through the cursor.
+  /**
+   * The ring, PARENTED TO THE DISH so it rides the lean.
+   *
+   * The displacement path is a feature of the dish, not of the world: as the
+   * dish tracks the cursor, the ring has to stay in the same place relative to
+   * it, or the region the pointer controls slides across the panels.
+   *
+   * `attach` rather than `add`, to keep the world placement the export baked in.
+   *
+   * This does close a loop — cursor moves the dish, the dish moves the ring, the
+   * ring moves the cursor — but a converging one, not a runaway. The lean is
+   * recomputed from the dish's REST quaternion every frame rather than
+   * accumulated, so it is a one-step fixed point with a gain of 0.159; it
+   * settles instead of drifting.
+   */
   const pathNode = findByName(roots, PATH_NODE);
   if (!pathNode) throw new Error(`array: "${PATH_NODE}" node not found`);
+  disc.attach(pathNode);
   const ring = ringFromNode(pathNode);
   console.info(
     `[array] ring r=${ring.radius.toFixed(3)} at ` +
-      `${ring.centre.toArray().map((v) => v.toFixed(2)).join(', ')}`,
+      `${ring.centre.toArray().map((v) => v.toFixed(2)).join(', ')} (parented to dish)`,
   );
 
-  if (new URLSearchParams(location.search).has('debug-path')) {
-    group.add(makeRingHelper(ring));
+  const debugPath = new URLSearchParams(location.search).has('debug-path');
+  let cursorHelper: THREE.Group | null = null;
+  if (debugPath) {
+    // Parented to the path node, so it rides the dish for free and cannot drift
+    // out of step with the ring it is meant to be showing.
+    pathNode.add(makeRingHelper());
+
+    // The thresholds are defined in the disc's local space; the helper draws in
+    // world units, so convert through the disc's own scale.
+    const discScale = disc.getWorldScale(new THREE.Vector3()).x || 1;
+    cursorHelper = makeCursorHelper(
+      CURSOR_WORLD_RADIUS,
+      GLOW_RADIUS * discScale,
+      EXPLODE_FAR * discScale,
+    );
+    group.add(cursorHelper);
+
+    if (cursorMesh) {
+      cursorMesh.visible = true;
+      cursorMesh.material = new THREE.MeshBasicMaterial({
+        color: 0x61e891,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.4,
+      });
+    }
   }
 
   const pointer = initArrayPointer(opts.el);
@@ -195,6 +242,11 @@ export async function initArray(opts: {
       opts.camera.getWorldPosition(camWorld);
       disc.getWorldPosition(discWorld);
 
+      // Re-read the ring: it is parented to the dish, so last frame's lean has
+      // already moved it. Reading a stale ring would leave the cursor slightly
+      // off the path whenever the dish is in motion.
+      updateRingFromNode(pathNode, ring);
+
       const hit = pointer.update(opts.camera, ring, cursorWorld);
       const disengaged = opts.reducedMotion || !hit || isDisengaged(pointer.sample(), now);
 
@@ -214,6 +266,16 @@ export async function initArray(opts: {
         handle.setAmbient(opts.reducedMotion ? 0 : idle.ambient);
         handle.setTime(time);
         handle.setCameraPos(camWorld);
+      }
+
+      if (debugPath) {
+        // Both sit under `group`, whose transform is not guaranteed to be
+        // identity — go through the parent rather than assuming world space.
+        for (const helper of [cursorHelper, cursorMesh]) {
+          if (!helper) continue;
+          helper.position.copy(cursorWorld);
+          helper.parent?.worldToLocal(helper.position);
+        }
       }
 
       // Soft TRACK_TO. Blender's constraint is TRACK_Z: the dish's +Z axis
