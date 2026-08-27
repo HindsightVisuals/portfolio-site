@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { clusterIslandCentres } from './array-geometry';
+import {
+  clusterIslandCentres,
+  detectIslandSpace,
+  toGltfSpace,
+} from './array-geometry';
 
 describe('clusterIslandCentres', () => {
   it('collapses Draco jitter so one island has ONE exact centre', () => {
@@ -47,5 +51,55 @@ describe('clusterIslandCentres', () => {
     const { centres, count } = clusterIslandCentres(new Float32Array(0));
     expect(count).toBe(0);
     expect(centres.length).toBe(0);
+  });
+});
+
+describe('detectIslandSpace', () => {
+  /** A slab thin in Z, as Blender authors the dish, with centroids to match. */
+  function slab(): { blender: Float32Array; gltf: Float32Array } {
+    const b: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      b.push(Math.cos(a), Math.sin(a), 0.5);
+    }
+    const blender = new Float32Array(b);
+    const gltf = new Float32Array(b.length);
+    for (let i = 0; i < b.length; i += 3) {
+      gltf[i] = b[i];
+      gltf[i + 1] = b[i + 2];
+      gltf[i + 2] = -b[i + 1];
+    }
+    return { blender, gltf };
+  }
+
+  it('spots a Blender-space attribute sitting beside glTF-space positions', () => {
+    // The real case: the exporter rotates POSITION but not a custom attribute.
+    const { blender, gltf } = slab();
+    const d = detectIslandSpace(gltf, blender, 1);
+    expect(d.space).toBe('blender');
+    expect(d.meanAsBlender).toBeLessThan(d.meanAsGltf);
+  });
+
+  it('leaves an already-converted attribute alone', () => {
+    const { gltf } = slab();
+    const d = detectIslandSpace(gltf, gltf, 1);
+    expect(d.space).toBe('gltf');
+    expect(d.meanAsGltf).toBeCloseTo(0, 6);
+  });
+
+  it('handles an empty attribute without dividing by zero', () => {
+    const d = detectIslandSpace(new Float32Array(0), new Float32Array(0), 1);
+    expect(d.meanAsGltf).toBe(0);
+    expect(Number.isNaN(d.meanAsBlender)).toBe(false);
+  });
+});
+
+describe('toGltfSpace', () => {
+  it('rotates Z-up into Y-up and returns a new array', () => {
+    const src = new Float32Array([1, 2, 3]);
+    const out = toGltfSpace(src);
+    expect(Array.from(out)).toEqual([1, 3, -2]);
+    expect(out).not.toBe(src);
+    expect(Array.from(src)).toEqual([1, 2, 3]);
   });
 });

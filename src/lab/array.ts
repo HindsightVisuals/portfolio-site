@@ -126,5 +126,11 @@ export async function initArrayLab(): Promise<void> {
   });
   stage.start();
 
+  // Expose for debugging: automation tabs have no rAF, so the only way to
+  // inspect live geometry is to reach into it from the console.
+  if (new URLSearchParams(location.search).has('debug-path')) {
+    (window as unknown as { __array: unknown }).__array = array;
+  }
+
   console.info('[array lab] ready');
 }

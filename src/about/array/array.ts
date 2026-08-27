@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clusterIslandCentres } from './array-geometry';
+import { clusterIslandCentres, detectIslandSpace, toGltfSpace } from './array-geometry';
 import {
   DISC_NODES,
   PATH_NODE,
@@ -105,13 +105,31 @@ export async function initArray(opts: {
   for (const [name, mesh] of meshes) {
     if (DISC_NODES.includes(name)) {
       const attr = getIslandAttribute(mesh.geometry, name);
-      const { centres, count } = clusterIslandCentres(attr.array as Float32Array);
+      const posArr = mesh.geometry.getAttribute('position').array as Float32Array;
+      let islandArr = attr.array as Float32Array;
+
+      // The exporter rotates POSITION from Z-up to Y-up but has no way to know
+      // a CUSTOM attribute holds positions, so `_ISLAND_C` arrives unrotated.
+      // Left alone, the shader compares centroids in one space against a cursor
+      // in another and the displacement lands nowhere near the pointer.
+      const detected = detectIslandSpace(posArr, islandArr);
+      if (detected.space === 'blender') islandArr = toGltfSpace(islandArr);
+
+      const { centres, count } = clusterIslandCentres(islandArr);
       mesh.geometry.setAttribute('aIslandC', new THREE.BufferAttribute(centres, 3));
+
       const expected = EXPECTED_ISLANDS[name];
-      const ok = expected === undefined || count === expected;
-      // Load-bearing check: every panel downstream is wrong if this is wrong.
+      // A centroid belongs to its own vertex's island, so this distance is
+      // bounded by island size. A large value means a STALE bake — the mesh
+      // moved after the attribute was written — which looks exactly like a
+      // mis-mapped cursor and is worth naming rather than inferring.
+      const fit = Math.min(detected.meanAsGltf, detected.meanAsBlender);
+      const ok = (expected === undefined || count === expected) && fit < 0.25;
       console[ok ? 'info' : 'warn'](
-        `[array] ${name}: ${count} islands${ok ? '' : ` — EXPECTED ${expected}`}`,
+        `[array] ${name}: ${count} islands` +
+          `${expected !== undefined && count !== expected ? ` — EXPECTED ${expected}` : ''}` +
+          ` | space=${detected.space} fit=${fit.toFixed(3)}` +
+          `${fit >= 0.25 ? ' — STALE BAKE, re-bake _ISLAND_C in Blender' : ''}`,
       );
       const handle = makePanelMaterial(scratches);
       mesh.material = handle.material;
