@@ -16,16 +16,17 @@ function meshNamed(name: string): THREE.Mesh {
 
 describe('ARRAY_ASSETS', () => {
   it('lists every exported file exactly once', () => {
-    expect(ARRAY_ASSETS).toHaveLength(6);
-    expect(new Set(ARRAY_ASSETS).size).toBe(6);
+    expect(ARRAY_ASSETS).toHaveLength(7);
+    expect(new Set(ARRAY_ASSETS).size).toBe(7);
     expect(ARRAY_ASSETS).toContain('array-disc.glb');
-    expect(ARRAY_ASSETS).toContain('array-disc_supporting_wireframe.glb');
+    expect(ARRAY_ASSETS).toContain('array-discScaffold.glb');
+    expect(ARRAY_ASSETS).toContain('array-ground.glb');
   });
 });
 
 describe('DISC_NODES', () => {
   it('names the two meshes that carry _ISLAND_C', () => {
-    expect(DISC_NODES).toEqual(['Circle', 'Circle.012']);
+    expect(DISC_NODES).toEqual(['Circle', 'array-discScaffold']);
   });
 });
 
@@ -36,14 +37,14 @@ describe('rebuildHierarchy', () => {
     const meshes = new Map<string, THREE.Mesh>();
     const parent = meshNamed('Circle');
     parent.position.set(1, 2, 3);
-    const child = meshNamed('Circle.012');
+    const child = meshNamed('array-discScaffold');
     child.position.set(4, 5, 6); // already world-correct
     const scene = new THREE.Group();
     scene.add(parent, child);
     scene.updateMatrixWorld(true);
 
     meshes.set('Circle', parent);
-    meshes.set('Circle.012', child);
+    meshes.set('array-discScaffold', child);
     meshes.set('Cube.001', meshNamed('Cube.001'));
 
     const before = child.getWorldPosition(new THREE.Vector3());
@@ -60,12 +61,12 @@ describe('rebuildHierarchy', () => {
   it('makes children follow the dish once it leans', () => {
     const meshes = new Map<string, THREE.Mesh>();
     const disc = meshNamed('Circle');
-    const scaffold = meshNamed('Circle.012');
+    const scaffold = meshNamed('array-discScaffold');
     const scene = new THREE.Group();
     scene.add(disc, scaffold);
     scene.updateMatrixWorld(true);
     meshes.set('Circle', disc);
-    meshes.set('Circle.012', scaffold);
+    meshes.set('array-discScaffold', scaffold);
 
     rebuildHierarchy(meshes);
     disc.position.set(0, 10, 0);
@@ -78,8 +79,8 @@ describe('rebuildHierarchy', () => {
     const meshes = new Map<string, THREE.Mesh>();
     meshes.set('Circle', meshNamed('Circle'));
     const missing = rebuildHierarchy(meshes);
-    expect(missing).toContain('Circle -> Cube.001');
     expect(missing.some((m) => m.startsWith('Cylinder'))).toBe(true);
+    expect(missing.some((m) => m.startsWith('array-discFrame'))).toBe(true);
   });
 });
 

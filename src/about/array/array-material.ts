@@ -39,6 +39,7 @@ uniform float uTime;
 varying float vDist;
 varying vec3  vNormalW;
 varying vec3  vWorldPos;
+varying vec2  vUv;
 
 // Cheap value noise — the ambient keep-alive only needs low-frequency drift.
 float hash(vec3 p) {
@@ -82,6 +83,7 @@ void main() {
   ) - 0.5;
   p += drift * 0.012 * uAmbient;
 
+  vUv = uv;
   vec4 world = modelMatrix * vec4(p, 1.0);
   vWorldPos = world.xyz;
   vNormalW = normalize(mat3(modelMatrix) * normal);
@@ -95,10 +97,13 @@ uniform float uCursorAmount;
 uniform vec3  uLightPos[3];
 uniform vec3  uLightCol[3];
 uniform vec3  uCameraPos;
+uniform sampler2D uScratch;
+uniform float uScratchScale;
 
 varying float vDist;
 varying vec3  vNormalW;
 varying vec3  vWorldPos;
+varying vec2  vUv;
 
 void main() {
   // Emission Map Range: 4.6 at the cursor surface, 0 past the glow shell. Much
@@ -113,6 +118,11 @@ void main() {
   // visible structure is specular. Without it the 224 panels read as one
   // featureless plate, because at rest they touch and only the bevels
   // distinguish them.
+  // Blender drives roughness from Scratches.jpeg through a ramp clamped at
+  // 0.16, so the map mostly gates where highlights are ALLOWED to appear.
+  float scr = texture2D(uScratch, vUv * uScratchScale).r;
+  float gloss = mix(0.35, 1.0, smoothstep(0.0, 0.16, scr));
+
   vec3 spec = vec3(0.0);
   vec3 diff = vec3(0.0);
   for (int i = 0; i < 3; i++) {
@@ -123,7 +133,7 @@ void main() {
     float ndl = max(dot(N, L), 0.0);
     float ndh = max(dot(N, H), 0.0);
     vec3 rad = uLightCol[i] / dist2;
-    spec += rad * pow(ndh, 90.0) * 1.4;
+    spec += rad * pow(ndh, mix(24.0, 110.0, gloss)) * 1.4 * gloss;
     diff += rad * ndl;
   }
 
@@ -152,7 +162,7 @@ export interface PanelMaterialHandle {
   dispose(): void;
 }
 
-export function makePanelMaterial(): PanelMaterialHandle {
+export function makePanelMaterial(scratch: THREE.Texture | null = null): PanelMaterialHandle {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uCursor: { value: new THREE.Vector3(0, 0, 0) },
@@ -164,6 +174,8 @@ export function makePanelMaterial(): PanelMaterialHandle {
       uCameraPos: { value: new THREE.Vector3() },
       uLightPos: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
       uLightCol: { value: [new THREE.Color(), new THREE.Color(), new THREE.Color()] },
+      uScratch: { value: scratch },
+      uScratchScale: { value: 2.0 },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,

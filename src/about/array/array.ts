@@ -1,22 +1,30 @@
 import * as THREE from 'three';
 import { clusterIslandCentres } from './array-geometry';
-import { DISC_NODES, getIslandAttribute, loadArray, rebuildHierarchy } from './array-load';
+import {
+  DISC_NODES,
+  TEXTURED_NODES,
+  getIslandAttribute,
+  loadArray,
+  rebuildHierarchy,
+} from './array-load';
 import { createIdleModel, updateIdle } from './array-idle';
 import { makePanelMaterial, type PanelMaterialHandle } from './array-material';
-import { initArrayPointer, isDisengaged, makeProxy } from './array-pointer';
+import { initArrayPointer, isDisengaged } from './array-pointer';
 import { CURSOR_WORLD_RADIUS } from './array-math';
 
-/** Disc local radius, measured in Blender. Sizes the raycast proxy. */
-const DISC_LOCAL_RADIUS = 1.611;
-
-/** TRACK_TO influence on the dish, from the rig. */
-const TRACK_INFLUENCE = 0.159;
+/**
+ * TRACK_TO influence on the dish, from the rig. Blender's constraint is
+ * `track_axis: TRACK_Z, up_axis: UP_Y, influence: 0.1592`.
+ */
+const TRACK_INFLUENCE = 0.1592;
 
 /** Expected island counts — a wrong count means the clustering epsilon is off. */
-const EXPECTED_ISLANDS: Record<string, number> = { Circle: 224, 'Circle.012': 256 };
+const EXPECTED_ISLANDS: Record<string, number> = { Circle: 224, 'array-discScaffold': 256 };
 
 export interface ArrayHandle {
   group: THREE.Group;
+  /** The dish. The lab frames the camera against it. */
+  disc: THREE.Mesh;
   update(dt: number): void;
   /**
    * Hand the panel shader the scene's three lights, in world space.
@@ -37,9 +45,9 @@ export async function initArray(opts: {
   const { roots, meshes } = await loadArray();
   const group = new THREE.Group();
   const dressing = new THREE.MeshStandardMaterial({
-    color: 0x222222,
+    color: 0x1a1a1a,
     metalness: 1,
-    roughness: 0.5,
+    roughness: 0.42,
   });
 
   // Add the scene ROOTS, never the individual meshes. `group.add(mesh)` would
@@ -48,12 +56,19 @@ export async function initArray(opts: {
   // leans.
   for (const root of roots) group.add(root);
 
-  // The export is split across six files, so Blender baked world transforms
-  // onto nodes whose parents live in another file. Put the tree back before
-  // anything reads a transform.
+  // One part per file, so Blender baked world transforms onto nodes whose
+  // parents live elsewhere. Put the tree back before anything reads a transform.
   group.updateMatrixWorld(true);
   const missing = rebuildHierarchy(meshes);
   if (missing.length > 0) console.warn(`[array] unresolved parenting: ${missing.join(', ')}`);
+
+  // The scratch map drives roughness on the panels, as it does in Blender.
+  const scratches = new THREE.TextureLoader().load(
+    `${import.meta.env.BASE_URL}lander/scratches.jpg`,
+  );
+  scratches.wrapS = THREE.RepeatWrapping;
+  scratches.wrapT = THREE.RepeatWrapping;
+  scratches.colorSpace = THREE.NoColorSpace; // a roughness mask, not colour
 
   /**
    * One panel material PER disc mesh, not one shared between them.
@@ -77,9 +92,15 @@ export async function initArray(opts: {
       console[ok ? 'info' : 'warn'](
         `[array] ${name}: ${count} islands${ok ? '' : ` — EXPECTED ${expected}`}`,
       );
-      const handle = makePanelMaterial();
+      const handle = makePanelMaterial(scratches);
       mesh.material = handle.material;
       panels.push({ mesh, handle });
+    } else if (TEXTURED_NODES.includes(name)) {
+      // The ground brings its own baked BaseColor/Normal/Roughness maps.
+      // Overwriting them — as every non-disc mesh used to be — is what left the
+      // terrain untextured.
+      const m = mesh.material as THREE.MeshStandardMaterial;
+      if (m && 'roughness' in m) m.envMapIntensity = 0;
     } else {
       mesh.material = dressing;
     }
@@ -88,26 +109,28 @@ export async function initArray(opts: {
   const disc = meshes.get('Circle');
   if (!disc) throw new Error('array: Circle node not found');
 
-  const proxy = makeProxy(DISC_LOCAL_RADIUS);
-  disc.add(proxy);
-
-  const pointer = initArrayPointer(opts.el, proxy);
+  const pointer = initArrayPointer(opts.el);
   const idle = createIdleModel();
 
   // Hoisted — update() runs every frame and must not allocate.
   const cursorLocal = new THREE.Vector3();
   const cursorWorld = new THREE.Vector3();
   const discWorld = new THREE.Vector3();
-  const lookMatrix = new THREE.Matrix4();
-  const lookTarget = new THREE.Quaternion();
-  const restQuat = disc.quaternion.clone();
   const camWorld = new THREE.Vector3();
   const meshScale = new THREE.Vector3();
+  const trackDir = new THREE.Vector3();
+  const trackQuat = new THREE.Quaternion();
   const parentWorldQuat = new THREE.Quaternion();
+  const restQuat = disc.quaternion.clone();
+  const restWorldQuat = new THREE.Quaternion();
+  disc.getWorldQuaternion(restWorldQuat);
+  /** The dish's face normal: Blender tracks its +Z at the cursor. */
+  const FACE_AXIS = new THREE.Vector3(0, 0, 1);
   let time = 0;
 
   return {
     group,
+    disc,
     setLights(positions, colours) {
       for (const p of panels) p.handle.setLights(positions, colours);
     },
@@ -115,8 +138,9 @@ export async function initArray(opts: {
       time += dt;
       const now = performance.now();
       opts.camera.getWorldPosition(camWorld);
+      disc.getWorldPosition(discWorld);
 
-      const hit = pointer.update(opts.camera, cursorWorld);
+      const hit = pointer.update(opts.camera, discWorld, cursorWorld);
       const disengaged = opts.reducedMotion || !hit || isDisengaged(pointer.sample(), now);
 
       updateIdle(idle, dt * 1000, disengaged);
@@ -137,25 +161,29 @@ export async function initArray(opts: {
         handle.setCameraPos(camWorld);
       }
 
-      // Soft TRACK_TO: the dish leans toward the cursor at 0.159, never fully.
+      // Soft TRACK_TO. Blender's constraint is TRACK_Z: the dish's +Z axis
+      // points AT the cursor. `Matrix4.lookAt` is the opposite convention —
+      // it aims -Z at the target, the way a camera does — so using it here
+      // aimed the dish's back at the pointer and made it snap through.
       if (hit && !opts.reducedMotion) {
-        disc.getWorldPosition(discWorld);
-        lookMatrix.lookAt(discWorld, cursorWorld, disc.up);
-        lookTarget.setFromRotationMatrix(lookMatrix);
-        // lookAt gives a WORLD orientation but `disc.quaternion` is LOCAL to
-        // its parent, so it has to come back through the parent's inverse —
-        // otherwise the lean is skewed by whatever rotation the mount carries.
-        if (disc.parent) {
-          disc.parent.getWorldQuaternion(parentWorldQuat);
-          lookTarget.premultiply(parentWorldQuat.invert());
+        trackDir.subVectors(cursorWorld, discWorld).normalize();
+        if (trackDir.lengthSq() > 0) {
+          trackQuat.setFromUnitVectors(FACE_AXIS, trackDir);
+          // setFromUnitVectors gives a WORLD orientation; disc.quaternion is
+          // LOCAL to its parent, so it comes back through the parent's inverse.
+          if (disc.parent) {
+            disc.parent.getWorldQuaternion(parentWorldQuat);
+            trackQuat.premultiply(parentWorldQuat.invert());
+          }
+          disc.quaternion.copy(restQuat).slerp(trackQuat, TRACK_INFLUENCE * idle.cursor);
         }
-        disc.quaternion.copy(restQuat).slerp(lookTarget, TRACK_INFLUENCE * idle.cursor);
       }
     },
     dispose(): void {
       pointer.destroy();
       for (const p of panels) p.handle.dispose();
       dressing.dispose();
+      scratches.dispose();
       group.clear();
     },
   };

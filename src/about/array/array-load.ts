@@ -3,28 +3,49 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 /**
- * The array ships as several GLBs purely because that is how they were
- * exported; the runtime does not care which file a node came from and pulls
- * everything out by node name. Nothing here carries materials — every array
- * surface is authored in GLSL, which is what keeps these files at 283 KB for
- * 34,734 triangles.
+ * The array ships as several GLBs, each named for the part it holds. Nothing
+ * here carries materials — every array surface is authored in GLSL, which is
+ * what keeps these files at ~280 KB for 34,000 triangles. The ground is the
+ * exception and brings its own baked maps.
  */
 export const ARRAY_ASSETS: readonly string[] = [
   'array-disc.glb',
-  'array-disc_supporting_wireframe.glb',
-  'array-core.glb',
-  'array-frame.glb',
+  'array-discScaffold.glb',
+  'array-discFrame.glb',
+  'array-discSupports.glb',
   'array-signal.glb',
+  'array-stand.glb',
   'array-ground.glb',
 ];
 
 /**
  * The two meshes that carry the baked `_ISLAND_C` attribute and take the panel
- * material. `Circle` is the dish (224 islands); `Circle.012` is the wireframe
- * scaffold beneath it (256 islands) and gets the SAME treatment — same
- * material, same explode, same emission.
+ * material: the dish itself (224 islands) and the wireframe scaffold beneath it
+ * (256 islands). The scaffold gets the SAME treatment — same explode, same
+ * emission — it is simply separate geometry.
  */
-export const DISC_NODES: readonly string[] = ['Circle', 'Circle.012'];
+export const DISC_NODES: readonly string[] = ['Circle', 'array-discScaffold'];
+
+/** Meshes that arrive with their own textured glTF material, which must survive. */
+export const TEXTURED_NODES: readonly string[] = ['Landscape'];
+
+/**
+ * The Blender parent of each node.
+ *
+ * The array is exported one part per file, and Blender bakes a WORLD transform
+ * onto any node whose parent is not in the same export. Every mesh therefore
+ * arrives correctly placed but parentless — invisible at rest, and wrong the
+ * moment the dish leans, because its children have to ride that lean.
+ *
+ * Verified against `array-WHOLESCENE.glb`, which carries the true hierarchy:
+ * everything below hangs off `Circle`, and `array-stand` is static.
+ */
+export const PARENT_OF: ReadonlyArray<readonly [child: string, parent: string]> = [
+  ['array-discFrame', 'Circle'],
+  ['array-discScaffold', 'Circle'],
+  ['array-discSupports', 'Circle'],
+  ['Cylinder', 'Circle'],
+];
 
 /**
  * Every `Mesh` in the tree, keyed by node name.
@@ -72,38 +93,6 @@ export function getIslandAttribute(
       `Present: ${present}. Re-export from Blender with Data > Mesh > Attributes enabled.`,
   );
 }
-
-/**
- * The Blender parent of each node, from the scene's own hierarchy.
- *
- * The array was exported across six files, and Blender bakes a world transform
- * onto any node whose parent is not in the same export. So every mesh arrives
- * correctly PLACED but with no parent — which is invisible at rest and breaks
- * the moment anything moves, since the dish's children have to ride its
- * TRACK_TO lean.
- *
- * Ordered parents-first so a rebuild walks down the tree rather than across it.
- */
-export const PARENT_OF: ReadonlyArray<readonly [child: string, parent: string]> = [
-  ['Circle', 'Cube.001'],
-  ['Circle.013', 'Cube.001'],
-  ['Circle.014', 'Cube.001'],
-  ['Cube.002', 'Cube.001'],
-  ['Circle.001', 'Circle'],
-  ['Circle.002', 'Circle'],
-  ['Circle.003', 'Circle'],
-  ['Circle.004', 'Circle'],
-  ['Circle.005', 'Circle'],
-  ['Circle.006', 'Circle'],
-  ['Circle.007', 'Circle'],
-  ['Circle.008', 'Circle'],
-  ['Circle.009', 'Circle'],
-  ['Circle.010', 'Circle'],
-  ['Circle.011', 'Circle'],
-  ['Circle.012', 'Circle'],
-  ['Cube', 'Circle'],
-  ['Cylinder', 'Circle'],
-];
 
 /**
  * Restore the Blender parenting without moving anything.
