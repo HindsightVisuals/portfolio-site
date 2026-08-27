@@ -129,13 +129,28 @@ export function rebuildHierarchy(meshes: Map<string, THREE.Mesh>): string[] {
  * `splitByName` only collects meshes, which is right for material work but
  * misses the displacement path — glTF has no curve type, so it arrives as a
  * bare transform with no mesh attached.
+ *
+ * Tries the sanitised spelling too. GLTFLoader runs every node name through
+ * `PropertyBinding.sanitizeNodeName`, which REPLACES SPACES WITH UNDERSCORES,
+ * so Blender's `Displacement Path` arrives as `Displacement_Path` and an exact
+ * lookup finds nothing. Same trap as `_ISLAND_C` arriving lowercased.
  */
 export function findByName(roots: THREE.Object3D[], name: string): THREE.Object3D | null {
+  const candidates = [name, name.replace(/\s/g, '_')];
   for (const root of roots) {
-    const found = root.getObjectByName(name);
-    if (found) return found;
+    for (const candidate of candidates) {
+      const found = root.getObjectByName(candidate);
+      if (found) return found;
+    }
   }
   return null;
+}
+
+/** Every node name in the tree — for making a not-found failure diagnosable. */
+export function allNodeNames(roots: THREE.Object3D[]): string[] {
+  const names: string[] = [];
+  for (const root of roots) root.traverse((o) => o.name && names.push(o.name));
+  return names;
 }
 
 export interface LoadedArray {

@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import {
   ARRAY_ASSETS,
   DISC_NODES,
+  allNodeNames,
+  findByName,
   getIslandAttribute,
   rebuildHierarchy,
   splitByName,
@@ -166,5 +168,38 @@ describe('measuring the dish', () => {
 
     expect(geometryOnly.y).toBeCloseTo(0, 5);
     expect(withChildren.y).toBeGreaterThan(0.5);
+  });
+});
+
+describe('findByName', () => {
+  it('finds a node whose spaces GLTFLoader turned into underscores', () => {
+    // PropertyBinding.sanitizeNodeName replaces whitespace, so Blender's
+    // "Displacement Path" arrives as "Displacement_Path" and an exact lookup
+    // finds nothing at all.
+    const root = new THREE.Group();
+    const node = new THREE.Object3D();
+    node.name = 'Displacement_Path';
+    root.add(node);
+    expect(findByName([root], 'Displacement Path')).toBe(node);
+  });
+
+  it('still finds an exact match', () => {
+    const root = new THREE.Group();
+    const node = new THREE.Object3D();
+    node.name = 'Circle';
+    root.add(node);
+    expect(findByName([root], 'Circle')).toBe(node);
+  });
+
+  it('returns null when genuinely absent', () => {
+    expect(findByName([new THREE.Group()], 'Nope')).toBeNull();
+  });
+
+  it('lists node names so a not-found failure is diagnosable', () => {
+    const root = new THREE.Group();
+    const a = new THREE.Object3D();
+    a.name = 'Circle';
+    root.add(a);
+    expect(allNodeNames([root])).toContain('Circle');
   });
 });

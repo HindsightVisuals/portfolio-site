@@ -4,6 +4,7 @@ import {
   DISC_NODES,
   PATH_NODE,
   TEXTURED_NODES,
+  allNodeNames,
   findByName,
   getIslandAttribute,
   loadArray,
@@ -164,7 +165,11 @@ export async function initArray(opts: {
    * settles instead of drifting.
    */
   const pathNode = findByName(roots, PATH_NODE);
-  if (!pathNode) throw new Error(`array: "${PATH_NODE}" node not found`);
+  if (!pathNode) {
+    throw new Error(
+      `array: "${PATH_NODE}" node not found. Present: ${allNodeNames(roots).join(', ')}`,
+    );
+  }
   disc.attach(pathNode);
   const ring = ringFromNode(pathNode);
   console.info(
