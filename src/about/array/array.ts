@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { clusterIslandCentres } from './array-geometry';
 import {
   DISC_NODES,
+  PATH_NODE,
   TEXTURED_NODES,
+  findByName,
   getIslandAttribute,
   loadArray,
   rebuildHierarchy,
@@ -11,6 +13,7 @@ import { createIdleModel, updateIdle } from './array-idle';
 import { makePanelMaterial, type PanelMaterialHandle } from './array-material';
 import { initArrayPointer, isDisengaged } from './array-pointer';
 import { CURSOR_WORLD_RADIUS } from './array-math';
+import { makeRingHelper, ringFromNode, type DisplacementRing } from './array-path';
 
 /**
  * TRACK_TO influence on the dish, from the rig. Blender's constraint is
@@ -25,6 +28,8 @@ export interface ArrayHandle {
   group: THREE.Group;
   /** The dish. The lab frames the camera against it. */
   disc: THREE.Mesh;
+  /** The ring the cursor is confined to. */
+  ring: DisplacementRing;
   /**
    * The dish's VISUAL centre in world space, not its node origin.
    *
@@ -109,6 +114,9 @@ export async function initArray(opts: {
       // terrain untextured.
       const m = mesh.material as THREE.MeshStandardMaterial;
       if (m && 'roughness' in m) m.envMapIntensity = 0;
+    } else if (mesh.name === 'Cursor') {
+      // The driver sphere is an INPUT, not scenery — Blender never renders it.
+      mesh.visible = false;
     } else {
       mesh.material = dressing;
     }
@@ -129,9 +137,21 @@ export async function initArray(opts: {
   const discCentre = disc.geometry
     .boundingBox!.getCenter(new THREE.Vector3())
     .applyMatrix4(disc.matrixWorld);
-  const restFaceNormal = new THREE.Vector3(0, 1, 0)
-    .applyQuaternion(disc.getWorldQuaternion(new THREE.Quaternion()))
-    .normalize();
+
+  // The ring, read from the exported path node and fixed at load. Static in
+  // world space, exactly as the Blender curve is: it is unparented there, and
+  // making it ride the dish's lean would close a loop through the cursor.
+  const pathNode = findByName(roots, PATH_NODE);
+  if (!pathNode) throw new Error(`array: "${PATH_NODE}" node not found`);
+  const ring = ringFromNode(pathNode);
+  console.info(
+    `[array] ring r=${ring.radius.toFixed(3)} at ` +
+      `${ring.centre.toArray().map((v) => v.toFixed(2)).join(', ')}`,
+  );
+
+  if (new URLSearchParams(location.search).has('debug-path')) {
+    group.add(makeRingHelper(ring));
+  }
 
   const pointer = initArrayPointer(opts.el);
   const idle = createIdleModel();
@@ -165,6 +185,7 @@ export async function initArray(opts: {
     group,
     disc,
     discCentre,
+    ring,
     setLights(positions, colours) {
       for (const p of panels) p.handle.setLights(positions, colours);
     },
@@ -174,7 +195,7 @@ export async function initArray(opts: {
       opts.camera.getWorldPosition(camWorld);
       disc.getWorldPosition(discWorld);
 
-      const hit = pointer.update(opts.camera, discCentre, restFaceNormal, cursorWorld);
+      const hit = pointer.update(opts.camera, ring, cursorWorld);
       const disengaged = opts.reducedMotion || !hit || isDisengaged(pointer.sample(), now);
 
       updateIdle(idle, dt * 1000, disengaged);

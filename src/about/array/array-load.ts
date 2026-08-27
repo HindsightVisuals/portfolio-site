@@ -16,6 +16,7 @@ export const ARRAY_ASSETS: readonly string[] = [
   'array-signal.glb',
   'array-stand.glb',
   'array-ground.glb',
+  'array-displacementPathAndCursor.glb',
 ];
 
 /**
@@ -25,6 +26,9 @@ export const ARRAY_ASSETS: readonly string[] = [
  * emission — it is simply separate geometry.
  */
 export const DISC_NODES: readonly string[] = ['Circle', 'array-discScaffold'];
+
+/** The Blender curve the cursor is confined to. Exports as a bare transform. */
+export const PATH_NODE = 'Displacement Path';
 
 /** Meshes that arrive with their own textured glTF material, which must survive. */
 export const TEXTURED_NODES: readonly string[] = ['Landscape'];
@@ -117,6 +121,21 @@ export function rebuildHierarchy(meshes: Map<string, THREE.Mesh>): string[] {
     parent.attach(child);
   }
   return missing;
+}
+
+/**
+ * Any node by name, meshes included.
+ *
+ * `splitByName` only collects meshes, which is right for material work but
+ * misses the displacement path — glTF has no curve type, so it arrives as a
+ * bare transform with no mesh attached.
+ */
+export function findByName(roots: THREE.Object3D[], name: string): THREE.Object3D | null {
+  for (const root of roots) {
+    const found = root.getObjectByName(name);
+    if (found) return found;
+  }
+  return null;
 }
 
 export interface LoadedArray {

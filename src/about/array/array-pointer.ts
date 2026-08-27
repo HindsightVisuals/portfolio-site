@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MOTIONLESS_MS } from './array-idle';
+import { projectOntoRing, ringPointAt, type DisplacementRing } from './array-path';
 
 export interface PointerSample {
   /** Normalised device coords, -1..1. */
@@ -7,17 +8,6 @@ export interface PointerSample {
   y: number;
   movedAt: number;
 }
-
-/**
- * How far in front of the disc's centre the cursor floats, in world units,
- * measured along the camera's view axis.
- *
- * From the corridor scene: the `Cursor` sphere sits 3.607 from the camera and
- * the disc's centre 4.106, a flat offset of 0.4985 toward the viewer. So the
- * cursor is not ON the dish — it hovers just off its face, which is what lets
- * proximity open the panels rather than clipping through them.
- */
-export const CURSOR_FRONT_OFFSET = 0.4985;
 
 /**
  * Disengaged is far OR motionless — a pointer parked on the dish and one that
@@ -36,32 +26,21 @@ export interface ArrayPointer {
   /**
    * Write the cursor position, in WORLD space, into `out`.
    *
-   * The cursor rides a plane PARALLEL TO THE DISH'S FACE, sitting
-   * `CURSOR_FRONT_OFFSET` above it — the same thing as sliding the `Cursor`
-   * sphere across the dish in Blender, which is what the rig does.
+   * The cursor is CONFINED TO THE RING, matching the rig: in Blender the
+   * `Cursor` sphere carries a FOLLOW_PATH constraint onto the displacement
+   * path and cannot leave it. The pointer therefore chooses a BEARING around
+   * the ring, not a free position — which is what makes the displaced region
+   * controllable rather than wherever the mouse happens to land.
    *
-   * The plane must be dish-aligned, not screen-aligned. The dish is tilted, so
-   * a view-perpendicular plane cuts THROUGH it: the panels nearest that plane
-   * form a band across the dish instead of a pool under the pointer, and the
-   * effect stops following the mouse.
+   * The ring's plane is the dish's face plane, so the pointer maps linearly
+   * across a tilted dish. It is the dish's REST plane, never its live one: the
+   * dish is oriented by the cursor, so feeding its live orientation back would
+   * close a loop.
    *
-   * `faceNormal` is the dish's REST normal, never its current one. The dish is
-   * oriented by the cursor (TRACK_TO), so feeding back its live orientation
-   * closes a loop; at an influence of 0.159 the rest normal is close enough
-   * that the difference is invisible, and it is unconditionally stable.
-   *
-   * A plane also never misses, so leaving the dish falls off through proximity
-   * rather than through a raycast miss — which is what made the perimeter
-   * glitchy when the target was a sphere.
-   *
-   * Returns false only when there has been no pointer at all.
+   * Returns false only when there has been no pointer at all, or when the ray
+   * grazes the ring plane edge-on.
    */
-  update(
-    camera: THREE.Camera,
-    anchor: THREE.Vector3,
-    faceNormal: THREE.Vector3,
-    out: THREE.Vector3,
-  ): boolean;
+  update(camera: THREE.Camera, ring: DisplacementRing, out: THREE.Vector3): boolean;
   lastMovedAt(): number;
   sample(): PointerSample | null;
   destroy(): void;
@@ -74,6 +53,8 @@ export function initArrayPointer(el: HTMLElement): ArrayPointer {
   const planePoint = new THREE.Vector3();
   const camPos = new THREE.Vector3();
   const normal = new THREE.Vector3();
+  const last = new THREE.Vector3();
+  let hasLast = false;
   let current: PointerSample | null = null;
 
   const onMove = (e: PointerEvent): void => {
@@ -87,23 +68,33 @@ export function initArrayPointer(el: HTMLElement): ArrayPointer {
   el.addEventListener('pointermove', onMove, { passive: true });
 
   return {
-    update(camera, anchor, faceNormal, out) {
+    update(camera, ring, out) {
       if (!current) return false;
 
-      // Face the plane's normal toward the camera, so the offset lifts the
-      // cursor onto the viewer's side of the dish whichever way it points.
+      // Raycast the ring's own plane, then slide the hit onto the circle. The
+      // plane is the dish's face plane, so a tilted dish maps linearly; the
+      // projection is what confines the cursor to the path.
+      normal.copy(ring.normal);
       camera.getWorldPosition(camPos);
-      normal.copy(faceNormal).normalize();
-      if (normal.dot(camPos.clone().sub(anchor)) < 0) normal.negate();
-
-      planePoint.copy(anchor).addScaledVector(normal, CURSOR_FRONT_OFFSET);
-      plane.setFromNormalAndCoplanarPoint(normal, planePoint);
+      if (normal.dot(camPos.clone().sub(ring.centre)) < 0) normal.negate();
+      plane.setFromNormalAndCoplanarPoint(normal, ring.centre);
 
       ndc.set(current.x, current.y);
       ray.setFromCamera(ndc, camera);
-      // Misses only when the view grazes the dish edge-on, where there is no
-      // sensible answer anyway; the caller treats that as no cursor.
-      return ray.ray.intersectPlane(plane, out) !== null;
+      if (!ray.ray.intersectPlane(plane, planePoint)) return false;
+
+      // At the exact centre the bearing is undefined — which the very first
+      // frame hits routinely, since screen centre maps straight to the ring's
+      // centre. Hold the last position, or pick a deterministic one if there
+      // is not one yet.
+      if (!projectOntoRing(planePoint, ring, out)) {
+        if (hasLast) out.copy(last);
+        else ringPointAt(ring, 0, out);
+        return true;
+      }
+      last.copy(out);
+      hasLast = true;
+      return true;
     },
     lastMovedAt: () => current?.movedAt ?? -Infinity,
     sample: () => current,

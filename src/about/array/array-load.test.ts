@@ -16,8 +16,9 @@ function meshNamed(name: string): THREE.Mesh {
 
 describe('ARRAY_ASSETS', () => {
   it('lists every exported file exactly once', () => {
-    expect(ARRAY_ASSETS).toHaveLength(7);
-    expect(new Set(ARRAY_ASSETS).size).toBe(7);
+    expect(ARRAY_ASSETS).toHaveLength(8);
+    expect(new Set(ARRAY_ASSETS).size).toBe(8);
+    expect(ARRAY_ASSETS).toContain('array-displacementPathAndCursor.glb');
     expect(ARRAY_ASSETS).toContain('array-disc.glb');
     expect(ARRAY_ASSETS).toContain('array-discScaffold.glb');
     expect(ARRAY_ASSETS).toContain('array-ground.glb');
