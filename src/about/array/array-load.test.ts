@@ -140,3 +140,30 @@ describe('splitByName', () => {
     expect(splitByName(root).get('Circle')).toBe(first);
   });
 });
+
+describe('measuring the dish', () => {
+  it('must use the dish geometry alone, not setFromObject', () => {
+    // setFromObject walks CHILDREN, and the frame, scaffold, supports and
+    // signal beam all hang off the dish. The beam spans 2.6 units up and to the
+    // right, so including it drags the "centre" clean off the dish — which
+    // moves the camera aim and the lights with it.
+    const disc = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 0.2, 2),
+      new THREE.MeshBasicMaterial(),
+    );
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3, 0.4), new THREE.MeshBasicMaterial());
+    beam.position.set(0.6, 1.6, 1.0);
+    disc.add(beam);
+    disc.updateMatrixWorld(true);
+
+    const withChildren = new THREE.Box3().setFromObject(disc).getCenter(new THREE.Vector3());
+
+    disc.geometry.computeBoundingBox();
+    const geometryOnly = disc.geometry
+      .boundingBox!.getCenter(new THREE.Vector3())
+      .applyMatrix4(disc.matrixWorld);
+
+    expect(geometryOnly.y).toBeCloseTo(0, 5);
+    expect(withChildren.y).toBeGreaterThan(0.5);
+  });
+});

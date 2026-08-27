@@ -121,7 +121,14 @@ export async function initArray(opts: {
   // Everything that aims at the dish uses these rather than its live transform,
   // which the cursor is busy rotating.
   disc.updateMatrixWorld(true);
-  const discCentre = new THREE.Box3().setFromObject(disc).getCenter(new THREE.Vector3());
+  // The dish's OWN geometry, not `setFromObject(disc)` — that walks children,
+  // and the frame, scaffold, supports and signal beam all hang off the dish now.
+  // The beam alone spans 2.6 units up and to the right, which drags the centre
+  // clean off the dish and takes the camera aim and the lights with it.
+  disc.geometry.computeBoundingBox();
+  const discCentre = disc.geometry
+    .boundingBox!.getCenter(new THREE.Vector3())
+    .applyMatrix4(disc.matrixWorld);
   const restFaceNormal = new THREE.Vector3(0, 1, 0)
     .applyQuaternion(disc.getWorldQuaternion(new THREE.Quaternion()))
     .normalize();

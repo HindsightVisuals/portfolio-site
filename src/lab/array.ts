@@ -62,9 +62,10 @@ export async function initArrayLab(): Promise<void> {
   // Aim at the dish's VISUAL centre, not its node origin — they differ by
   // about 0.39 in y, which is enough to push the dish off screen centre and
   // take the pointer mapping with it.
-  const discWorld = array.discCentre;
-  camera.position.copy(array.disc.getWorldPosition(new THREE.Vector3())).add(CAM_OFFSET_FROM_DISC);
-  camera.lookAt(discWorld);
+  const discNode = array.disc.getWorldPosition(new THREE.Vector3());
+  const discWorld = discNode;
+  camera.position.copy(discNode).add(CAM_OFFSET_FROM_DISC);
+  camera.lookAt(array.discCentre);
 
   // A camera that ends up inside the terrain renders a screenful of rock and
   // nothing else, with no error to explain it. Say so.
@@ -84,12 +85,22 @@ export async function initArrayLab(): Promise<void> {
   // first knob to reach for if the scene reads too hot or too dark.
   const at = (o: THREE.Vector3): THREE.Vector3 => discWorld.clone().add(o);
 
-  const area = new THREE.PointLight(0xffffff, 6, 0, 2);
-  area.position.copy(at(new THREE.Vector3(0.1027, 1.8815, 0.095)));
-  const fill = new THREE.PointLight(0xffffff, 10, 0, 2);
-  fill.position.copy(at(new THREE.Vector3(0.0949, 0.0285, -0.4746)));
-  const key = new THREE.PointLight(new THREE.Color(0.288, 1, 0.361), 0.5, 0, 2);
-  key.position.copy(at(new THREE.Vector3(0.4861, 0.2257, 0.6462)));
+  // Intensity is chosen for a TARGET RADIANCE at the light's own distance,
+  // because inverse-square at these ranges is brutal: the fill sits 0.48 from
+  // the dish, so a nominal intensity of 10 arrives as 43 and burns the panels
+  // to white. `lit(offset, radiance)` removes that trap.
+  const lit = (o: THREE.Vector3, radiance: number): number => radiance * o.lengthSq();
+
+  const areaOff = new THREE.Vector3(0.1027, 1.8815, 0.095);
+  const fillOff = new THREE.Vector3(0.0949, 0.0285, -0.4746);
+  const keyOff = new THREE.Vector3(0.4861, 0.2257, 0.6462);
+
+  const area = new THREE.PointLight(0xffffff, lit(areaOff, 1.5), 0, 2);
+  area.position.copy(at(areaOff));
+  const fill = new THREE.PointLight(0xffffff, lit(fillOff, 1.1), 0, 2);
+  fill.position.copy(at(fillOff));
+  const key = new THREE.PointLight(new THREE.Color(0.288, 1, 0.361), lit(keyOff, 0.7), 0, 2);
+  key.position.copy(at(keyOff));
   scene.add(area, fill, key);
 
   // The panel material is a raw ShaderMaterial, so Three's light uniforms do
