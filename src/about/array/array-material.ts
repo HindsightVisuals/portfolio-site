@@ -54,12 +54,14 @@ uniform float uCursorRadius;
 uniform float uCursorAmount;
 uniform float uAmbient;
 uniform float uTime;
+uniform float uScratchScale;
 
 varying float vDist;
 varying float vDisplace;
 varying vec3  vNormalW;
 varying vec3  vWorldPos;
 varying vec2  vUv;
+varying vec2  vScratchUv;
 
 // Cheap value noise — the ambient keep-alive only needs low-frequency drift.
 float hash(vec3 p) {
@@ -112,6 +114,14 @@ void main() {
   vDisplace = length(p - position);
 
   vUv = uv;
+
+  // The dish ships with NO usable UVs — every vertex reports the same
+  // coordinate, so a uv-sampled map is a single texel stretched over 224
+  // panels. Project from the REST position instead: the dish is a disc in
+  // local XZ, so that plane is the natural unwrap. Rest, not displaced, or the
+  // scratches would swim across the metal as the panels move.
+  vScratchUv = position.xz * uScratchScale;
+
   vec4 world = modelMatrix * vec4(p, 1.0);
   vWorldPos = world.xyz;
   vNormalW = normalize(mat3(modelMatrix) * normal);
@@ -138,6 +148,7 @@ varying float vDisplace;
 varying vec3  vNormalW;
 varying vec3  vWorldPos;
 varying vec2  vUv;
+varying vec2  vScratchUv;
 
 void main() {
   // Emission has two drivers, and takes whichever is stronger.
@@ -162,10 +173,13 @@ void main() {
   // visible structure is specular. Without it the 224 panels read as one
   // featureless plate, because at rest they touch and only the bevels
   // distinguish them.
-  // Blender drives roughness from Scratches.jpeg through a ramp clamped at
-  // 0.16, so the map mostly gates where highlights are ALLOWED to appear.
-  float scr = texture2D(uScratch, vUv * uScratchScale).r;
-  float gloss = mix(0.35, 1.0, smoothstep(0.0, 0.16, scr));
+  // Blender's ColorRamp.001 maps the scratch image to ROUGHNESS: 0 -> 0.187
+  // (glossy) and anything past 0.16 -> 1.0 (matte). The image is mostly dark --
+  // measured mean 0.083, 90% of pixels below 0.16 -- so the metal reads glossy
+  // with matte scratch marks through it, not the other way round.
+  float scr = texture2D(uScratch, vScratchUv).r;
+  float rough = mix(0.187, 1.0, smoothstep(0.0, 0.16, scr));
+  float gloss = 1.0 - rough;
 
   vec3 spec = vec3(0.0);
   vec3 diff = vec3(0.0);
@@ -177,7 +191,7 @@ void main() {
     float ndl = max(dot(N, L), 0.0);
     float ndh = max(dot(N, H), 0.0);
     vec3 rad = uLightCol[i] / dist2;
-    spec += rad * pow(ndh, mix(24.0, 110.0, gloss)) * 1.4 * gloss;
+    spec += rad * pow(ndh, mix(9.0, 130.0, gloss)) * mix(0.30, 1.7, gloss);
     diff += rad * ndl;
   }
 
@@ -185,7 +199,12 @@ void main() {
   // angles, which is most of what separates one tile from the next.
   float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);
 
-  vec3 base = vec3(0.133) * (diff * 0.55 + 0.04 + uAmbientLight) + spec + vec3(0.10) * fres;
+  // Ambient is added OUTSIDE the 0.133 base rather than inside it. Folded in,
+  // it was being attenuated to about a sixth before it reached the pixel, so
+  // raising the constant barely moved the picture.
+  vec3 base = vec3(0.133) * (diff * 0.55 + 0.04)
+            + vec3(0.133) * uAmbientLight * 3.0
+            + spec + vec3(0.10) * fres;
 
   vec3 col = base + uEmission * e;
 

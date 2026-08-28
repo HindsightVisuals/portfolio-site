@@ -159,7 +159,7 @@ export const DISPLACE_GLOW_REF = 0.12;
  * concession, not something measured from Blender — keep it low enough that the
  * scene still reads as lit by its own emission.
  */
-export const AMBIENT_LIGHT = 0.055;
+export const AMBIENT_LIGHT = 0.22;
 
 /**
  * Black distance fog, as multiples of the camera-to-dish distance.
