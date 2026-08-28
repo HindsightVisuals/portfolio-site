@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { initStage } from '../three/stage';
 import { initArray } from '../about/array/array';
+import { AMBIENT_LIGHT, FOG_NEAR_SCALE, FOG_FAR_SCALE } from '../about/array/array-math';
 
 /**
  * Where the camera sits relative to the dish, in Three space.
@@ -43,7 +44,8 @@ export async function initArrayLab(): Promise<void> {
   stage.renderer.toneMappingExposure = 1.0;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  const FOG_COLOR = new THREE.Color(0x000000);
+  scene.background = FOG_COLOR;
 
   // 50mm on a 36mm sensor -> 39.6 degrees horizontal. Three's fov is VERTICAL,
   // so it is derived per aspect below, keeping the horizontal field matched to
@@ -98,6 +100,11 @@ export async function initArrayLab(): Promise<void> {
   const fillOff = new THREE.Vector3(0.0949, 0.0285, -0.4746);
   const keyOff = new THREE.Vector3(0.4861, 0.2257, 0.6462);
 
+  // A small constant lift. The rig has world strength 0, so unlit faces render
+  // at literally nothing and the dish loses its silhouette; this is a viewing
+  // concession rather than anything measured from Blender.
+  scene.add(new THREE.AmbientLight(0xffffff, AMBIENT_LIGHT));
+
   const area = new THREE.PointLight(0xffffff, lit(areaOff, 1.5), 0, 2);
   area.position.copy(at(areaOff));
   const fill = new THREE.PointLight(0xffffff, lit(fillOff, 1.1), 0, 2);
@@ -117,6 +124,18 @@ export async function initArrayLab(): Promise<void> {
       key.color.clone().multiplyScalar(key.intensity),
     ],
   );
+
+  // Black distance fog, scaled off the camera-to-dish distance so it survives
+  // any re-export that moves the array. NEAR sits past the dish, so the subject
+  // is never veiled — only the terrain behind it.
+  const dishDistance = camera.position.distanceTo(discWorld);
+  const fogNear = dishDistance * FOG_NEAR_SCALE;
+  const fogFar = dishDistance * FOG_FAR_SCALE;
+  scene.fog = new THREE.Fog(FOG_COLOR, fogNear, fogFar);
+  // Raw ShaderMaterials get none of Three's fog chunks, so the dish and beam
+  // have to be told separately or they alone would stay crisp.
+  array.setFog(FOG_COLOR, fogNear, fogFar);
+  console.info(`[array lab] fog ${fogNear.toFixed(2)}..${fogFar.toFixed(2)}`);
 
   stage.addLayer({
     update: (dt) => array.update(dt),

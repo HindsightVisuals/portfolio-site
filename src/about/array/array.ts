@@ -57,6 +57,12 @@ export interface ArrayHandle {
    * a raw ShaderMaterial, so they are passed explicitly.
    */
   setLights(positions: THREE.Vector3[], colours: THREE.Color[]): void;
+  /**
+   * Match the scene's fog. Raw ShaderMaterials receive none of Three's fog
+   * chunks, so the dish and beam would otherwise stay crisp while the terrain
+   * around them receded.
+   */
+  setFog(color: THREE.Color, near: number, far: number): void;
   dispose(): void;
 }
 
@@ -285,6 +291,10 @@ export async function initArray(opts: {
     setLights(positions, colours) {
       for (const p of panels) p.handle.setLights(positions, colours);
     },
+    setFog(color, near, far) {
+      for (const p of panels) p.handle.setFog(color, near, far);
+      signal?.setFog(near, far);
+    },
     update(dt: number): void {
       time += dt;
       const now = performance.now();
@@ -336,6 +346,7 @@ export async function initArray(opts: {
         signal.setCursorLocal(signalLocal);
         signal.setCursorDistance(cursorWorld.distanceTo(signalMesh.getWorldPosition(signalWorld)));
         signal.setTime(time);
+        signal.setCameraPos(camWorld);
       }
 
       if (debugPath) {

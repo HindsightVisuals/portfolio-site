@@ -4,6 +4,7 @@ import {
   AMBIENT_RATE_X,
   AMBIENT_RATE_Y,
   AMBIENT_RATE_Z,
+  AMBIENT_LIGHT,
   CENTRE_SCALE,
   DISPLACE_GLOW_REF,
   CURSOR_RADIUS,
@@ -127,6 +128,10 @@ uniform vec3  uLightCol[3];
 uniform vec3  uCameraPos;
 uniform sampler2D uScratch;
 uniform float uScratchScale;
+uniform float uAmbientLight;
+uniform vec3  uFogColor;
+uniform float uFogNear;
+uniform float uFogFar;
 
 varying float vDist;
 varying float vDisplace;
@@ -180,9 +185,15 @@ void main() {
   // angles, which is most of what separates one tile from the next.
   float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);
 
-  vec3 base = vec3(0.133) * (diff * 0.55 + 0.04) + spec + vec3(0.10) * fres;
+  vec3 base = vec3(0.133) * (diff * 0.55 + 0.04 + uAmbientLight) + spec + vec3(0.10) * fres;
 
-  gl_FragColor = vec4(base + uEmission * e, 1.0);
+  vec3 col = base + uEmission * e;
+
+  // Fog by hand: a raw ShaderMaterial gets none of Three's fog chunks, so
+  // without this the dish would stay crisp while the terrain around it receded.
+  float depth = length(uCameraPos - vWorldPos);
+  float fog = clamp((depth - uFogNear) / max(uFogFar - uFogNear, 1e-4), 0.0, 1.0);
+  gl_FragColor = vec4(mix(col, uFogColor, fog), 1.0);
 }
 `;
 
@@ -194,6 +205,8 @@ export interface PanelMaterialHandle {
   setAmbient(v: number): void;
   setCursorAmount(v: number): void;
   setTime(t: number): void;
+  /** Linear black fog, matching the scene's own. */
+  setFog(color: THREE.Color, near: number, far: number): void;
   /** Camera world position — the specular term needs a real view vector. */
   setCameraPos(p: THREE.Vector3): void;
   /** Three world-space light positions and their pre-multiplied colours. */
@@ -216,6 +229,10 @@ export function makePanelMaterial(scratch: THREE.Texture | null = null): PanelMa
       uLightCol: { value: [new THREE.Color(), new THREE.Color(), new THREE.Color()] },
       uScratch: { value: scratch },
       uScratchScale: { value: 2.0 },
+      uAmbientLight: { value: AMBIENT_LIGHT },
+      uFogColor: { value: new THREE.Color(0x000000) },
+      uFogNear: { value: 1e9 },
+      uFogFar: { value: 1e9 },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -237,6 +254,11 @@ export function makePanelMaterial(scratch: THREE.Texture | null = null): PanelMa
     },
     setTime(t) {
       material.uniforms.uTime.value = t;
+    },
+    setFog(color, near, far) {
+      (material.uniforms.uFogColor.value as THREE.Color).copy(color);
+      material.uniforms.uFogNear.value = near;
+      material.uniforms.uFogFar.value = far;
     },
     setCameraPos(p) {
       (material.uniforms.uCameraPos.value as THREE.Vector3).copy(p);

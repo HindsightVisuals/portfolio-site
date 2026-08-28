@@ -150,3 +150,23 @@ export function dampAngle(current: number, target: number, dt: number, tau: numb
  * contribution invisible. The explode simply saturates instead.
  */
 export const DISPLACE_GLOW_REF = 0.12;
+
+/**
+ * A small constant lift on every surface.
+ *
+ * The rig has world strength 0, so unlit faces render at literally nothing and
+ * the dish loses its silhouette against the background. This is a viewing
+ * concession, not something measured from Blender — keep it low enough that the
+ * scene still reads as lit by its own emission.
+ */
+export const AMBIENT_LIGHT = 0.055;
+
+/**
+ * Black distance fog, as multiples of the camera-to-dish distance.
+ *
+ * The terrain runs about 12 units back; crushing it stops the far hills
+ * competing with the array for attention. NEAR sits past the dish so the
+ * subject itself is never veiled.
+ */
+export const FOG_NEAR_SCALE = 1.15;
+export const FOG_FAR_SCALE = 3.1;

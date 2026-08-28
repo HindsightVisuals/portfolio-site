@@ -29,6 +29,7 @@ uniform float uDisplace;
 uniform float uTime;
 
 varying vec2 vUv;
+varying vec3 vWorldPos;
 
 float hash(vec3 p) {
   return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
@@ -54,7 +55,9 @@ void main() {
   float n = noise3(q * 1.31 + vec3(0.0, uTime * 0.35, 0.0));
   vec3 p = position + normal * (n - 0.5) * uDisplace * 0.06;
 
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  vec4 world = modelMatrix * vec4(p, 1.0);
+  vWorldPos = world.xyz;
+  gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
 
@@ -63,8 +66,12 @@ uniform vec3  uGreen;
 uniform vec3  uPale;
 uniform float uStrength;
 uniform float uTime;
+uniform vec3  uCameraPos;
+uniform float uFogNear;
+uniform float uFogFar;
 
 varying vec2 vUv;
+varying vec3 vWorldPos;
 
 float hash21(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -104,7 +111,12 @@ void main() {
   // does over the same factor.
   vec3 col = mix(uGreen, uPale, smoothstep(0.35, 0.95, mask));
 
-  gl_FragColor = vec4(col * uStrength, alpha);
+  // Additive blending means fogging toward black would ADD black, i.e. do
+  // nothing. The beam has to be faded out instead.
+  float depth = length(uCameraPos - vWorldPos);
+  float fog = clamp((depth - uFogNear) / max(uFogFar - uFogNear, 1e-4), 0.0, 1.0);
+
+  gl_FragColor = vec4(col * uStrength, alpha * (1.0 - fog));
 }
 `;
 
@@ -115,6 +127,9 @@ export interface SignalMaterialHandle {
   /** World distance from cursor to beam; drives the rig's `10 / (d^4 + 1)`. */
   setCursorDistance(d: number): void;
   setTime(t: number): void;
+  setCameraPos(p: THREE.Vector3): void;
+  /** Linear fog. Additive geometry fades out rather than mixing to the fog colour. */
+  setFog(near: number, far: number): void;
   dispose(): void;
 }
 
@@ -127,6 +142,9 @@ export function makeSignalMaterial(): SignalMaterialHandle {
       uGreen: { value: SIGNAL_GREEN },
       uPale: { value: SIGNAL_PALE },
       uStrength: { value: 1 },
+      uCameraPos: { value: new THREE.Vector3() },
+      uFogNear: { value: 1e9 },
+      uFogFar: { value: 1e9 },
     },
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -148,6 +166,13 @@ export function makeSignalMaterial(): SignalMaterialHandle {
     },
     setTime(t) {
       material.uniforms.uTime.value = t;
+    },
+    setCameraPos(p) {
+      (material.uniforms.uCameraPos.value as THREE.Vector3).copy(p);
+    },
+    setFog(near, far) {
+      material.uniforms.uFogNear.value = near;
+      material.uniforms.uFogFar.value = far;
     },
     dispose() {
       material.dispose();
