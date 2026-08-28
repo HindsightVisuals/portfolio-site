@@ -4,6 +4,47 @@ import { initArray } from '../about/array/array';
 import { AMBIENT_LIGHT, FOG_NEAR_SCALE, FOG_FAR_SCALE } from '../about/array/array-math';
 
 /**
+ * A tiny procedural environment for the metals to reflect.
+ *
+ * A PBR metal has no diffuse response, so `metalness: 1` with no environment
+ * renders BLACK however much ambient light is in the scene — which is exactly
+ * what the tower, stand and struts were doing. The rig's world strength is 0,
+ * so there is no HDRI to reuse; this stands in.
+ *
+ * Built as a 16x8 equirectangular gradient and run through PMREM, which is a
+ * few hundred bytes rather than the megabytes an EXR would cost. Dark, with a
+ * faint green cast picked up from the scene's own key light, so reflections
+ * belong to this world rather than looking like a studio.
+ */
+function makeDarkEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
+  const w = 16;
+  const h = 8;
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    // Brighter overhead, falling to nothing at the horizon and below.
+    const t = 1 - y / (h - 1);
+    const lum = Math.pow(t, 1.7) * 150;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      data[i] = lum * 0.72;
+      data[i + 1] = lum;
+      data[i + 2] = lum * 0.8;
+      data[i + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, w, h);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const env = pmrem.fromEquirectangular(tex).texture;
+  pmrem.dispose();
+  tex.dispose();
+  return env;
+}
+
+/**
  * Where the camera sits relative to the dish, in Three space.
  *
  * Taken from AboutLander_Model.blend's OWN camera, which is the framing the
@@ -104,6 +145,7 @@ export async function initArrayLab(): Promise<void> {
   // at literally nothing and the dish loses its silhouette; this is a viewing
   // concession rather than anything measured from Blender.
   scene.add(new THREE.AmbientLight(0xffffff, AMBIENT_LIGHT));
+  scene.environment = makeDarkEnvironment(stage.renderer);
 
   const area = new THREE.PointLight(0xffffff, lit(areaOff, 1.5), 0, 2);
   area.position.copy(at(areaOff));

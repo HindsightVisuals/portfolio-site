@@ -170,3 +170,49 @@ export const AMBIENT_LIGHT = 0.22;
  */
 export const FOG_NEAR_SCALE = 1.15;
 export const FOG_FAR_SCALE = 3.1;
+
+/**
+ * How finely the scratch map tiles across the dish.
+ *
+ * The coord is the rest position in local XZ, and the dish spans about 2 units,
+ * so this is roughly "tiles across the diameter, halved". LARGER MEANS FINER —
+ * 2.0 read as huge blotches, 9.0 as obvious tiling; this sits between.
+ */
+export const SCRATCH_SCALE = 4.5;
+
+/**
+ * Strength of the fake environment the metals reflect.
+ *
+ * A PBR metal has NO diffuse response — it can only show reflections — so
+ * `metalness: 1` with no environment map renders BLACK, and ambient light does
+ * nothing for it. The rig's world strength is 0, so there is no HDRI to lean
+ * on; a tiny procedural gradient stands in.
+ */
+export const ENV_INTENSITY = 1.1;
+/** The ground is textured, so it needs far less help than bare metal. */
+export const ENV_INTENSITY_GROUND = 0.45;
+
+/**
+ * Base colour of the tower, struts and stand.
+ *
+ * Much lighter than it looks like it should be, because for a METAL the base
+ * colour IS the reflectance — there is no diffuse term to fall back on. At
+ * 0x1a1a1a the structure reflected under 1% of anything and rendered pure
+ * black however much light was added; measured 0 lit pixels against 6499 for a
+ * flat-white control.
+ */
+export const METAL_COLOR = 0x6e6e6e;
+
+/**
+ * Not quite 1. A hair of diffuse gives the ambient light something to act on,
+ * which matters in a scene this dark — a pure metal ignores it entirely.
+ */
+export const METAL_METALNESS = 0.88;
+
+/**
+ * Time constant for the dish's lean, in seconds.
+ *
+ * Four times the cursor's, so the dish swings with real weight behind the
+ * pointer instead of tracking it rigidly.
+ */
+export const DISC_TAU = CURSOR_TAU * 4;

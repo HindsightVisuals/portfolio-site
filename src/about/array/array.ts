@@ -14,7 +14,18 @@ import { createIdleModel, updateIdle } from './array-idle';
 import { makePanelMaterial, type PanelMaterialHandle } from './array-material';
 import { makeSignalMaterial, type SignalMaterialHandle } from './array-signal';
 import { initArrayPointer, isDisengaged } from './array-pointer';
-import { CURSOR_TAU, CURSOR_WORLD_RADIUS, EXPLODE_FAR, GLOW_RADIUS, dampAngle } from './array-math';
+import {
+  CURSOR_TAU,
+  CURSOR_WORLD_RADIUS,
+  DISC_TAU,
+  ENV_INTENSITY,
+  ENV_INTENSITY_GROUND,
+  METAL_COLOR,
+  METAL_METALNESS,
+  EXPLODE_FAR,
+  GLOW_RADIUS,
+  dampAngle,
+} from './array-math';
 import {
   makeCursorHelper,
   makeRingHelper,
@@ -98,15 +109,23 @@ export async function initArray(opts: {
   // roughness comes from the same scratch map as the panels. A flat roughness
   // left the structure reading as plastic against a scratched dish.
   const dressing = new THREE.MeshStandardMaterial({
-    color: 0x1a1a1a,
-    metalness: 1,
-    roughness: 0.45,
-    roughnessMap: scratches,
-    // Bump from the same map, so the tower reads as scratched metal rather than
-    // as a smooth shape with a mottled sheen. Small: it is surface relief, not
-    // geometry, and at this scale anything larger reads as noise.
+    color: METAL_COLOR,
+    metalness: METAL_METALNESS,
+    roughness: 0.38,
+    // NO roughnessMap. Three MULTIPLIES roughness by the map, and the scratch
+    // image is mostly black — measured mean 0.083 — so it drove roughness to
+    // about 0.037, a near-perfect mirror. In a scene with almost nothing to
+    // reflect, a mirror is black: the tower measured 51 max luma against 192
+    // for the same metal without the map.
+    //
+    // Bump alone carries the scratched read, and does it by disturbing normals
+    // rather than by collapsing the reflection.
     bumpMap: scratches,
-    bumpScale: 0.035,
+    bumpScale: 0.06,
+    // A metal has no diffuse term, so with nothing to reflect it renders BLACK
+    // however much ambient light is added. The lab supplies an environment;
+    // this is how much of it reaches the surface.
+    envMapIntensity: ENV_INTENSITY,
   });
 
   /**
@@ -160,7 +179,8 @@ export async function initArray(opts: {
       // Overwriting them — as every non-disc mesh used to be — is what left the
       // terrain untextured.
       const m = mesh.material as THREE.MeshStandardMaterial;
-      if (m && 'roughness' in m) m.envMapIntensity = 0;
+      // Was 0, which left the terrain lit by point lights alone and nearly black.
+      if (m && 'roughness' in m) m.envMapIntensity = ENV_INTENSITY_GROUND;
     } else if (name === 'Cylinder') {
       // The signal beam. It was taking the grey dressing material, which is why
       // it read as a dark pipe rather than the flowing ribbon the rig renders.
@@ -267,6 +287,7 @@ export async function initArray(opts: {
   const trackDir = new THREE.Vector3();
   const trackQuat = new THREE.Quaternion();
   const parentWorldQuat = new THREE.Quaternion();
+  const targetQuat = new THREE.Quaternion();
   const restQuat = disc.quaternion.clone();
   /**
    * The dish's face normal, in its own local space.
@@ -373,7 +394,15 @@ export async function initArray(opts: {
             disc.parent.getWorldQuaternion(parentWorldQuat);
             trackQuat.premultiply(parentWorldQuat.invert());
           }
-          disc.quaternion.copy(restQuat).slerp(trackQuat, TRACK_INFLUENCE * idle.cursor);
+          // Where the dish WANTS to be — the rig's constraint, evaluated
+          // against the cursor's current position.
+          targetQuat.copy(restQuat).slerp(trackQuat, TRACK_INFLUENCE * idle.cursor);
+
+          // Then ease toward it rather than snapping. The cursor was already
+          // damped, but the dish was tracking that damped position rigidly, so
+          // the lean had no weight of its own. DISC_TAU is four times the
+          // cursor's, which is what gives the dish its own inertia.
+          disc.quaternion.slerp(targetQuat, 1 - Math.exp(-dt / DISC_TAU));
         }
       }
     },
