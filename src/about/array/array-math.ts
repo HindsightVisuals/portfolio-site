@@ -175,10 +175,13 @@ export const FOG_FAR_SCALE = 3.1;
  * How finely the scratch map tiles across the dish.
  *
  * The coord is the rest position in local XZ, and the dish spans about 2 units,
- * so this is roughly "tiles across the diameter, halved". LARGER MEANS FINER —
- * 2.0 read as huge blotches, 9.0 as obvious tiling; this sits between.
+ * so this is roughly "tiles across the diameter, halved".
+ *
+ * LARGER MEANS FINER, which is the opposite of how it gets described: to make
+ * the scratches BIGGER, turn this DOWN. 9.0 read as obvious tiling, 4.5 still
+ * too fine.
  */
-export const SCRATCH_SCALE = 4.5;
+export const SCRATCH_SCALE = 1.125;
 
 /**
  * Strength of the fake environment the metals reflect.

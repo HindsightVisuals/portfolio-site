@@ -47,8 +47,8 @@ const f = (n: number): string => n.toFixed(2);
 /** Same, at three places — the ambient rates are small enough that two rounds to zero. */
 const f3 = (n: number): string => n.toFixed(3);
 
-const VERT = /* glsl */ `
-attribute vec3 aIslandC;
+const vert = (displace: boolean): string => /* glsl */ `
+${displace ? 'attribute vec3 aIslandC;' : '#define STATIC_PART'}
 
 uniform vec3  uCursor;
 uniform float uCursorRadius;
@@ -79,6 +79,13 @@ float noise3(vec3 p) {
 }
 
 void main() {
+#ifdef STATIC_PART
+  // No _ISLAND_C on the frame, struts or stand — they are not split into
+  // panels — so there is nothing to displace against. Shade only.
+  vec3 p = position;
+  vDist = 1e9;   // past every glow shell
+  vDisplace = 0.0;
+#else
   vec3 toC = aIslandC - uCursor;
   float len = length(toC);
   float d = len - uCursorRadius;
@@ -113,6 +120,7 @@ void main() {
   // from proximity alone, so a panel pushed by the ambient lights up the same
   // way one pushed by the sphere does.
   vDisplace = length(p - position);
+#endif
 
   vUv = uv;
 
@@ -121,7 +129,17 @@ void main() {
   // panels. Project from the REST position instead: the dish is a disc in
   // local XZ, so that plane is the natural unwrap. Rest, not displaced, or the
   // scratches would swim across the metal as the panels move.
+#ifdef STATIC_PART
+  // Triplanar. The dish is flat so an XZ projection is exactly right for it,
+  // but a vertical strut has almost no XZ footprint and the texture would
+  // smear into streaks along it.
+  vec3 an = abs(normalize(normal));
+  vScratchUv = (an.y > an.x && an.y > an.z) ? position.xz * uScratchScale
+             : (an.x > an.z)                ? position.zy * uScratchScale
+                                            : position.xy * uScratchScale;
+#else
   vScratchUv = position.xz * uScratchScale;
+#endif
 
   vec4 world = modelMatrix * vec4(p, 1.0);
   vWorldPos = world.xyz;
@@ -234,7 +252,10 @@ export interface PanelMaterialHandle {
   dispose(): void;
 }
 
-export function makePanelMaterial(scratch: THREE.Texture | null = null): PanelMaterialHandle {
+export function makePanelMaterial(
+  scratch: THREE.Texture | null = null,
+  { displace = true }: { displace?: boolean } = {},
+): PanelMaterialHandle {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uCursor: { value: new THREE.Vector3(0, 0, 0) },
@@ -254,7 +275,7 @@ export function makePanelMaterial(scratch: THREE.Texture | null = null): PanelMa
       uFogNear: { value: 1e9 },
       uFogFar: { value: 1e9 },
     },
-    vertexShader: VERT,
+    vertexShader: vert(displace),
     fragmentShader: FRAG,
   });
 

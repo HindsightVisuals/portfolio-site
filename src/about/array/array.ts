@@ -18,10 +18,7 @@ import {
   CURSOR_TAU,
   CURSOR_WORLD_RADIUS,
   DISC_TAU,
-  ENV_INTENSITY,
   ENV_INTENSITY_GROUND,
-  METAL_COLOR,
-  METAL_METALNESS,
   EXPLODE_FAR,
   GLOW_RADIUS,
   dampAngle,
@@ -105,28 +102,17 @@ export async function initArray(opts: {
   scratches.wrapT = THREE.RepeatWrapping;
   scratches.colorSpace = THREE.NoColorSpace; // a roughness mask, not colour
 
-  // Blender's `Array Material` on the frame, struts and stand: grey metal whose
-  // roughness comes from the same scratch map as the panels. A flat roughness
-  // left the structure reading as plastic against a scratched dish.
-  const dressing = new THREE.MeshStandardMaterial({
-    color: METAL_COLOR,
-    metalness: METAL_METALNESS,
-    roughness: 0.38,
-    // NO roughnessMap. Three MULTIPLIES roughness by the map, and the scratch
-    // image is mostly black — measured mean 0.083 — so it drove roughness to
-    // about 0.037, a near-perfect mirror. In a scene with almost nothing to
-    // reflect, a mirror is black: the tower measured 51 max luma against 192
-    // for the same metal without the map.
-    //
-    // Bump alone carries the scratched read, and does it by disturbing normals
-    // rather than by collapsing the reflection.
-    bumpMap: scratches,
-    bumpScale: 0.06,
-    // A metal has no diffuse term, so with nothing to reflect it renders BLACK
-    // however much ambient light is added. The lab supplies an environment;
-    // this is how much of it reaches the surface.
-    envMapIntensity: ENV_INTENSITY,
-  });
+  /**
+   * Every metal surface shares the dish's material, in a non-displacing form.
+   *
+   * The frame, struts and stand were on a MeshStandardMaterial, which lit them
+   * by a different model from the dish and left them reading as a separate
+   * object. Sharing the shader means one lighting response across the whole
+   * array — the same speculars, the same scratches, the same ambient and fog.
+   *
+   * They carry no `_ISLAND_C` and are not split into panels, so the variant
+   * drops the displacement and emission and keeps only the shading.
+   */
 
   /**
    * One panel material PER disc mesh, not one shared between them.
@@ -138,6 +124,8 @@ export async function initArray(opts: {
    * wrong space and never reacts.
    */
   const panels: Array<{ mesh: THREE.Mesh; handle: PanelMaterialHandle }> = [];
+  /** Non-displacing metal — same shader, no cursor response. */
+  const statics: PanelMaterialHandle[] = [];
   let cursorMesh: THREE.Mesh | null = null;
   let signal: SignalMaterialHandle | null = null;
   let signalMesh: THREE.Mesh | null = null;
@@ -174,6 +162,10 @@ export async function initArray(opts: {
       const handle = makePanelMaterial(scratches);
       mesh.material = handle.material;
       panels.push({ mesh, handle });
+    } else if (name === 'Cylinder') {
+      signal = makeSignalMaterial();
+      signalMesh = mesh;
+      mesh.material = signal.material;
     } else if (TEXTURED_NODES.includes(name)) {
       // The ground brings its own baked BaseColor/Normal/Roughness maps.
       // Overwriting them — as every non-disc mesh used to be — is what left the
@@ -181,12 +173,6 @@ export async function initArray(opts: {
       const m = mesh.material as THREE.MeshStandardMaterial;
       // Was 0, which left the terrain lit by point lights alone and nearly black.
       if (m && 'roughness' in m) m.envMapIntensity = ENV_INTENSITY_GROUND;
-    } else if (name === 'Cylinder') {
-      // The signal beam. It was taking the grey dressing material, which is why
-      // it read as a dark pipe rather than the flowing ribbon the rig renders.
-      signal = makeSignalMaterial();
-      signalMesh = mesh;
-      mesh.material = signal.material;
     } else if (mesh.name === 'Cursor') {
       // The driver sphere is an INPUT, not scenery — Blender never renders it —
       // so it stays hidden unless ?debug-path asks for it. It is exported at the
@@ -194,7 +180,10 @@ export async function initArray(opts: {
       mesh.visible = false;
       cursorMesh = mesh;
     } else {
-      mesh.material = dressing;
+      // The tower, struts and stand: the dish's shader without displacement.
+      const handle = makePanelMaterial(scratches, { displace: false });
+      mesh.material = handle.material;
+      statics.push(handle);
     }
   }
 
@@ -311,9 +300,11 @@ export async function initArray(opts: {
     ring,
     setLights(positions, colours) {
       for (const p of panels) p.handle.setLights(positions, colours);
+      for (const h of statics) h.setLights(positions, colours);
     },
     setFog(color, near, far) {
       for (const p of panels) p.handle.setFog(color, near, far);
+      for (const h of statics) h.setFog(color, near, far);
       signal?.setFog(near, far);
     },
     update(dt: number): void {
@@ -360,6 +351,8 @@ export async function initArray(opts: {
         handle.setTime(time);
         handle.setCameraPos(camWorld);
       }
+
+      for (const h of statics) h.setCameraPos(camWorld);
 
       if (signal && signalMesh) {
         signalLocal.copy(cursorWorld);
@@ -409,8 +402,8 @@ export async function initArray(opts: {
     dispose(): void {
       pointer.destroy();
       for (const p of panels) p.handle.dispose();
+      for (const h of statics) h.dispose();
       signal?.dispose();
-      dressing.dispose();
       scratches.dispose();
       group.clear();
     },
