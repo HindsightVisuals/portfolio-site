@@ -88,21 +88,21 @@ export function signalFalloff(d: number): number {
 /**
  * How far an idling panel drifts, in the disc's local units.
  *
- * Eight times the original 0.012. The ambient is meant to read as the array
- * breathing, and at the old amplitude it was barely perceptible.
+ * Sixteen times the original 0.012. The ambient is meant to read as the array
+ * breathing, and it kept coming back as too subtle.
  */
-export const AMBIENT_AMPLITUDE = 0.096;
+export const AMBIENT_AMPLITUDE = 0.192;
 
 /**
  * How fast the ambient noise field evolves.
  *
- * Still slower than the original 0.13/0.11/0.17, so the panels travel much
- * further (8x) without the motion reading as vibration — but doubled from the
- * first attempt, which was sluggish.
+ * Now roughly 2x the original 0.13/0.11/0.17, after two rounds of it reading
+ * as too slow. Paired with a 16x amplitude, so the panels travel a long way
+ * AND get there briskly.
  */
-export const AMBIENT_RATE_X = 0.084;
-export const AMBIENT_RATE_Y = 0.072;
-export const AMBIENT_RATE_Z = 0.11;
+export const AMBIENT_RATE_X = 0.252;
+export const AMBIENT_RATE_Y = 0.216;
+export const AMBIENT_RATE_Z = 0.33;
 
 /**
  * Time constant for the cursor's follow, in seconds.

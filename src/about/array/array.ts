@@ -12,6 +12,7 @@ import {
 } from './array-load';
 import { createIdleModel, updateIdle } from './array-idle';
 import { makePanelMaterial, type PanelMaterialHandle } from './array-material';
+import { makeSignalMaterial, type SignalMaterialHandle } from './array-signal';
 import { initArrayPointer, isDisengaged } from './array-pointer';
 import { CURSOR_TAU, CURSOR_WORLD_RADIUS, EXPLODE_FAR, GLOW_RADIUS, dampAngle } from './array-math';
 import {
@@ -66,11 +67,6 @@ export async function initArray(opts: {
 }): Promise<ArrayHandle> {
   const { roots, meshes } = await loadArray();
   const group = new THREE.Group();
-  const dressing = new THREE.MeshStandardMaterial({
-    color: 0x1a1a1a,
-    metalness: 1,
-    roughness: 0.42,
-  });
 
   // Add the scene ROOTS, never the individual meshes. `group.add(mesh)` would
   // detach each one from its glTF parent and flatten the whole tree — which is
@@ -92,6 +88,21 @@ export async function initArray(opts: {
   scratches.wrapT = THREE.RepeatWrapping;
   scratches.colorSpace = THREE.NoColorSpace; // a roughness mask, not colour
 
+  // Blender's `Array Material` on the frame, struts and stand: grey metal whose
+  // roughness comes from the same scratch map as the panels. A flat roughness
+  // left the structure reading as plastic against a scratched dish.
+  const dressing = new THREE.MeshStandardMaterial({
+    color: 0x1a1a1a,
+    metalness: 1,
+    roughness: 0.45,
+    roughnessMap: scratches,
+    // Bump from the same map, so the tower reads as scratched metal rather than
+    // as a smooth shape with a mottled sheen. Small: it is surface relief, not
+    // geometry, and at this scale anything larger reads as noise.
+    bumpMap: scratches,
+    bumpScale: 0.035,
+  });
+
   /**
    * One panel material PER disc mesh, not one shared between them.
    *
@@ -103,6 +114,8 @@ export async function initArray(opts: {
    */
   const panels: Array<{ mesh: THREE.Mesh; handle: PanelMaterialHandle }> = [];
   let cursorMesh: THREE.Mesh | null = null;
+  let signal: SignalMaterialHandle | null = null;
+  let signalMesh: THREE.Mesh | null = null;
 
   for (const [name, mesh] of meshes) {
     if (DISC_NODES.includes(name)) {
@@ -142,6 +155,12 @@ export async function initArray(opts: {
       // terrain untextured.
       const m = mesh.material as THREE.MeshStandardMaterial;
       if (m && 'roughness' in m) m.envMapIntensity = 0;
+    } else if (name === 'Cylinder') {
+      // The signal beam. It was taking the grey dressing material, which is why
+      // it read as a dark pipe rather than the flowing ribbon the rig renders.
+      signal = makeSignalMaterial();
+      signalMesh = mesh;
+      mesh.material = signal.material;
     } else if (mesh.name === 'Cursor') {
       // The driver sphere is an INPUT, not scenery — Blender never renders it —
       // so it stays hidden unless ?debug-path asks for it. It is exported at the
@@ -237,6 +256,8 @@ export async function initArray(opts: {
   const discWorld = new THREE.Vector3();
   const camWorld = new THREE.Vector3();
   const meshScale = new THREE.Vector3();
+  const signalLocal = new THREE.Vector3();
+  const signalWorld = new THREE.Vector3();
   const trackDir = new THREE.Vector3();
   const trackQuat = new THREE.Quaternion();
   const parentWorldQuat = new THREE.Quaternion();
@@ -309,6 +330,14 @@ export async function initArray(opts: {
         handle.setCameraPos(camWorld);
       }
 
+      if (signal && signalMesh) {
+        signalLocal.copy(cursorWorld);
+        signalMesh.worldToLocal(signalLocal);
+        signal.setCursorLocal(signalLocal);
+        signal.setCursorDistance(cursorWorld.distanceTo(signalMesh.getWorldPosition(signalWorld)));
+        signal.setTime(time);
+      }
+
       if (debugPath) {
         // Both sit under `group`, whose transform is not guaranteed to be
         // identity — go through the parent rather than assuming world space.
@@ -340,6 +369,7 @@ export async function initArray(opts: {
     dispose(): void {
       pointer.destroy();
       for (const p of panels) p.handle.dispose();
+      signal?.dispose();
       dressing.dispose();
       scratches.dispose();
       group.clear();

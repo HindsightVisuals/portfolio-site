@@ -17,6 +17,9 @@ import { initArray } from '../about/array/array';
  */
 const CAM_OFFSET_FROM_DISC = new THREE.Vector3(0.0163, -0.0615, 4.9403);
 
+/** Pulls the camera back along that offset. 1 is the Blender framing exactly. */
+const CAM_PULLBACK = 1.22;
+
 /**
  * `?lab=array` — the comms array on its own, at the model's own framing.
  *
@@ -64,7 +67,7 @@ export async function initArrayLab(): Promise<void> {
   // take the pointer mapping with it.
   const discNode = array.disc.getWorldPosition(new THREE.Vector3());
   const discWorld = discNode;
-  camera.position.copy(discNode).add(CAM_OFFSET_FROM_DISC);
+  camera.position.copy(discNode).addScaledVector(CAM_OFFSET_FROM_DISC, CAM_PULLBACK);
   camera.lookAt(array.discCentre);
 
   // A camera that ends up inside the terrain renders a screenful of rock and

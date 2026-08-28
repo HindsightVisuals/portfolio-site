@@ -150,11 +150,10 @@ describe('dampAngle', () => {
     expect(out).toBeLessThan(0.1); // moved backwards, not forwards
   });
 
-  it('is a big drift, still slower than the original', () => {
-    // Amplitude up 8x; the rates stay BELOW the original 0.13/0.11/0.17, so the
-    // panels travel much further without the motion reading as vibration.
-    expect(AMBIENT_AMPLITUDE).toBeCloseTo(0.012 * 8, 6);
-    expect(AMBIENT_RATE_X).toBeLessThan(0.13);
+  it('is a big, brisk drift', () => {
+    // Amplitude 16x the original 0.012, rates about 2x the original 0.13.
+    expect(AMBIENT_AMPLITUDE).toBeCloseTo(0.012 * 16, 6);
+    expect(AMBIENT_RATE_X).toBeGreaterThan(0.13);
   });
 
   it('sizes the emission reference to the AMBIENT, not the explode', () => {
