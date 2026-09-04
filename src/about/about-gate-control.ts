@@ -75,7 +75,7 @@ export function createGateControl(o: {
    * the panel was a `position: fixed` overlay outside the fading document;
    * now that it mounts through footer.ts's `gate` slot, a descendant of
    * doc.root, applyReturn's own whole-document fade already carries it out of
-   * view — see applyReturn's own comment.)
+   * view — see applyReturn's own comment in about-return.ts.)
    */
   const syncGateShow = (): void => {
     document.documentElement.style.setProperty('--gate-show', gateFed ? '1' : '0');

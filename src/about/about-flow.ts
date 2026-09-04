@@ -1,7 +1,6 @@
 // src/about/about-flow.ts
 import * as THREE from 'three';
-import gsap from 'gsap';
-import { DESTINATIONS, HOME_REST_Z } from '../three/world';
+import { DESTINATIONS } from '../three/world';
 import { mountAboutDocument, type AboutDocument } from './about-document';
 import { buildAboutPath, type AboutPath, type CameraPose } from './about-path';
 import { paletteAt, DAY_INK } from './about-palette';
@@ -11,6 +10,7 @@ import { nextBeatId, scrollDocumentTo, scrollToBeat } from './about-nav';
 import { shouldLeaveCorridor, workWallFadeAt } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
 import { createGateControl, GATE_IDLE_MS, type GateControl } from './about-gate-control';
+import { createReturnFlight, type ReturnFlight } from './about-return';
 import { buildFooter } from '../page2d/footer';
 import { projectToRect } from './about-project';
 import { ferroWorldAt, ferroFadeAt, FERRO_RADIUS } from './about-ferro-path';
@@ -29,27 +29,6 @@ import { ferroWorldAt, ferroFadeAt, FERRO_RADIUS } from './about-ferro-path';
 
 /** Beats where the blob passes IN FRONT of the copy. Everything else is behind. */
 const IN_FRONT: ReadonlySet<BeatId> = new Set<BeatId>(['anchor', 'transition', 'lander', 'team', 'ai']);
-
-/**
- * Duration of the return flight home (returnHome), in seconds. Long enough to
- * read as travel across the ~53-unit gap between the corridor's end pose and
- * Home, short enough not to trap the user at the footer. A tuning value.
- */
-const RETURN_S = 1.6;
-
-/**
- * Fraction of the return flight over which the corridor's document (and the
- * blob riding above it) fades away.
- *
- * The flight exists so the loop closes as TRAVEL rather than as a cut. Tearing
- * the document down only at p >= 1 — which is what this used to do — left the
- * whole corridor, footer and all, painted opaquely over the canvas for the
- * full 1.6s while the camera flew behind it: invisible travel, and a cut
- * again, just a delayed one. Fading rather than destroying at p = 0 keeps the
- * crossfade the spec asked for; 0.45 clears the document early enough that
- * most of the flight is actually watched.
- */
-const RETURN_FADE_P = 0.45;
 
 // Re-exported so about-flow.test.ts's existing import keeps resolving; the
 // definition now lives in about-gate-control.ts, alongside the rest of the
@@ -130,7 +109,7 @@ export interface AboutFlow {
    * onScroll and onWheel, this one mirrors doReturnHome, whose only guard is
    * `open` (the return is a legitimate move under reduced motion, and runs
    * whether or not the corridor is paused). Without any guard at all it ran
-   * applyReturn's whole teardown — releaseSharedState, setSuspended(false) —
+   * the flight's whole teardown — releaseSharedState, setSuspended(false) —
    * on a corridor that was never open.
    */
   stepReturnForTest(p: number): void;
@@ -195,18 +174,17 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   let t = 0;
   let lastBeat: BeatId | null = null;
 
-  // returnHome()'s scratch poses — module-scoped so applyReturn (an onUpdate
-  // callback GSAP calls every tick) never allocates.
-  const fromPos = new THREE.Vector3();
-  const fromQuat = new THREE.Quaternion();
-  const homePos = new THREE.Vector3(0, 0, HOME_REST_Z);
-  const homeQuat = new THREE.Quaternion();
-  let returnResolve: (() => void) | null = null;
-  // The chrome's lift at the instant the flight departs, so applyReturn can
-  // interpolate it back down rather than dropping it (see there). Captured
-  // rather than recomputed from `t` per tick because `t` is frozen for the
-  // flight's duration and the flight, not the scrub, owns this now.
-  let fromRise = 0;
+  // The return flight home, and both ends of the camera handover it closes
+  // with (about-return.ts). Its own poses and scratch live in there.
+  const flight: ReturnFlight = createReturnFlight(
+    {
+      camera: deps.camera,
+      director: deps.director,
+      ferroEl: deps.ferroEl,
+      reducedMotion: deps.reducedMotion,
+    },
+    path,
+  );
 
   // `html, body { overflow: hidden; height: 100% }` (base.css) otherwise pins
   // window.scrollY at 0 and scrollHeight at innerHeight for the whole site —
@@ -299,7 +277,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // beat: it is moving continuously, and `instant` because a tween
     // re-issued each frame would restart and never land (see placeAt's own
     // doc). ferroEl.style.opacity is also written by the return flight
-    // (applyReturn) — safe because the scroll/resize/wheel listeners are
+    // (about-return.ts) — safe because the scroll/resize/wheel listeners are
     // detached for that flight's duration AND pause()/resume(), the two direct
     // callers that could re-enter apply() from main.ts, refuse to run while it
     // is in the air (see their guards).
@@ -427,7 +405,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     deps.ferro?.hide();
     deps.ferroEl?.classList.remove('ferro-stage--behind');
     // The return flight's crossfade writes an inline opacity here (see
-    // applyReturn). Cleared alongside the behind-class for the same reason
+    // about-return.ts). Cleared alongside the behind-class for the same reason
     // --ground/--ink are cleared above: a lingering value would be the first
     // thing painted the next time the blob is shown.
     deps.ferroEl?.style.removeProperty('opacity');
@@ -471,128 +449,46 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   };
 
   /**
-   * Step the return flight to progress p (0..1), writing the camera pose and,
-   * at p>=1, closing the corridor out and handing back to the director.
-   *
-   * Its own move rather than exit()+a director flyTo: exit() cuts the camera
-   * to the anchor before releasing the director, and the director's travel
-   * methods write position only — the return has to interpolate orientation
-   * too, from the corridor's actual (pitched, off-spine) end pose.
-   */
-  const applyReturn = (p: number): void => {
-    const e = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2; // easeInOutQuad
-    deps.camera.position.lerpVectors(fromPos, homePos, e);
-    deps.camera.quaternion.copy(fromQuat).slerp(homeQuat, e);
-    // Uncover the flight. The corridor's document (z-index 1) and the blob
-    // (z-index 25) both paint OVER the canvas; left opaque for the whole
-    // 1.6s, they hide the very travel this move exists to show. Faded rather
-    // than destroyed at p = 0 so the two images cross rather than cut.
-    const fade = 1 - Math.min(1, Math.max(0, p) / RETURN_FADE_P);
-    if (doc) doc.root.style.opacity = String(fade);
-    if (deps.ferroEl) deps.ferroEl.style.opacity = String(fade);
-    // Ride the chrome home with the camera instead of dropping it at the door.
-    //
-    // The gate only arms at the corridor's END, so the flight always starts
-    // with the footer fully risen and the chrome parked at the top of the
-    // viewport. --footer-rise used to be REMOVED, and only at p >= 1 — so on
-    // the designed exit the wordmark and nav held top: 50px for the entire
-    // 1.6s and then jumped half a viewport back to centre in a single frame,
-    // over the Home view, with nothing fading to cover it. Interpolating it
-    // down here is the whole fix: the chrome descends as the camera flies.
-    // Off the EASED e, not raw p, so it tracks the camera's own curve rather
-    // than merely finishing at the same time. releaseSharedState() below still
-    // removes this property at p >= 1 — by then it reads 0 anyway, so there
-    // is nothing left to snap.
-    document.documentElement.style.setProperty('--footer-rise', String(fromRise * (1 - e)));
-    // --gate-show is deliberately NOT written here any more (it used to ride
-    // the same fromRise*(1-e) ramp as --footer-rise above). That write
-    // existed only because the gate panel used to be `position: fixed`,
-    // painted OVER the fading document rather than inside it, so nothing else
-    // would have carried it out of view. Now that the panel is mounted
-    // through footer.ts's `gate` slot — a normal descendant of `doc.root` —
-    // the `fade` write four lines up already takes it to invisible (well
-    // before the flight lands: RETURN_FADE_P clears the whole document at
-    // p = 0.45, long before --footer-rise/e reach 0), so a second write here
-    // would be redundant at best. It would also fight the opacity transition
-    // about.css now puts on .about-gate for the fade-IN: retargeting that
-    // transition every tick, exactly the conflict this property used to
-    // create for --footer-rise's chrome consumers, just relocated. Leaving
-    // gateFed's last value (always '1' here — the flight only starts once the
-    // gate has been fed) in place for the rest of the flight is correct: it
-    // is already invisible via the document fade, and releaseSharedState()
-    // below still clears it outright at p >= 1.
-    if (p >= 1) {
-      open = false;
-      paused = false;
-      doc?.destroy();
-      doc = null;
-      lastBeat = null;
-      t = 0;
-      releaseSharedState(); // the same restores exit() performs
-      // BEFORE setSuspended(false), and the whole reason the loop closes at
-      // all. The director's remembered state.z has been frozen at the Work
-      // rest since enter() suspended it, and its update() writes
-      // camera.position.z = state.z unconditionally on every non-suspended
-      // frame — so without this the very next tick teleported the camera from
-      // Home (34) straight back to −26, one frame after the flight landed.
-      //
-      // exit() gets the same thing right by CUTTING the camera to the rest the
-      // director already remembers (see its comment); a flight cannot do that,
-      // so the director is told where the camera ended up instead. syncTo, not
-      // jumpTo: jumpTo fires departCbs, and main.ts subscribes
-      // `onDepart(() => aboutFlow.exit())` to those — which would cut the
-      // camera to the Work rest itself, undoing the flight.
-      deps.director.syncTo(homePos.z);
-      deps.director.setSuspended(false);
-      const r = returnResolve;
-      returnResolve = null;
-      r?.();
-    }
-  };
-
-  /**
    * Fly the camera home and hand over — the shared body behind the public
    * returnHome() below AND the footer gate arming (gateCtl's onArmed callback,
    * wired to this function, in about-gate-control.ts).
    * Top-level, like exit(), so both callers reach the same one flight rather
    * than each keeping their own copy.
+   *
+   * The flight itself lives in about-return.ts. What stays here is the
+   * session's half of the handover: the departure work it hands over as
+   * onDepart, and the teardown the flight runs — before it says anything to
+   * the director — as onLanded.
    */
   const doReturnHome = (): Promise<void> => {
     if (!open) return Promise.resolve();
-    // Belt-and-braces: gateCtl.feed already clears this before an armed push
-    // calls here, but returnHome() is also a public test seam reachable
-    // without ever feeding the gate — a flight departing must not leave a
-    // stale timer to later drain an accumulator the next visit hasn't fed.
-    gateCtl.clearTimer();
-    fromPos.copy(deps.camera.position);
-    fromQuat.copy(deps.camera.quaternion);
-    // Where the chrome is sitting as the flight departs — applyReturn walks it
-    // back to 0 across the flight. Read from the path rather than from the DOM
-    // so it is the same number apply() last wrote, not a re-parsed string.
-    fromRise = footerRiseAt(t, path);
-    window.removeEventListener('scroll', onScroll);
-    // Also detached here, not just in applyReturn's p>=1 branch: onResize
-    // and onWheel stay attached for the corridor's whole open lifetime
-    // (same as exit()), and both already no-op once `open` flips false —
-    // but leaving them attached would double them up on the next enter().
-    window.removeEventListener('resize', onResize);
-    window.removeEventListener('wheel', onWheel);
-    // The document fades out under the flight (applyReturn) but stays mounted
-    // until p >= 1; a transparent footer must not still be clickable.
-    if (doc) doc.root.style.pointerEvents = 'none';
-    if (deps.reducedMotion) {
-      applyReturn(1);
-      return Promise.resolve();
-    }
-    return new Promise((resolve) => {
-      returnResolve = resolve;
-      const p = { v: 0 };
-      gsap.to(p, {
-        v: 1,
-        duration: RETURN_S,
-        ease: 'none',
-        onUpdate: () => applyReturn(p.v),
-      });
+    return flight.start({
+      t,
+      docRoot: doc?.root ?? null,
+      onDepart: () => {
+        // Belt-and-braces: gateCtl.feed already clears this before an armed push
+        // calls here, but returnHome() is also a public test seam reachable
+        // without ever feeding the gate — a flight departing must not leave a
+        // stale timer to later drain an accumulator the next visit hasn't fed.
+        gateCtl.clearTimer();
+        window.removeEventListener('scroll', onScroll);
+        // Also detached here, not just at the flight's p>=1 landing (onLanded
+        // below): onResize and onWheel stay attached for the corridor's whole
+        // open lifetime (same as exit()), and both already no-op once `open`
+        // flips false — but leaving them attached would double them up on the
+        // next enter().
+        window.removeEventListener('resize', onResize);
+        window.removeEventListener('wheel', onWheel);
+      },
+      onLanded: () => {
+        open = false;
+        paused = false;
+        doc?.destroy();
+        doc = null;
+        lastBeat = null;
+        t = 0;
+        releaseSharedState(); // the same restores exit() performs
+      },
     });
   };
 
@@ -747,16 +643,16 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     stepBeat,
     stepReturnForTest(p: number): void {
       if (!open) return;
-      applyReturn(Math.min(1, Math.max(0, p)));
+      flight.step(Math.min(1, Math.max(0, p)));
     },
     feedGateForTest(deltaPx: number): void {
       if (!open || paused || deps.reducedMotion) return;
       gateCtl.feed(deltaPx, t);
     },
     pause(): void {
-      // `returnResolve` is the in-flight flag: non-null for exactly as long as
-      // the return flight is running (doReturnHome sets it, applyReturn's
-      // p >= 1 branch clears it).
+      // `flight.inFlight()` is the in-flight flag: true for exactly as long as
+      // the return flight is running (start() sets it, the flight's p >= 1
+      // branch clears it — about-return.ts).
       //
       // Unlike the listeners — which doReturnHome detaches — pause() and
       // resume() are DIRECT method calls from main.ts, fired by the contact
@@ -768,7 +664,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       // flight is tweening — and called scrollDocumentTo(t), firing the
       // listener it had just re-attached. The flight owns the corridor while
       // it is in the air; there is nothing here to hold.
-      if (!open || paused || returnResolve) return;
+      if (!open || paused || flight.inFlight()) return;
       paused = true;
       window.removeEventListener('scroll', onScroll);
       // Give the blob's stacking back. On the beats where it must not cross the
@@ -789,7 +685,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       // Guarded on the flight for the same reason pause() is — see there. This
       // is the half that actually did the damage: apply() and scrollDocumentTo
       // both fight the tween.
-      if (!open || !paused || returnResolve) return;
+      if (!open || !paused || flight.inFlight()) return;
       paused = false;
       window.addEventListener('scroll', onScroll, { passive: true });
       deps.scrollNav?.setMode('about');

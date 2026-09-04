@@ -67,12 +67,12 @@ describe('about.css — the gate indicator', () => {
 
   // CHANGED for this task (gate placement correction). This used to assert
   // the OPPOSITE — that .about-gate carried no transition at all — because
-  // the return flight (about-flow.ts's applyReturn) wrote --gate-show every
+  // the return flight (about-return.ts's applyReturn) wrote --gate-show every
   // tick of its own eased 1.6s interpolation, and a CSS transition would have
   // retargeted against each of those writes. That conflict has evaporated:
   // the panel now mounts inside the footer, itself inside .about-doc, whose
   // opacity applyReturn already fades wholesale on return — so applyReturn no
-  // longer touches --gate-show at all (verified directly in about-flow.ts;
+  // longer touches --gate-show at all (verified directly in about-return.ts;
   // see applyReturn's own comment). With nothing left to retarget against, a
   // plain opacity transition is safe, and the designer asked for exactly
   // this: the panel should fade in on first feed rather than pop.
