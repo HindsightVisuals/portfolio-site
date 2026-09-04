@@ -44,10 +44,13 @@ export function createSession(o: {
   let t = 0;
 
   /**
-   * The scrub guard, shared by onResize, onWheel, stepBeat, feedGateForTest and
-   * setScrollForTest. Named rather than hand-copied six times: the six copies
-   * were identical in effect and different in wording, so the two that
-   * deliberately DEPART from it were indistinguishable from typos.
+   * The scrub guard, shared by onWheel, stepBeat, feedGateForTest and
+   * setScrollForTest — and by onResize at its SCRUB line only, not at its
+   * early return, which is open/paused by design (see there: the document
+   * still has to be re-laid out under reduced motion). Named rather than
+   * hand-copied: the copies were worded differently at every site, and one of
+   * them was not even the same condition, so the two that deliberately DEPART
+   * from it were indistinguishable from typos.
    *
    * The two departures, both kept and both commented at their own site:
    * onScroll omits `paused` because pause() DETACHES it (the seams that bypass

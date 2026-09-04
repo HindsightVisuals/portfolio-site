@@ -81,13 +81,33 @@ describe('the guard table', () => {
     session.pause();
     presentation.apply.mockClear();
     session.resume();
-    // isOpen() alone would be true whether or not the guard works. The half
-    // that actually did the damage is resume(): apply() writes
-    // ferroEl.style.opacity and scrollDocumentTo fires the scroll listener —
-    // both fighting the tween the flight is running. Nothing may reach the
-    // presentation while the flight owns the corridor.
+    // isOpen() alone would be true whether or not the guard works. Nothing may
+    // reach the presentation while the flight owns the corridor.
     expect(presentation.apply).not.toHaveBeenCalled();
     expect(session.isOpen()).toBe(true);
+  });
+
+  it('resume() refuses while the flight is in the air — the half that fought the tween', () => {
+    const { presentation, flight, session } = setup();
+    session.enter(document.body);
+    // Pause for REAL first, with the flight on the ground, so `paused` genuinely
+    // becomes true. Without that, resume()'s own `!paused` term short-circuits
+    // and the guard under test is never reached — which is exactly how the test
+    // above passes with resume()'s flight check deleted. This one isolates it.
+    session.pause();
+    flight.inFlight.mockReturnValue(true);
+    presentation.apply.mockClear();
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    session.resume();
+    // The two writes that fight the running tween: apply() writes
+    // ferroEl.style.opacity, the very property the flight is animating, and
+    // scrollDocumentTo fires the listener resume() had just re-attached.
+    expect(presentation.apply).not.toHaveBeenCalled();
+    expect(addSpy.mock.calls.some(([type]) => type === 'scroll')).toBe(false);
+    // And the hold still holds: a scroll event cannot reach the camera.
+    window.dispatchEvent(new Event('scroll'));
+    expect(presentation.apply).not.toHaveBeenCalled();
+    addSpy.mockRestore();
   });
 });
 

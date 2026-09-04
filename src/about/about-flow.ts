@@ -8,11 +8,16 @@ import { createPresentation } from './about-presentation';
 import { createSession } from './about-session';
 
 /**
- * The About corridor's controller — the only stateful module in src/about/.
+ * The About corridor's front door: its public contract, and the wiring that
+ * assembles the corridor behind it.
  *
- * It owns three things and delegates everything else: the scroll binding, the
- * per-frame write onto the world camera, and the enter/exit handover. All the
- * maths lives in the pure modules beside it.
+ * This file owns AboutFlow and AboutFlowDeps below, the GATE_IDLE_MS
+ * re-export, and initAboutFlow — which builds the camera path, the return
+ * flight (about-return.ts) and the per-frame presentation write
+ * (about-presentation.ts), and hands all three to the session. The state
+ * machine itself — the open/paused/`t` state, the scroll binding and the
+ * enter/exit handover — is about-session.ts. All the maths lives in the pure
+ * modules beside it.
  *
  * Handover, not replacement. camera-director keeps its state and is merely
  * suspended, so leaving the corridor returns the site's zoom grammar exactly as
