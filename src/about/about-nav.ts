@@ -7,8 +7,10 @@ import { beatAt } from './about-scrub';
  * Put the real document's scroll position where path parameter `target`
  * sits — the inverse of scrollToT, and the one place that conversion lives.
  *
- * Callers: enter()'s two branches (so the first real scroll event doesn't snap
- * the camera back to the top), scrollToBeat below, and resume().
+ * Four callers need it and three used to carry their own copy: enter()'s two
+ * branches (so the first real scroll event doesn't snap the camera back to
+ * the top), scrollToBeat below, and resume() — the caller that did NOT have
+ * a copy, which is the bug this wave fixes (see there).
  */
 export function scrollDocumentTo(target: number): void {
   const range = document.documentElement.scrollHeight - window.innerHeight;
@@ -23,8 +25,9 @@ export function scrollDocumentTo(target: number): void {
  * THIS document now (D2/the corridor spec), not places to fly to or reopen, so
  * there is nothing to hand off to — just move the scrollbar. Under reduced
  * motion this is also correct and sufficient: the browser's own scroll position
- * is the only "position" that mode has, and mountAboutDocument lays the
- * document out identically regardless of reducedMotion.
+ * is the only "position" that mode has (see about-flow.ts's enter()
+ * reduced-motion branch), and mountAboutDocument lays the document out
+ * identically regardless of reducedMotion.
  */
 export function scrollToBeat(path: AboutPath, id: BeatId): void {
   scrollDocumentTo(path.tForBeat(id));
