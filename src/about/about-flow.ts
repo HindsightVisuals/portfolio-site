@@ -207,6 +207,29 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     gateCtl.syncAt(t);
   };
 
+  /**
+   * Leaving the corridor releases shared state in two places now:
+   * presentation.releaseSharedState() (the --ground/--ink/--footer-rise
+   * escape hatches, the background/atmosphere/cursor restore, and, on the
+   * animated path, the ferro/scrollNav/world restore) and gateCtl.release()
+   * (--gate-show). Two separate calls, not one, because presentation.ts
+   * deliberately does not import about-gate-control.ts — the two modules
+   * would otherwise import each other — so it cannot own the gate's own
+   * property.
+   *
+   * One helper, not two hand-maintained call sites, for the same reason
+   * releaseSharedState() itself exists: its own doc comment records that two
+   * hand-maintained copies of ITS restore list caused three separate leaks,
+   * one per review round, before being consolidated into one function.
+   * Leaving these two calls to drift independently at exit() and onLanded()
+   * would reintroduce that exact shape one level up, against the same
+   * property.
+   */
+  const releaseAll = (): void => {
+    presentation.releaseSharedState();
+    gateCtl.release();
+  };
+
   const onScroll = (): void => {
     if (!open || deps.reducedMotion) return;
     scrubTo(
@@ -249,12 +272,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     doc = null;
     presentation.resetBeat();
     t = 0;
-    presentation.releaseSharedState();
-    // The gate indicator's own clear (about.css reads --gate-show with a
-    // `, 0` fallback) — presentation.releaseSharedState() no longer removes
-    // this itself; gateCtl owns --gate-show end to end now (see its own
-    // release() doc in about-gate-control.ts).
-    gateCtl.release();
+    releaseAll();
     if (deps.reducedMotion) return;
     // Cut the camera back to the About rest before handing it back.
     // Nothing else in this codebase ever writes camera.quaternion —
@@ -312,8 +330,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
         doc = null;
         presentation.resetBeat();
         t = 0;
-        presentation.releaseSharedState(); // the same restores exit() performs
-        gateCtl.release(); // see exit()'s own comment on this call
+        releaseAll(); // the same restores exit() performs — see its own doc
       },
     });
   };

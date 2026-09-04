@@ -23,7 +23,7 @@ import { worldPerPx } from '../three/framing';
  * one frame late, it is internally INCONSISTENT: `depth` below is read
  * straight off the fresh `camera.position`/`camera.quaternion`, so the blob's
  * SIZE would come from this frame and its POSITION from the last one. Callers
- * must call `camera.updateMatrixWorld()` first (about-flow.ts's apply() does).
+ * must call `camera.updateMatrixWorld()` first (about-presentation.ts's apply() does).
  */
 export function projectToRect(
   world: THREE.Vector3,

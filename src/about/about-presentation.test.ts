@@ -106,6 +106,14 @@ describe('createPresentation.releaseSharedState', () => {
   });
 
   it('clears the escape-hatch custom properties', () => {
+    // --ground and --ink are pre-seeded with garbage values before apply()
+    // runs specifically so their being empty afterward actually proves
+    // releaseSharedState() cleared them, rather than merely never having
+    // been set by the (mocked, non-DOM-touching) setGround/setTextInk in
+    // this test — see about-flow.test.ts's own "restores every site-wide
+    // default" test for the same reasoning.
+    document.documentElement.style.setProperty('--ground', '#123456');
+    document.documentElement.style.setProperty('--ink', '#abcdef');
     const { presentation } = setup();
     presentation.apply(0.5);
     presentation.releaseSharedState();

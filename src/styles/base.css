@@ -143,11 +143,11 @@ body {
 }
 
 /* The About footer beat lifts the chrome out of the rising footer's way
- * (about-flow.ts writes --footer-rise, 0..1). The bottom margin notes rise
- * with the footer's edge. The 276px is the world band the mockup (Figma
- * 110:2) leaves above the footer, so the footer's top edge lands 276px from
- * the top of the viewport; the notes have to end up ABOVE that edge, clear of
- * it.
+ * (about-presentation.ts writes --footer-rise, 0..1). The bottom margin
+ * notes rise with the footer's edge. The 276px is the world band the mockup
+ * (Figma 110:2) leaves above the footer, so the footer's top edge lands
+ * 276px from the top of the viewport; the notes have to end up ABOVE that
+ * edge, clear of it.
  *
  * The sign was wrong: `- 100px` put the notes at 326px from the viewport top
  * at full rise — 50px BELOW the edge, i.e. inside the footer, which is the
@@ -225,8 +225,8 @@ body {
 }
 
 /* The About footer beat lifts the chrome out of the rising footer's way
- * (about-flow.ts writes --footer-rise, 0..1). The nav travels toward the top
- * of the viewport as the corridor's last beat plays out.
+ * (about-presentation.ts writes --footer-rise, 0..1). The nav travels
+ * toward the top of the viewport as the corridor's last beat plays out.
  *
  * It used to travel all the way to a 32px centre — matching where the same
  * chrome sits on the 2D pages' .nav2d band (a 64px band whose contents sit at
