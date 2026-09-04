@@ -6,7 +6,8 @@ import { mountAboutDocument, type AboutDocument } from './about-document';
 import { buildAboutPath, type AboutPath, type CameraPose } from './about-path';
 import { paletteAt, DAY_INK } from './about-palette';
 import { beatAt, footerRiseAt, scrollToT } from './about-scrub';
-import { ABOUT_MARKERS, type BeatId } from './about-markers';
+import { type BeatId } from './about-markers';
+import { nextBeatId, scrollDocumentTo, scrollToBeat } from './about-nav';
 import { shouldLeaveCorridor, workWallFadeAt } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
 import { atCorridorEnd, createGate, feedGate } from './about-gate';
@@ -743,37 +744,6 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   };
 
   /**
-   * Put the real document's scroll position where path parameter `target`
-   * sits — the inverse of scrollToT, and the one place that conversion lives.
-   *
-   * Four callers need it and three used to carry their own copy: enter()'s two
-   * branches (so the first real scroll event doesn't snap the camera back to
-   * the top), scrollToBeat below, and resume() — the caller that did NOT have
-   * a copy, which is the bug this wave fixes (see there).
-   */
-  const scrollDocumentTo = (target: number): void => {
-    const range = document.documentElement.scrollHeight - window.innerHeight;
-    if (range > 0) window.scrollTo(0, range * Math.min(1, Math.max(0, target)));
-  };
-
-  /**
-   * Scroll the real document to where a beat's t sits, driving the camera
-   * there through the ordinary scroll pipeline (onScroll/apply) — the same
-   * mechanism a raw scroll gesture uses. Used by the footer's site nav
-   * (onFooterNav below) for 'about' and 'contact', and by the arrow keys
-   * (stepBeat below): all of them are scroll positions inside THIS document
-   * now (D2/the corridor spec), not places to fly to or reopen, so there is
-   * nothing to hand off to — just move the scrollbar. Under reduced motion
-   * this is also correct and sufficient: the browser's own scroll position is
-   * the only "position" that mode has (see enter()'s reduced-motion branch),
-   * and mountAboutDocument lays the document out identically regardless of
-   * reducedMotion.
-   */
-  const scrollToBeat = (id: BeatId): void => {
-    scrollDocumentTo(path.tForBeat(id));
-  };
-
-  /**
    * The footer's site nav, clicked from inside the corridor.
    *
    * 'work' is the one destination that actually leaves: exit() already cuts
@@ -790,7 +760,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       exit();
       return;
     }
-    scrollToBeat(dest === 'about' ? 'anchor' : 'contact');
+    scrollToBeat(path, dest === 'about' ? 'anchor' : 'contact');
   };
 
   /**
@@ -802,13 +772,9 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
    * ejecting the reader (ArrowDown, "forward", moving them backwards). The
    * corridor is the page order now, so the arrows have to walk IT.
    *
-   * Backward from a beat you are partway through goes to that beat's own start
-   * first, then to the previous one — the ordinary prev-section convention.
    * Backward from t = 0 hands the camera back, exactly mirroring the wheel's
    * own shouldLeaveCorridor rule (backward at the top leaves), so a
-   * keyboard-only reader is never trapped in here. Forward past the last beat
-   * clamps: t = 1 IS the last marker, and leaving forward is the footer gate's
-   * job, not an arrow's.
+   * keyboard-only reader is never trapped in here.
    *
    * Moves the SCROLLBAR rather than the camera, so the ordinary
    * onScroll/apply pipeline does the work and `t` cannot desync — the same
@@ -824,10 +790,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       exit();
       return;
     }
-    const i = ABOUT_MARKERS.findIndex((m) => m.id === beatAt(t, path));
-    const here = path.tForBeat(ABOUT_MARKERS[i].id);
-    const j = dir > 0 ? i + 1 : t > here + 1e-6 ? i : i - 1;
-    scrollToBeat(ABOUT_MARKERS[Math.min(ABOUT_MARKERS.length - 1, Math.max(0, j))].id);
+    scrollToBeat(path, nextBeatId(path, t, dir));
   };
 
   // Backward scroll at the very top of the corridor hands the camera back —
