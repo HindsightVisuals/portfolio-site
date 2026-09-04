@@ -43,9 +43,9 @@
 }
 
 /* About corridor: the blob drops behind the scrolling document on beats where
- * it must not cross the type (about-flow.ts, IN_FRONT). Beats are discrete
- * scroll ranges and the blob is far from the copy at every boundary, so this
- * swaps invisibly — no crossfade needed. */
+ * it must not cross the type (about-presentation.ts, IN_FRONT). Beats are
+ * discrete scroll ranges and the blob is far from the copy at every
+ * boundary, so this swaps invisibly — no crossfade needed. */
 .ferro-stage--behind {
   z-index: 0;
 }

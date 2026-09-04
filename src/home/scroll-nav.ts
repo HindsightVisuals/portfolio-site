@@ -5,7 +5,7 @@ import { normalizeWheelDelta } from './wheel';
  * 'takeover' — a 2D page covers the world; the wheel belongs to that page.
  * 'about'    — the About corridor; the scrolling document (about-document.ts)
  *              owns the wheel and drives the camera itself through
- *              about-flow.ts's own scroll listener. This mode exists purely
+ *              about-session.ts's own scroll listener. This mode exists purely
  *              so `onWheel` below stops feeding the director scroll deltas
  *              while the corridor is open — behaviourally identical to
  *              'takeover' in this file, kept as a separate name because the
