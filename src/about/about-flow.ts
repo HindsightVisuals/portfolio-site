@@ -10,7 +10,7 @@ import { type BeatId } from './about-markers';
 import { nextBeatId, scrollDocumentTo, scrollToBeat } from './about-nav';
 import { shouldLeaveCorridor, workWallFadeAt } from './about-handover';
 import { normalizeWheelDelta } from '../home/wheel';
-import { atCorridorEnd, createGate, feedGate } from './about-gate';
+import { createGateControl, GATE_IDLE_MS, type GateControl } from './about-gate-control';
 import { buildFooter } from '../page2d/footer';
 import { projectToRect } from './about-project';
 import { ferroWorldAt, ferroFadeAt, FERRO_RADIUS } from './about-ferro-path';
@@ -51,17 +51,10 @@ const RETURN_S = 1.6;
  */
 const RETURN_FADE_P = 0.45;
 
-/**
- * How long a push at the corridor's end can go quiet before the gate drains
- * back to zero on its own (about-flow's idle-retreat, QA change 2).
- *
- * Long enough that a reader who pauses mid-push — to read the label, to
- * breathe — isn't punished for the pause; short enough that the indicator
- * doesn't overstay once they've genuinely stopped. ~1s is the read for "you
- * stopped" without being twitchy; sized a touch under it so the retreat feels
- * prompt rather than sluggish. A tuning value, not derived from anything.
- */
-export const GATE_IDLE_MS = 900;
+// Re-exported so about-flow.test.ts's existing import keeps resolving; the
+// definition now lives in about-gate-control.ts, alongside the rest of the
+// gate's state.
+export { GATE_IDLE_MS };
 
 export interface AboutFlowDeps {
   camera: THREE.PerspectiveCamera;
@@ -202,27 +195,6 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
   let t = 0;
   let lastBeat: BeatId | null = null;
 
-  // The footer gate's own state (about-gate.ts) — reset on every enter() so a
-  // PREVIOUS visit's fully-armed gate can't fire on the very next forward
-  // wheel tick of a later one.
-  const gate = createGate();
-
-  // Whether the gate has genuinely been fed since arriving at the corridor's
-  // end (QA change 1) — the panel's own reveal, distinct from
-  // gate.accumulated, which the idle-retreat timer below drains back to
-  // zero while this stays true. See syncGateShow's own doc for why the two
-  // must not be the same read. Reset on enter() alongside gate.accumulated,
-  // for the same reason: a previous visit must not leave this closure
-  // stuck true for a later one that hasn't pushed at all yet.
-  let gateFed = false;
-
-  // The idle-retreat timer (QA change 2): rearmed on every wheel push that
-  // reaches feedGateAt, so it only ever fires GATE_IDLE_MS after the LAST
-  // push, not the first. Module-scoped (not a feedGateAt-local var) so a
-  // later push can find and clear the previous one instead of leaving two
-  // timers racing to drain the same accumulator.
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
   // returnHome()'s scratch poses — module-scoped so applyReturn (an onUpdate
   // callback GSAP calls every tick) never allocates.
   const fromPos = new THREE.Vector3();
@@ -300,55 +272,6 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     deps.ferroEl?.classList.toggle('ferro-stage--behind', !IN_FRONT.has(beat));
   };
 
-  /**
-   * Write the gate panel's reveal from whether it has genuinely been fed —
-   * gateFed below, not a live re-check of gate.accumulated. The two diverge
-   * on purpose: the idle-retreat timeout (scheduleIdleDrain) drains
-   * accumulated back to zero so the FILL can visibly ease down to nothing,
-   * but the panel itself — "keep scrolling to return home" — stays offered
-   * for as long as you keep dwelling at the corridor's end, or that easing
-   * would happen behind an already-vanished panel and be invisible. Only
-   * leaving the end (apply()'s reset below) or leaving the corridor
-   * (releaseSharedState) clears gateFed.
-   *
-   * The ONLY writer of --gate-show, full stop — called from both sites that
-   * can flip gateFed: feedGateAt's first push, and apply()'s leave-the-end
-   * reset. (applyReturn used to write it too, off fromRise, for as long as
-   * the panel was a `position: fixed` overlay outside the fading document;
-   * now that it mounts through footer.ts's `gate` slot, a descendant of
-   * doc.root, applyReturn's own whole-document fade already carries it out of
-   * view — see applyReturn's own comment.)
-   */
-  const syncGateShow = (): void => {
-    document.documentElement.style.setProperty('--gate-show', gateFed ? '1' : '0');
-  };
-
-  /** Stop a pending idle-retreat timer without firing it. Idempotent. */
-  const clearIdleTimer = (): void => {
-    if (idleTimer === null) return;
-    clearTimeout(idleTimer);
-    idleTimer = null;
-  };
-
-  /**
-   * (Re)start the idle-retreat clock (QA change 2): GATE_IDLE_MS after the
-   * MOST RECENT push at the corridor's end, drain the accumulator back to
-   * zero exactly as leaving the end already does, and let
-   * .about-gate-fill's own width transition (about.css) ease the fill down
-   * to nothing — no animation loop needed here, only the one write. Does
-   * NOT touch gateFed/--gate-show: the panel stays visible so that easing is
-   * actually seen, not hidden behind a panel that vanished in the same
-   * frame — see syncGateShow's own doc.
-   */
-  const scheduleIdleDrain = (): void => {
-    clearIdleTimer();
-    idleTimer = setTimeout(() => {
-      idleTimer = null;
-      gate.accumulated = 0;
-      doc?.root.style.removeProperty('--gate');
-    }, GATE_IDLE_MS);
-  };
-
   const apply = (next: number): void => {
     t = next;
     path.sample(t, pose);
@@ -409,36 +332,11 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // beat — see footerRiseAt's own doc for why nothing else compresses.
     document.documentElement.style.setProperty('--footer-rise', String(rise));
 
-    // Reset the gate the moment you leave the end.
-    //
-    // feedGateAt only WRITES --gate while atCorridorEnd(t), so pushing the
-    // indicator to 50% and then scrolling back up used to freeze the green
-    // fill at 50% for the rest of the corridor — and leave the accumulator
-    // half-armed, so a later return to the end needed only half a push. The
-    // gate measures intent against the end of the page; leaving the end
-    // withdraws it, exactly as feedGate's own backward drain does. Guarded on
-    // the accumulator so this is a no-op on all but the one frame that
-    // crosses back out, rather than a per-frame style write.
-    if (!atCorridorEnd(t) && gate.accumulated !== 0) {
-      gate.accumulated = 0;
-      doc?.root.style.removeProperty('--gate');
-      clearIdleTimer();
-      // Leaving the end withdraws the whole offer, not just the fill: the
-      // panel is only relevant while you're at the bottom, pushing against
-      // it. gateFed's only other reset is enter(), for a later visit — see
-      // its own doc.
-      gateFed = false;
-    }
-
-    // The gate indicator's visibility (about.css) — driven by whether the
-    // gate has actually been FED (QA change 1: gateFed), not by
-    // footerRiseAt's ramp. The ramp arrives across the whole last beat,
-    // before there is anything to push against, so a reveal tied to it used
-    // to pop the panel up well before the reader could act on it. Written
-    // every apply(), same as before, so the leave-the-end reset just above
-    // is immediately reflected without a second call site. Cleared outright
-    // in releaseSharedState() with the rest.
-    syncGateShow();
+    // The footer gate's own reconciliation against the current t — see
+    // GateControl.syncAt's own doc. For this task only, apply() stays the
+    // single call site; Task 4 lifts this out when apply() moves to the
+    // presentation module.
+    gateCtl.syncAt(t);
   };
 
   const onScroll = (): void => {
@@ -507,7 +405,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // `, 0` fallback). On this list, not merely left to go stale, because
     // that is exactly how the three leaks this function exists to prevent got
     // in — one per review round.
-    document.documentElement.style.removeProperty('--gate-show');
+    gateCtl.release();
     bgCanvas()?.classList.remove('about-canvas-hidden');
     // Restored unconditionally, even though apply() (the only caller of
     // setInvertAmount/setInk/setOnDark) never runs under reduced motion —
@@ -545,7 +443,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     paused = false;
     // A pending idle-retreat timer must not fire against a corridor that has
     // already torn its document down — see scheduleIdleDrain's own doc.
-    clearIdleTimer();
+    gateCtl.clearTimer();
     window.removeEventListener('scroll', onScroll);
     window.removeEventListener('resize', onResize);
     window.removeEventListener('wheel', onWheel);
@@ -664,7 +562,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // calls here, but returnHome() is also a public test seam reachable
     // without ever feeding the gate — a flight departing must not leave a
     // stale timer to later drain an accumulator the next visit hasn't fed.
-    clearIdleTimer();
+    gateCtl.clearTimer();
     fromPos.copy(deps.camera.position);
     fromQuat.copy(deps.camera.quaternion);
     // Where the chrome is sitting as the flight departs — applyReturn walks it
@@ -697,51 +595,14 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     });
   };
 
-  /**
-   * Feed the footer gate (about-gate.ts) a wheel delta and, once armed, kick
-   * off the return flight home.
-   *
-   * Only reachable from onWheel below, which has already checked
-   * open/paused/reducedMotion — so this never duplicates that guard, only
-   * adds the one condition specific to the gate: it arms only at the very
-   * end of the corridor (t >= 1). A ruling on this task deliberately folded
-   * this into the EXISTING onWheel listener rather than a second 'wheel'
-   * listener with its own open/paused check: a paused corridor is still
-   * `open`, and the contact takeover's wheel events bubble to window
-   * uncaught (it never calls stopPropagation) — precisely the bug already
-   * fixed once for the leave-corridor check just above. A second listener
-   * would have to re-derive that same guard from scratch and risk missing
-   * `paused`, which is exactly how that bug got reintroduced for onResize
-   * and onWheel in the first place (see their own comments below/above).
-   */
-  const feedGateAt = (deltaPx: number): void => {
-    // atCorridorEnd, not `t >= 1`: t is scrollY/(scrollHeight - innerHeight),
-    // and at fractional display scaling (125%/150%, the Windows 11 default)
-    // the rounded scrollHeight can put the real maximum scrollY a fraction
-    // short — so a fully scrolled document reports t ≈ 0.9999 and an exact
-    // comparison meant the gate could never arm at all. See GATE_END_EPS.
-    if (!atCorridorEnd(t)) return;
-    const { armed, amount } = feedGate(gate, deltaPx);
-    doc?.root.style.setProperty('--gate', String(amount));
-    // The panel's one entrance: the first push that leaves the accumulator
-    // above zero. Sticky rather than re-derived from gate.accumulated on
-    // every call — see gateFed's own doc for why the idle-retreat timer must
-    // not also erase this.
-    if (gate.accumulated > 0) gateFed = true;
-    // A push can take gateFed from false to true, which is the one moment
-    // the panel needs to appear outside apply()'s own per-scroll write — see
-    // syncGateShow's own doc.
-    syncGateShow();
-    if (armed) {
-      // The flight is about to take over; nothing left to drain toward.
-      clearIdleTimer();
-      void doReturnHome();
-      return;
-    }
-    // Rearm the idle clock on every push that doesn't already arm the gate —
-    // see scheduleIdleDrain's own doc (QA change 2).
-    scheduleIdleDrain();
-  };
+  // Constructed here, after doReturnHome, so onArmed can reference it
+  // directly: the footer gate's own controller (about-gate-control.ts),
+  // wired to this instance's document root and to the same return flight
+  // returnHome() and the wheel handler share.
+  const gateCtl: GateControl = createGateControl({
+    docRoot: () => doc?.root ?? null,
+    onArmed: () => void doReturnHome(),
+  });
 
   /**
    * The footer's site nav, clicked from inside the corridor.
@@ -819,7 +680,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       exit();
       return;
     }
-    feedGateAt(deltaPx);
+    gateCtl.feed(deltaPx, t);
   };
 
   return {
@@ -832,14 +693,14 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
       // on the very first forward wheel tick of a later one, with no fresh
       // push required. gateFed rides along for the same reason — see its own
       // doc.
-      gate.accumulated = 0;
-      gateFed = false;
+      gateCtl.reset();
       // Both motion paths: the document has to be able to scroll past one
       // viewport's worth of content, and the site's default full-bleed lock
       // (base.css) otherwise pins it at zero height (C1).
       document.documentElement.classList.add(ABOUT_OPEN_CLASS);
-      // Named gateEl, not gate: this closure's own `gate` is the GateState
-      // above (createGate()) — a same-named callback param would shadow it.
+      // Named gateEl, not gate: this closure's own `gateCtl` above is the
+      // footer gate's controller — a same-named callback param would read as
+      // shadowing it.
       doc = mountAboutDocument(parent, path, window.innerHeight, (gateEl) =>
         buildFooter({ onNav: onFooterNav, gate: gateEl }),
       );
@@ -888,7 +749,7 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     },
     feedGateForTest(deltaPx: number): void {
       if (!open || paused || deps.reducedMotion) return;
-      feedGateAt(deltaPx);
+      gateCtl.feed(deltaPx, t);
     },
     pause(): void {
       // `returnResolve` is the in-flight flag: non-null for exactly as long as
