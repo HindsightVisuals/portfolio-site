@@ -279,6 +279,12 @@ Suggested split, before the five content plans mount into it: `about-presentatio
 guard table into one switch instead of six hand-copied conditionals), `about-return.ts` (the flight,
 owning both ends of the handover), leaving `about-flow.ts` as wiring.
 
+**DONE (2026-09-04).** Split into about-presentation / about-session / about-return /
+about-gate-control / about-nav, leaving about-flow.ts as wiring. See
+`docs/superpowers/plans/2026-09-04-about-flow-split.md`. The gate controller and the
+pure nav module were not in the original suggestion; pulling them out is what removed
+the presentation-to-session coupling rather than merely relocating it.
+
 ## C. Deferred, with why
 
 - **The footer nav's three buttons all cut.** `work` calls `exit()`, which cuts from the pitched end
