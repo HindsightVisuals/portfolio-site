@@ -207,15 +207,15 @@ if (lab === 'ferro') {
     });
 
     // Leaving the corridor on a backward scroll at its very top is handled
-    // inside about-flow.ts itself (its own 'wheel' listener, added in
-    // enter()/removed in exit()) — not here. It used to be a second,
-    // always-on listener in this file, but that ran even under reduced
-    // motion, where the closure `t` about-flow.ts tracks internally never
-    // leaves 0 (apply() never runs there) — so shouldLeaveCorridor saw
-    // t: 0 on every visit and any backward scroll unmounted the document a
-    // reduced-motion visitor was simply reading. about-flow.ts already knows
-    // its own reducedMotion flag directly, so it is the one place that can
-    // gate this correctly.
+    // inside the corridor's own session (about-session.ts) itself (its own
+    // 'wheel' listener, added in enter()/removed in exit()) — not here. It
+    // used to be a second, always-on listener in this file, but that ran even
+    // under reduced motion, where the closure `t` that session tracks
+    // internally never leaves 0 (apply() never runs there) — so
+    // shouldLeaveCorridor saw t: 0 on every visit and any backward scroll
+    // unmounted the document a reduced-motion visitor was simply reading. The
+    // session already knows its own reducedMotion flag directly, so it is the
+    // one place that can gate this correctly.
 
     // --- 2D takeover wiring (Task 12): the DOM side of the signature journey ---
     const workRest = DESTINATIONS.find((d) => d.id === 'work')!.cameraZ;

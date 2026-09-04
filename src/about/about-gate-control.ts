@@ -112,7 +112,7 @@ export function createGateControl(o: {
      * Feed the footer gate (about-gate.ts) a wheel delta and, once armed, kick
      * off the return flight home.
      *
-     * Only reachable from onWheel (about-flow.ts), which has already checked
+     * Only reachable from onWheel (about-session.ts), which has already checked
      * open/paused/reducedMotion — so this never duplicates that guard, only
      * adds the one condition specific to the gate: it arms only at the very
      * end of the corridor (t >= 1). A ruling on this task deliberately folded
@@ -123,7 +123,8 @@ export function createGateControl(o: {
      * fixed once for the leave-corridor check in onWheel. A second listener
      * would have to re-derive that same guard from scratch and risk missing
      * `paused`, which is exactly how that bug got reintroduced for onResize
-     * and onWheel in the first place (see their own comments in about-flow.ts).
+     * and onWheel in the first place (see their own comments in
+     * about-session.ts).
      */
     feed(deltaPx: number, t: number): void {
       // atCorridorEnd, not `t >= 1`: t is scrollY/(scrollHeight - innerHeight),

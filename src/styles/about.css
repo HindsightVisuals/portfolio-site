@@ -268,7 +268,7 @@ html.about-open .chrome {
   transition: width 250ms ease-out;
 }
 
-/* Reduced motion: the gate is never fed (about-flow.ts's onWheel returns
+/* Reduced motion: the gate is never fed (about-session.ts's onWheel returns
  * early), so an indicator that could never fill would be a lie — and worse,
  * the panel sits in the footer's own row (page2d/footer.ts's `gate` slot),
  * so it would render pinned at 0% fill inside a plain scrolling document for

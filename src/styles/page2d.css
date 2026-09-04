@@ -18,7 +18,7 @@
    * takeover mostly fits one viewport, so its internal scroll is at an end
    * from the first wheel tick. Without this, opening contact over a paused
    * corridor scrolled the corridor's document underneath it, desyncing the
-   * scroll position from the `t` pause() had frozen. about-flow.ts's resume()
+   * scroll position from the `t` pause() had frozen. about-session.ts's resume()
    * resyncs regardless — this stops it happening at source. */
   overscroll-behavior: contain;
   will-change: transform;

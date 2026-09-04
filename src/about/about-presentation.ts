@@ -16,7 +16,7 @@ import { ferroWorldAt, ferroFadeAt, FERRO_RADIUS } from './about-ferro-path';
  * the Work wall fade, the ferro blob's placement and stacking, and the
  * --footer-rise escape hatch. Pulled out of about-flow.ts's apply() unchanged:
  * this module owns none of the state machine that decides WHEN to call it —
- * the session (about-flow.ts) still owns `t`, and passes it in.
+ * the session (about-session.ts) still owns `t`, and passes it in.
  *
  * Deliberately does not import about-gate-control.ts. The footer gate's own
  * reconciliation (gateCtl.syncAt) used to run as the last line of apply(); it

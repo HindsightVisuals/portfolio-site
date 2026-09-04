@@ -25,7 +25,7 @@ export function scrollDocumentTo(target: number): void {
  * THIS document now (D2/the corridor spec), not places to fly to or reopen, so
  * there is nothing to hand off to — just move the scrollbar. Under reduced
  * motion this is also correct and sufficient: the browser's own scroll position
- * is the only "position" that mode has (see about-flow.ts's enter()
+ * is the only "position" that mode has (see about-session.ts's enter()
  * reduced-motion branch), and mountAboutDocument lays the document out
  * identically regardless of reducedMotion.
  */

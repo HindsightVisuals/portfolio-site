@@ -131,7 +131,7 @@ describe('initAboutFlow', () => {
   });
 
   it('never advances t under reduced motion, even with a nonzero startT', () => {
-    // t must stay 0 in this mode — the leave-listener guard (about-flow.ts's
+    // t must stay 0 in this mode — the leave-listener guard (about-session.ts's
     // onWheel) relies on it never reading a nonzero t while reducedMotion is
     // true; apply() must not run here regardless of startT.
     const deps = makeDeps({ reducedMotion: true });
@@ -389,7 +389,7 @@ describe('initAboutFlow', () => {
   });
 
   // Bug found in review: under reduced motion apply() never runs, so the
-  // closure `t` about-flow.ts tracks internally stays 0 for the whole visit.
+  // closure `t` about-session.ts tracks internally stays 0 for the whole visit.
   // An unguarded backward-scroll listener would see shouldLeaveCorridor's
   // {open: true, t: 0, ...} on every wheel tick and unmount the document out
   // from under someone simply reading it. There is no corridor to leave under
