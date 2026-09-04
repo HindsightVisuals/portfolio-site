@@ -52,6 +52,25 @@ describe('createGateControl', () => {
     expect(showValue()).toBe('1');
   });
 
+  it('syncAt at the end, after an idle drain, still shows the panel — accumulated and gateFed diverge on purpose', () => {
+    // The module's own doc records the split this proves: the idle-retreat
+    // timer drains gate.accumulated to zero so the FILL can visibly ease
+    // down, but gateFed stays true so the panel itself is still on screen to
+    // show that easing — see syncGateShow's own doc. The test above only
+    // reads the '1' feed()'s own syncGateShow call already wrote; nothing
+    // there calls syncAt() after the drain while still at the end, so a
+    // syncShow that read gate.accumulated > 0 instead of gateFed would drain
+    // the panel right along with the fill and still pass. This one calls
+    // syncAt(1) — the syncGateShow that runs every apply() — AFTER the idle
+    // drain has already zeroed the accumulator, while `t` is still at the
+    // end, and checks the panel is still offered.
+    const gate = make();
+    gate.feed(100, 1);
+    vi.advanceTimersByTime(GATE_IDLE_MS + 1);
+    gate.syncAt(1);
+    expect(showValue()).toBe('1');
+  });
+
   it('rearms the idle clock on every push, so it fires after the LAST one', () => {
     const gate = make();
     gate.feed(100, 1);

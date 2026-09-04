@@ -200,6 +200,19 @@ export function createGateControl(o: {
 
     clearTimer: clearIdleTimer,
 
+    /**
+     * Cleared outright, not merely left to go stale: about.css reads
+     * --gate-show with a `, 0` fallback, but a lingering '1' would still be
+     * the first thing painted (briefly, pre-syncAt) the next time the
+     * corridor opens. Same discipline as presentation.releaseSharedState()'s
+     * own --ground/--ink/--footer-rise clears (about-presentation.ts) — that
+     * function's own doc comment records three separate leaks that got in
+     * exactly this way, one per review round, before its restore list was
+     * consolidated. --gate-show can't join that list itself
+     * (about-gate-control.ts deliberately doesn't import
+     * about-presentation.ts — see releaseAll's own doc in about-session.ts),
+     * but leaving it out here would be the fourth.
+     */
     release(): void {
       document.documentElement.style.removeProperty('--gate-show');
     },

@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { DESTINATIONS } from '../three/world';
+import { GATE_THRESHOLD_PX } from './about-gate';
 import { buildAboutPath } from './about-path';
 import { createSession } from './about-session';
 import type { AboutFlowDeps } from './about-flow';
@@ -75,16 +76,21 @@ describe('the guard table', () => {
   });
 
   it('pause() refuses while the flight is in the air', () => {
-    const { presentation, flight, session } = setup();
+    const { deps, flight, session } = setup();
     session.enter(document.body);
+    // Set first so its removal — pause()'s own observable side effect, the
+    // one line its body actually runs (see pause()'s own doc) — is what
+    // proves the guard fired, rather than something read through resume().
+    deps.ferroEl!.classList.add('ferro-stage--behind');
     flight.inFlight.mockReturnValue(true);
     session.pause();
-    presentation.apply.mockClear();
-    session.resume();
-    // isOpen() alone would be true whether or not the guard works. Nothing may
-    // reach the presentation while the flight owns the corridor.
-    expect(presentation.apply).not.toHaveBeenCalled();
-    expect(session.isOpen()).toBe(true);
+    // Asserting through resume() doesn't isolate pause()'s own guard: with
+    // pause() refusing, `paused` never becomes true, so resume()'s own
+    // `!paused` term short-circuits first and the deleted
+    // `flight.inFlight()` in pause() is never exercised — see the sibling
+    // test below, which isolates resume()'s guard by pausing for real
+    // first. This test instead reads pause()'s own effect directly.
+    expect(deps.ferroEl!.classList.contains('ferro-stage--behind')).toBe(true);
   });
 
   it('resume() refuses while the flight is in the air — the half that fought the tween', () => {
@@ -135,17 +141,64 @@ describe('enter and exit', () => {
   });
 
   it('exit cuts the camera to the anchor and releases the director LAST', () => {
-    const { deps, session } = setup();
+    const { deps, presentation, session } = setup();
     session.enter(document.body);
+    // Real THREE methods, not mocks — spy without replacing them so their
+    // invocationCallOrder is observable alongside the mocks below. This is
+    // what actually catches "released LAST": presentation.releaseSharedState
+    // alone only proves setSuspended(false) runs after releaseAll(), which
+    // is still true even if setSuspended(false) were moved to right after
+    // releaseAll() but ABOVE the camera cut — exactly the undetected mutation
+    // this test exists to catch. Pinning it after the camera-cut calls too
+    // closes that gap.
+    const positionSet = vi.spyOn(deps.camera.position, 'set');
+    const quaternionIdentity = vi.spyOn(deps.camera.quaternion, 'identity');
     session.exit();
     expect(deps.camera.position.z).toBe(anchorRest);
     expect(deps.director.setSuspended).toHaveBeenLastCalledWith(false);
     expect(session.isOpen()).toBe(false);
+    // "Released LAST" (see exit()'s own comment) means after everything else
+    // exit() does — releaseAll() (presentation.releaseSharedState here;
+    // gateCtl.release() has no mock to spy on, but it runs inside the same
+    // releaseAll() call) AND the camera cut that follows it — not merely
+    // after SOME earlier step.
+    const suspendedOrder = vi.mocked(deps.director.setSuspended).mock.invocationCallOrder.at(-1)!;
+    expect(presentation.releaseSharedState.mock.invocationCallOrder[0]).toBeLessThan(suspendedOrder);
+    expect(positionSet.mock.invocationCallOrder[0]).toBeLessThan(suspendedOrder);
+    expect(quaternionIdentity.mock.invocationCallOrder[0]).toBeLessThan(suspendedOrder);
   });
 
   it('exit is a no-op when never opened', () => {
     const { deps, session } = setup();
     session.exit();
     expect(deps.director.setSuspended).not.toHaveBeenCalled();
+  });
+
+  it('enter resets the gate — a previous visit armed partway must not fire on the next visit\'s first small push', () => {
+    // The session builds its own GateControl internally (about-session.ts),
+    // so there is no gateCtl stub to assert against directly — go through
+    // the observable effect instead: arm the gate PARTWAY (not enough to
+    // depart) on one visit, exit, enter again, and feed a small delta. If
+    // enter() forgot to reset the gate, the accumulator from the first visit
+    // would still be sitting there and this second, small push would tip it
+    // over GATE_THRESHOLD_PX and depart — exactly the bug reset() exists to
+    // prevent (see gateCtl.reset()'s own doc in about-session.ts's enter()).
+    //
+    // The second enter() lands directly at startT = 1 (the corridor's end),
+    // deliberately, not the default 0: entering at 0 runs scrubTo(0) ->
+    // gateCtl.syncAt(0), whose OWN "leaving the end" branch also zeroes the
+    // accumulator (t=0 isn't the end) — which would clear a leftover
+    // accumulator as a side effect and mask a deleted reset() call. Landing
+    // at t=1 keeps syncAt's leave-the-end branch from firing (atCorridorEnd
+    // is true there), so reset() is the only thing left that can clear it.
+    const { flight, session } = setup();
+    session.enter(document.body);
+    session.setScrollForTest(1);
+    session.feedGateForTest(GATE_THRESHOLD_PX - 10);
+    session.exit();
+    session.enter(document.body, 1);
+    session.feedGateForTest(20);
+    expect(flight.start).not.toHaveBeenCalled();
+    session.exit();
   });
 });

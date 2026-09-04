@@ -86,12 +86,32 @@ describe('createPresentation.apply', () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  it('allocates nothing per frame — the camera vector identity is stable', () => {
+  it('allocates nothing per frame — the module\'s own scratch objects are reused, not reallocated', () => {
+    // Injecting a fresh Vector3/Quaternion per call and asserting it got
+    // passed in would pass trivially — that only proves apply() accepted
+    // whatever it was given, not that the MODULE itself avoids allocating.
+    // This instead reads back identity on what createPresentation's closure
+    // actually reuses (see its own `pose` scratch comment): path.sample(t,
+    // pose) below is spied on the real `path` object passed in from this
+    // test file's module scope, and the second positional argument — the
+    // scratch CameraPose apply() samples into every frame — must be the
+    // SAME object on frame 2 as frame 1, not a fresh one.
     const { deps, presentation } = setup();
-    const before = deps.camera.position;
+    const sampleSpy = vi.spyOn(path, 'sample');
+    const cameraPosition = deps.camera.position;
+    const cameraQuaternion = deps.camera.quaternion;
     presentation.apply(0.2);
     presentation.apply(0.7);
-    expect(deps.camera.position).toBe(before);
+    expect(sampleSpy).toHaveBeenCalledTimes(2);
+    const [, poseArgFrame1] = sampleSpy.mock.calls[0];
+    const [, poseArgFrame2] = sampleSpy.mock.calls[1];
+    expect(poseArgFrame1).toBeDefined();
+    expect(poseArgFrame2).toBe(poseArgFrame1);
+    // camera.position/quaternion are written via .copy() (VALUES), never
+    // reassigned — apply() must not swap them for new instances either.
+    expect(deps.camera.position).toBe(cameraPosition);
+    expect(deps.camera.quaternion).toBe(cameraQuaternion);
+    sampleSpy.mockRestore();
   });
 });
 
