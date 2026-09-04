@@ -52,10 +52,10 @@ export function createGateControl(o: {
   let gateFed = false;
 
   // The idle-retreat timer (QA change 2): rearmed on every wheel push that
-  // reaches feedGateAt, so it only ever fires GATE_IDLE_MS after the LAST
-  // push, not the first. Module-scoped (not a feedGateAt-local var) so a
-  // later push can find and clear the previous one instead of leaving two
-  // timers racing to drain the same accumulator.
+  // reaches feed, so it only ever fires GATE_IDLE_MS after the LAST push,
+  // not the first. Module-scoped (not a feed-local var) so a later push can
+  // find and clear the previous one instead of leaving two timers racing to
+  // drain the same accumulator.
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
@@ -66,11 +66,11 @@ export function createGateControl(o: {
    * but the panel itself — "keep scrolling to return home" — stays offered
    * for as long as you keep dwelling at the corridor's end, or that easing
    * would happen behind an already-vanished panel and be invisible. Only
-   * leaving the end (apply()'s reset below) or leaving the corridor
+   * leaving the end (syncAt's reset below) or leaving the corridor
    * (releaseSharedState) clears gateFed.
    *
    * The ONLY writer of --gate-show, full stop — called from both sites that
-   * can flip gateFed: feedGateAt's first push, and apply()'s leave-the-end
+   * can flip gateFed: feed's first push, and syncAt's own leave-the-end
    * reset. (applyReturn used to write it too, off fromRise, for as long as
    * the panel was a `position: fixed` overlay outside the fading document;
    * now that it mounts through footer.ts's `gate` slot, a descendant of
@@ -112,7 +112,7 @@ export function createGateControl(o: {
      * Feed the footer gate (about-gate.ts) a wheel delta and, once armed, kick
      * off the return flight home.
      *
-     * Only reachable from onWheel below, which has already checked
+     * Only reachable from onWheel (about-flow.ts), which has already checked
      * open/paused/reducedMotion — so this never duplicates that guard, only
      * adds the one condition specific to the gate: it arms only at the very
      * end of the corridor (t >= 1). A ruling on this task deliberately folded
@@ -120,10 +120,10 @@ export function createGateControl(o: {
      * listener with its own open/paused check: a paused corridor is still
      * `open`, and the contact takeover's wheel events bubble to window
      * uncaught (it never calls stopPropagation) — precisely the bug already
-     * fixed once for the leave-corridor check just above. A second listener
+     * fixed once for the leave-corridor check in onWheel. A second listener
      * would have to re-derive that same guard from scratch and risk missing
      * `paused`, which is exactly how that bug got reintroduced for onResize
-     * and onWheel in the first place (see their own comments below/above).
+     * and onWheel in the first place (see their own comments in about-flow.ts).
      */
     feed(deltaPx: number, t: number): void {
       // atCorridorEnd, not `t >= 1`: t is scrollY/(scrollHeight - innerHeight),
@@ -157,7 +157,7 @@ export function createGateControl(o: {
     syncAt(t: number): void {
       // Reset the gate the moment you leave the end.
       //
-      // feedGateAt only WRITES --gate while atCorridorEnd(t), so pushing the
+      // feed only WRITES --gate while atCorridorEnd(t), so pushing the
       // indicator to 50% and then scrolling back up used to freeze the green
       // fill at 50% for the rest of the corridor — and leave the accumulator
       // half-armed, so a later return to the end needed only half a push. The

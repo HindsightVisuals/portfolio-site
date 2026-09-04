@@ -552,13 +552,14 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
 
   /**
    * Fly the camera home and hand over — the shared body behind the public
-   * returnHome() below AND the footer gate arming (feedGateAt further down).
+   * returnHome() below AND the footer gate arming (gateCtl's onArmed callback,
+   * wired to this function, in about-gate-control.ts).
    * Top-level, like exit(), so both callers reach the same one flight rather
    * than each keeping their own copy.
    */
   const doReturnHome = (): Promise<void> => {
     if (!open) return Promise.resolve();
-    // Belt-and-braces: feedGateAt already clears this before an armed push
+    // Belt-and-braces: gateCtl.feed already clears this before an armed push
     // calls here, but returnHome() is also a public test seam reachable
     // without ever feeding the gate — a flight departing must not leave a
     // stale timer to later drain an accumulator the next visit hasn't fed.
@@ -672,8 +673,9 @@ export function initAboutFlow(deps: AboutFlowDeps): AboutFlow {
     // — clearing open/paused and releasing the director — and resume() would
     // then no-op on close, landing the user in 'world' instead of back in
     // the corridor. Exactly the bug this task exists to fix, reintroduced via
-    // the one listener pause() doesn't touch. The footer gate below shares
-    // this exact guard for the exact same reason — see feedGateAt's comment.
+    // the one listener pause() doesn't touch. The footer gate (gateCtl.feed,
+    // in about-gate-control.ts) shares this exact guard for the exact same
+    // reason — see its own doc there.
     if (!open || paused || deps.reducedMotion) return;
     const deltaPx = normalizeWheelDelta(e.deltaY, e.deltaMode);
     if (shouldLeaveCorridor({ open, t, deltaPx })) {

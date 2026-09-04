@@ -654,8 +654,9 @@ describe('initAboutFlow', () => {
     });
 
     // Mutation testing (QA pass) found this test toothless: removing exit()'s
-    // clearIdleTimer() call didn't fail it, because scheduleIdleDrain's
-    // callback only ever writes through `doc?.root` — never `--gate-show` —
+    // gateCtl.clearTimer() call didn't fail it, because about-gate-control.ts's
+    // scheduleIdleDrain callback only ever writes through `doc?.root` — never
+    // `--gate-show` —
     // and exit() had already nulled `doc` by the time a dangling timer could
     // fire, so a stale timer touching nothing looked identical to one that
     // had genuinely been cleared. The real risk isn't firing into a void; the
@@ -1089,8 +1090,8 @@ describe('initAboutFlow', () => {
     expect(flow.t()).toBeLessThan(1);
     flow.feedGateForTest(GATE_THRESHOLD_PX);
     // The indicator is the gate's own synchronous output, written by
-    // feedGateAt itself — a direct read of "the gate was fed", independent of
-    // the async flight it then kicks off.
+    // gateCtl.feed itself — a direct read of "the gate was fed", independent
+    // of the async flight it then kicks off.
     const root = parent.querySelector<HTMLElement>('.about-doc')!;
     expect(root.style.getPropertyValue('--gate')).toBe('1');
     flow.stepReturnForTest(1);
@@ -1201,9 +1202,9 @@ describe('initAboutFlow', () => {
   // already invisible by then regardless of --gate-show. Continuing to write
   // it every tick would only re-open the exact retarget conflict that used to
   // block giving .about-gate a plain opacity transition for its fade-in — so
-  // applyReturn no longer touches it at all; only syncGateShow (feedGateAt /
-  // apply()'s leave-the-end reset) and releaseSharedState() (the final clear
-  // at p >= 1) do.
+  // applyReturn no longer touches it at all; only about-gate-control.ts's
+  // syncGateShow (called from gateCtl.feed / gateCtl.syncAt's leave-the-end
+  // reset) and releaseSharedState() (the final clear at p >= 1) do.
   it('leaves --gate-show untouched by the return flight, clearing it only when the flight lands', () => {
     const deps = makeDeps();
     const flow = initAboutFlow(deps);
