@@ -58,7 +58,7 @@ export function mountAboutDocument(
   }
 
   // The scroll-gate indicator. --gate (0..1) is written per wheel event by
-  // about-flow.ts; this only presents it. See about.css for the fill mapping.
+  // about-gate-control.ts; this only presents it. See about.css for the fill mapping.
   //
   // Built here — about-document.ts still owns the corridor's document shape
   // — but no longer appended to the beat directly. Per the designer's mockup

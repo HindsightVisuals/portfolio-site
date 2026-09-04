@@ -163,7 +163,7 @@ html.about-open .chrome {
  * inset (1322.56px of a 1642.56px frame, i.e. inset from both sides, at
  * footer.css's noted 1.38x Figma scale: 1322.56 / 1.38 ≈ 958px).
  *
- * --gate is 0..1, written per wheel event by about-flow.ts.
+ * --gate is 0..1, written per wheel event by about-gate-control.ts.
  *
  * The hatch is a CSS gradient rather than the mock's exported PNG: it is a
  * specifiable 45-degree stripe, not an icon, and a gradient stays crisp at any
@@ -191,7 +191,7 @@ html.about-open .chrome {
    * through the whole climb, announcing an action unavailable for 99% of the
    * scroll.
    *
-   * --gate-show (about-flow.ts) is 0 until the gate has actually been FED —
+   * --gate-show (about-gate-control.ts) is 0 until the gate has actually been FED —
    * a real push at the corridor's end, not merely arriving at the beat, per
    * Adam's QA: driving it off footerRiseAt's ramp instead used to pop the
    * panel up across the whole last beat, before there was anything to push
@@ -203,7 +203,7 @@ html.about-open .chrome {
    * outside the corridor, and a bare var() would invalidate the declaration.
    *
    * A plain opacity transition is now safe, where it previously was not: the
-   * return flight (about-flow.ts's applyReturn) used to write this same
+   * return flight (about-return.ts's applyReturn) used to write this same
    * property every tick of its own eased 1.6s interpolation, and a CSS
    * transition would have retargeted against THAT every frame. Now that this
    * panel lives inside .about-doc, applyReturn's existing whole-document fade
@@ -250,7 +250,7 @@ html.about-open .chrome {
    * with scroll so it's not jumpy but smoothly expands as the user scrolls."
    * --gate used to be written per wheel event with no transition at all, so
    * the fill stepped once per tick instead of reading as continuous growth.
-   * A plain `width` transition is enough — about-flow.ts's idle-retreat
+   * A plain `width` transition is enough — about-gate-control.ts's idle-retreat
    * timer (GATE_IDLE_MS) also just writes --gate back toward 0 on the same
    * property, so this one rule covers both the forward fill AND the
    * inactive-scrolling retreat with no JS animation loop, on a corridor that
@@ -261,7 +261,7 @@ html.about-open .chrome {
    * retargeting the transition already in flight) still reads as the fill
    * keeping pace with scrolling rather than lagging behind it, slow enough
    * to visibly ease rather than snap. Short relative to the 1.6s return
-   * flight (about-flow.ts's RETURN_S), too: the fill finishes catching up to
+   * flight (about-return.ts's RETURN_S), too: the fill finishes catching up to
    * 100% within the flight's first ~15%, well before the panel is carried out
    * of view by .about-doc's own whole-document fade (applyReturn), so arming
    * the gate at 100% does not visibly depart mid-fill. */

@@ -3,7 +3,7 @@ import { atCorridorEnd, createGate, feedGate, type GateState } from './about-gat
 
 /**
  * How long a push at the corridor's end can go quiet before the gate drains
- * back to zero on its own (about-flow's idle-retreat, QA change 2).
+ * back to zero on its own (this module's idle-retreat, QA change 2).
  *
  * Long enough that a reader who pauses mid-push — to read the label, to
  * breathe — isn't punished for the pause; short enough that the indicator

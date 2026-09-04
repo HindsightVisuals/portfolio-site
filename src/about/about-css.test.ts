@@ -55,7 +55,7 @@ describe('about.css — the gate indicator', () => {
   // was nothing drawn. This one has no such property — at --gate: 0 the panel,
   // its border and its hatched track are fully painted and only the green fill
   // is zero-width — so a dark bar sat across the bottom of every beat from the
-  // first frame of enter(). --gate-show (about-flow.ts) gates it on whether
+  // first frame of enter(). --gate-show (about-gate-control.ts) gates it on whether
   // the gate has genuinely been fed, per this pass's QA change 1.
   it('gates the panel on --gate-show rather than painting from frame one', () => {
     const rule = ruleBody(about, '.about-gate');
@@ -111,7 +111,7 @@ describe('about.css — the gate indicator', () => {
     const transition = /transition\s*:\s*width\s+(\d+)ms\s+([\w-]+)/.exec(rule);
     expect(transition, 'no width transition on .about-gate-fill').not.toBeNull();
     const [, ms] = transition!;
-    // Short enough to stay well inside the return flight (about-flow.ts's
+    // Short enough to stay well inside the return flight (about-return.ts's
     // RETURN_S = 1.6s) so a just-armed fill visibly finishes catching up
     // long before the panel has faded — not merely "a transition exists".
     expect(Number(ms)).toBeGreaterThan(0);
